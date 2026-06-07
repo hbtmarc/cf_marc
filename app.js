@@ -1525,12 +1525,20 @@ function formatBalancoCurrency(valor) {
   if (valor === null || valor === undefined || valor === "" || isNaN(Number(valor))) {
     return "—";
   }
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
+
+  var numero = Number(valor);
+  var negativo = numero < 0;
+  var absoluto = Math.abs(numero);
+  var textoNumero = new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
-  }).format(Number(valor));
+  }).format(absoluto);
+
+  if (negativo) {
+    return "-R$ " + textoNumero;
+  }
+
+  return "R$ " + textoNumero;
 }
 
 function getBalancoData() {
@@ -1563,6 +1571,73 @@ function getBalancoData() {
   };
 }
 
+function getBalancoStatus(dados) {
+  if (valorEhNegativo(dados.saldoAposRecebiveis)) {
+    return {
+      status: "Mês crítico",
+      classe: "critico",
+      diagnostico: "Mesmo após os recebíveis, o mês permanece negativo.",
+      cuidado: "Revisar gastos e priorizar compromissos essenciais."
+    };
+  }
+
+  if (valorEhNegativo(dados.saldoAposDebitos) && !valorEhNegativo(dados.saldoAposRecebiveis)) {
+    return {
+      status: "Mês em atenção",
+      classe: "atencao",
+      diagnostico: "O caixa depende dos recebíveis para fechar positivo.",
+      cuidado: "Confirmar recebíveis e evitar novos gastos até regularizar o caixa."
+    };
+  }
+
+  if (!valorEhNegativo(dados.saldoAposDebitos) && valorEhPositivo(dados.saldoAposRecebiveis)) {
+    return {
+      status: "Mês controlado",
+      classe: "controlado",
+      diagnostico: "O mês fecha positivo com os valores atuais.",
+      cuidado: "Manter acompanhamento de faturas e compromissos."
+    };
+  }
+
+  return {
+    status: "Mês controlado",
+    classe: "controlado",
+    diagnostico: "O mês fecha positivo com os valores atuais.",
+    cuidado: "Manter acompanhamento de faturas e compromissos."
+  };
+}
+
+function renderBalancoExecutiveBlock(dados) {
+  var analise = getBalancoStatus(dados);
+
+  return (
+    "<section class=\"balanco__executivo\" aria-label=\"Análise do balanço\">" +
+      "<div class=\"balanco-executivo\">" +
+        "<div class=\"balanco-executivo__topo\">" +
+          "<div class=\"balanco-executivo__periodo-bloco\">" +
+            "<span class=\"balanco-executivo__periodo-rotulo\">Período</span>" +
+            "<span class=\"balanco-executivo__periodo-valor\">" + escapeHtml(dados.periodo) + "</span>" +
+          "</div>" +
+          "<span class=\"balanco-executivo__badge balanco-executivo__badge--" + analise.classe + "\">" +
+            escapeHtml(analise.status) +
+          "</span>" +
+        "</div>" +
+        "<p class=\"balanco-executivo__diagnostico\">" + escapeHtml(analise.diagnostico) + "</p>" +
+        "<div class=\"balanco-executivo__rodape\">" +
+          "<div class=\"balanco-executivo__destaque\">" +
+            "<span class=\"balanco-executivo__destaque-rotulo\">Saldo previsto</span>" +
+            "<span class=\"balanco-executivo__destaque-valor\">" + escapeHtml(formatBalancoCurrency(dados.saldoAposRecebiveis)) + "</span>" +
+          "</div>" +
+          "<p class=\"balanco-executivo__cuidado\">" +
+            "<span class=\"balanco-executivo__cuidado-rotulo\">Cuidado recomendado</span> " +
+            escapeHtml(analise.cuidado) +
+          "</p>" +
+        "</div>" +
+      "</div>" +
+    "</section>"
+  );
+}
+
 function renderBalancoKpi(rotulo, valor) {
   return (
     "<div class=\"balanco__kpi\">" +
@@ -1575,8 +1650,7 @@ function renderBalancoKpi(rotulo, valor) {
 function renderResultadoMes(dados) {
   return (
     "<section class=\"balanco__resultado\" aria-label=\"Resultado do mês\">" +
-      "<h3 class=\"balanco__secao-titulo\">Resultado do mês</h3>" +
-      "<p class=\"balanco__periodo\">" + escapeHtml(dados.periodo) + "</p>" +
+      "<h3 class=\"balanco__secao-titulo balanco__secao-titulo--secundario\">Resultado do mês</h3>" +
       "<div class=\"balanco__kpi-grid balanco__kpi-grid--resultado\">" +
         renderBalancoKpi("Receitas", formatBalancoCurrency(dados.receitas)) +
         renderBalancoKpi("Despesas", formatBalancoCurrency(dados.despesas)) +
@@ -1657,16 +1731,18 @@ function renderLeituraBalanco(dados) {
   var texto;
 
   if (valorEhNegativo(dados.saldoAposDebitos) && !valorEhNegativo(dados.saldoAposRecebiveis)) {
-    texto = "O caixa fica pressionado antes dos recebíveis. O mês depende dessas entradas para fechar positivo.";
+    texto = "O mês exige atenção porque o caixa fica negativo antes dos recebíveis. Com as entradas previstas, o saldo fecha positivo, mas novos gastos devem ser evitados.";
   } else if (valorEhNegativo(dados.saldoAposRecebiveis)) {
-    texto = "Mesmo após os recebíveis, o mês permanece negativo e exige revisão dos gastos.";
+    texto = "Mesmo com os recebíveis previstos, o mês permanece negativo e exige revisão dos gastos.";
+  } else if (!valorEhNegativo(dados.saldoAposDebitos) && valorEhPositivo(dados.saldoAposRecebiveis)) {
+    texto = "O mês está controlado com saldo positivo, mas ainda exige acompanhamento de faturas e compromissos.";
   } else {
-    texto = "O mês está controlado, mas ainda exige acompanhamento de faturas, recebíveis e compromissos.";
+    texto = "O balanço do mês resume entradas, saídas e saldo previsto para acompanhamento contínuo.";
   }
 
   return (
     "<section class=\"balanco__leitura\" aria-label=\"Leitura do balanço\">" +
-      "<h3 class=\"balanco__secao-titulo\">Leitura do balanço</h3>" +
+      "<h3 class=\"balanco__secao-titulo balanco__secao-titulo--conclusao\">Leitura do balanço</h3>" +
       "<p class=\"balanco__leitura-texto\">" + escapeHtml(texto) + "</p>" +
     "</section>"
   );
@@ -1698,6 +1774,7 @@ function renderBalancoPage() {
         "<i class=\"ph ph-chart-line-up secao__icone\" aria-hidden=\"true\"></i>" +
         "Balanço" +
       "</h2>" +
+      renderBalancoExecutiveBlock(dados) +
       renderResultadoMes(dados) +
       renderCaixaMes(dados) +
       renderComposicao(dados) +
@@ -2395,6 +2472,78 @@ function renderCartoesPage() {
 
 /* --- Roteamento --- */
 
+var mensagemConfiguracoes = "";
+
+function restaurarDadosLocais() {
+  var payload;
+
+  if (!window.CFMarcStorage) {
+    return;
+  }
+
+  payload = window.CFMarcStorage.loadImportedData();
+  if (!payload || !payload.importedData) {
+    return;
+  }
+
+  window.appState.importedData = payload.importedData;
+  window.appState.importConfirmed = true;
+  window.appState.importedAt = payload.meta && payload.meta.savedAt
+    ? payload.meta.savedAt
+    : new Date().toISOString();
+}
+
+function renderConfiguracoesPage() {
+  var secao = SECOES.configuracoes;
+  var htmlSucesso = "";
+
+  if (mensagemConfiguracoes) {
+    htmlSucesso =
+      "<div class=\"configuracoes__sucesso\" role=\"status\">" +
+        "<i class=\"ph ph-check-circle\" aria-hidden=\"true\"></i>" +
+        "<span>" + escapeHtml(mensagemConfiguracoes) + "</span>" +
+      "</div>";
+  }
+
+  conteudoEl.innerHTML =
+    "<section class=\"secao configuracoes\">" +
+      "<h2 class=\"secao__titulo\">" +
+        "<i class=\"ph " + secao.icone + " secao__icone\" aria-hidden=\"true\"></i>" +
+        secao.titulo +
+      "</h2>" +
+      "<p class=\"secao__texto\">" + secao.texto + "</p>" +
+      htmlSucesso +
+      "<div class=\"configuracoes__dados-locais\">" +
+        "<p class=\"configuracoes__dados-texto\">Remove o arquivo financeiro salvo neste navegador.</p>" +
+        "<button type=\"button\" class=\"btn btn--secundario\" id=\"btn-limpar-dados-locais\">Limpar dados locais</button>" +
+      "</div>" +
+    "</section>";
+
+  vincularEventosConfiguracoes();
+}
+
+function limparDadosLocais() {
+  if (window.CFMarcStorage) {
+    window.CFMarcStorage.clearImportedData();
+  }
+
+  window.appState.importedData = null;
+  window.appState.importConfirmed = false;
+  window.appState.importedAt = null;
+  mensagemConfiguracoes = "Dados locais removidos.";
+
+  atualizarNavImportar();
+  renderConfiguracoesPage();
+}
+
+function vincularEventosConfiguracoes() {
+  var btnLimpar = document.getElementById("btn-limpar-dados-locais");
+
+  if (btnLimpar) {
+    btnLimpar.addEventListener("click", limparDadosLocais);
+  }
+}
+
 function renderizarSecao(rota) {
   var secao = SECOES[rota];
   conteudoEl.innerHTML =
@@ -2465,8 +2614,14 @@ function navegar() {
     renderBalancoPage();
   } else if (rota === "cartoes") {
     renderCartoesPage();
+  } else if (rota === "configuracoes") {
+    renderConfiguracoesPage();
   } else {
     renderizarSecao(rota);
+  }
+
+  if (rota !== "configuracoes") {
+    mensagemConfiguracoes = "";
   }
 
   atualizarMenuAtivo(rota);
@@ -2506,6 +2661,121 @@ function findActiveImportPeriod(periodos) {
 
   return encontrados;
 }
+
+var CFMARC_STORAGE_KEY = "cfmarc:importedData:v1";
+
+function obterPeriodoAtivoIdParaStorage(dados) {
+  var ativos;
+  var periodo;
+
+  if (!dados || !Array.isArray(dados.periods)) {
+    return null;
+  }
+
+  ativos = findActiveImportPeriod(dados.periods);
+  if (ativos.length !== 1) {
+    return null;
+  }
+
+  periodo = ativos[0];
+  if (periodo.id) {
+    return String(periodo.id);
+  }
+
+  if (periodo.year && periodo.month) {
+    var mes = String(periodo.month);
+    if (mes.length === 1) {
+      mes = "0" + mes;
+    }
+    return String(periodo.year) + "-" + mes;
+  }
+
+  return null;
+}
+
+window.CFMarcStorage = {
+  saveImportedData: function (data) {
+    var payload;
+
+    if (!data) {
+      return false;
+    }
+
+    try {
+      payload = {
+        importedData: data,
+        meta: {
+          schema: data.schema || null,
+          savedAt: new Date().toISOString(),
+          source: "localStorage",
+          activePeriod: obterPeriodoAtivoIdParaStorage(data)
+        }
+      };
+      localStorage.setItem(CFMARC_STORAGE_KEY, JSON.stringify(payload));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  loadImportedData: function () {
+    var raw;
+    var payload;
+
+    try {
+      raw = localStorage.getItem(CFMARC_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+
+      payload = JSON.parse(raw);
+      if (!payload || !payload.importedData) {
+        localStorage.removeItem(CFMARC_STORAGE_KEY);
+        return null;
+      }
+
+      return payload;
+    } catch (e) {
+      try {
+        localStorage.removeItem(CFMARC_STORAGE_KEY);
+      } catch (err) {
+        /* ignora falha ao limpar chave corrompida */
+      }
+      return null;
+    }
+  },
+
+  clearImportedData: function () {
+    try {
+      localStorage.removeItem(CFMARC_STORAGE_KEY);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  hasLocalData: function () {
+    try {
+      return window.CFMarcStorage.loadImportedData() !== null;
+    } catch (e) {
+      return false;
+    }
+  },
+
+  getStorageMeta: function () {
+    var payload;
+
+    try {
+      payload = window.CFMarcStorage.loadImportedData();
+      if (!payload || !payload.meta) {
+        return null;
+      }
+      return payload.meta;
+    } catch (e) {
+      return null;
+    }
+  }
+};
 
 function periodoEhJunho2026(periodo) {
   if (!periodo) {
@@ -3048,7 +3318,12 @@ function confirmImport() {
   sessao.parsedData = null;
   sessao.error = null;
 
+  if (window.CFMarcStorage) {
+    window.CFMarcStorage.saveImportedData(window.appState.importedData);
+  }
+
   renderImportarPage();
+  atualizarNavImportar();
 }
 
 function vincularEventosImportar() {
@@ -3123,5 +3398,10 @@ function renderImportarPage() {
   atualizarNavImportar();
 }
 
+function iniciarApp() {
+  restaurarDadosLocais();
+  navegar();
+}
+
 window.addEventListener("hashchange", navegar);
-window.addEventListener("DOMContentLoaded", navegar);
+window.addEventListener("DOMContentLoaded", iniciarApp);
