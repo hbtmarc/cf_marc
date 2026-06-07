@@ -3598,9 +3598,22 @@ function renderImportarPage() {
   atualizarNavImportar();
 }
 
+function registrarServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return;
+  }
+
+  navigator.serviceWorker.register("./sw.js").then(function () {
+    console.log("CFMarc: Service Worker registrado.");
+  }).catch(function () {
+    console.log("CFMarc: Service Worker não registrado.");
+  });
+}
+
 function iniciarApp() {
   restaurarDadosLocais();
   navegar();
+  registrarServiceWorker();
 }
 
 window.addEventListener("hashchange", navegar);
