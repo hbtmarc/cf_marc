@@ -3618,3 +3618,606 @@ function iniciarApp() {
 
 window.addEventListener("hashchange", navegar);
 window.addEventListener("DOMContentLoaded", iniciarApp);
+
+/* --- QA interno (console) — Service Worker --- */
+
+function cfmarcQaEsperar(ms) {
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+function cfmarcQaAdicionarCheck(lista, id, nome, status, detalhe) {
+  lista.push({
+    id: id,
+    name: nome,
+    status: status,
+    detail: detalhe
+  });
+}
+
+function cfmarcQaResumirChecks(checks) {
+  var resumo = { pass: 0, fail: 0, warning: 0, notExecuted: 0 };
+  var i;
+
+  for (i = 0; i < checks.length; i++) {
+    if (checks[i].status === "PASS") {
+      resumo.pass += 1;
+    } else if (checks[i].status === "FAIL") {
+      resumo.fail += 1;
+    } else if (checks[i].status === "WARNING") {
+      resumo.warning += 1;
+    } else {
+      resumo.notExecuted += 1;
+    }
+  }
+
+  return resumo;
+}
+
+function cfmarcQaCalcularRecomendacao(checks, modo) {
+  var idsCriticos = [
+    "sw-supported",
+    "sw-registration",
+    "sw-scope",
+    "sw-script",
+    "caches-supported",
+    "cache-exists",
+    "cache-shell-files",
+    "cache-no-json",
+    "hash-routes"
+  ];
+  var i;
+  var check;
+  var temFalha = false;
+  var criticoNaoExecutado = false;
+
+  for (i = 0; i < checks.length; i++) {
+    check = checks[i];
+    if (check.status === "FAIL") {
+      temFalha = true;
+    }
+    if (idsCriticos.indexOf(check.id) !== -1 && check.status === "NOT_EXECUTED") {
+      criticoNaoExecutado = true;
+    }
+  }
+
+  if (modo === "online") {
+    for (i = 0; i < checks.length; i++) {
+      if (checks[i].id === "online-fetch-shell" && checks[i].status === "NOT_EXECUTED") {
+        criticoNaoExecutado = true;
+      }
+    }
+  }
+
+  if (modo === "offline") {
+    for (i = 0; i < checks.length; i++) {
+      if (
+        (checks[i].id === "offline-context" || checks[i].id === "offline-fetch-shell") &&
+        checks[i].status === "NOT_EXECUTED"
+      ) {
+        criticoNaoExecutado = true;
+      }
+    }
+  }
+
+  if (temFalha) {
+    return "FIX_NEEDED";
+  }
+  if (criticoNaoExecutado) {
+    return "NOT_EXECUTED";
+  }
+  return "KEEP_ALL";
+}
+
+function cfmarcQaClassificarUrlAtual() {
+  var url = window.location;
+  var host = url.hostname;
+  var path = url.pathname;
+
+  if (url.protocol === "file:") {
+    return {
+      status: "WARNING",
+      detail: "Origem file:// — QA limitada; prefira https://hbtmarc.github.io/cf_marc/"
+    };
+  }
+
+  if (host === "localhost" || host === "127.0.0.1") {
+    return {
+      status: "WARNING",
+      detail: "Origem localhost — QA local; produção em /cf_marc/ no GitHub Pages"
+    };
+  }
+
+  if (host.indexOf("github.io") !== -1 && path.indexOf("/cf_marc") !== -1) {
+    return {
+      status: "PASS",
+      detail: "Origem GitHub Pages com caminho /cf_marc/"
+    };
+  }
+
+  return {
+    status: "WARNING",
+    detail: "URL fora do padrão esperado do GitHub Pages (/cf_marc/)"
+  };
+}
+
+function cfmarcQaObterTextoTituloPagina() {
+  var titulo = document.querySelector("#conteudo .secao__titulo, #conteudo .importar .secao__titulo");
+
+  if (!titulo) {
+    return "";
+  }
+
+  return titulo.textContent.replace(/\s+/g, " ").trim();
+}
+
+function cfmarcQaTituloCorresponde(texto, esperados) {
+  var i;
+
+  for (i = 0; i < esperados.length; i++) {
+    if (texto.indexOf(esperados[i]) !== -1) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function cfmarcQaClassificarEntradaCache(urlString) {
+  var pathname;
+
+  try {
+    pathname = new URL(urlString).pathname;
+  } catch (e) {
+    return null;
+  }
+
+  if (pathname.endsWith("/index.html")) {
+    return "index.html";
+  }
+  if (pathname.endsWith("/styles.css")) {
+    return "styles.css";
+  }
+  if (pathname.endsWith("/app.js")) {
+    return "app.js";
+  }
+  if (pathname.endsWith("/cf_marc") || pathname.endsWith("/cf_marc/") || pathname.endsWith("/")) {
+    return "root";
+  }
+
+  return null;
+}
+
+function cfmarcQaCacheContemJsonOuBackup(urlString) {
+  var texto = String(urlString).toLowerCase();
+
+  if (texto.indexOf(".json") !== -1) {
+    return true;
+  }
+  if (texto.indexOf("cfmarc-backup") !== -1) {
+    return true;
+  }
+  if (texto.indexOf("cfmarc-mvp-import") !== -1) {
+    return true;
+  }
+
+  return false;
+}
+
+function cfmarcQaBuscarRegistroServiceWorker() {
+  if (!("serviceWorker" in navigator)) {
+    return Promise.resolve(null);
+  }
+
+  if (navigator.serviceWorker.getRegistration) {
+    return navigator.serviceWorker.getRegistration("./");
+  }
+
+  return Promise.resolve(null);
+}
+
+function cfmarcQaLerEntradasCache(nomeCache) {
+  if (!("caches" in window)) {
+    return Promise.resolve([]);
+  }
+
+  return caches.open(nomeCache).then(function (cache) {
+    return cache.keys();
+  });
+}
+
+function cfmarcQaTestarFetchShell(modo) {
+  var arquivos = ["./index.html", "./styles.css", "./app.js"];
+  var resultados = [];
+  var i;
+
+  function testarProximo(indice) {
+    if (indice >= arquivos.length) {
+      return Promise.resolve(resultados);
+    }
+
+    return fetch(arquivos[indice]).then(function (resposta) {
+      resultados.push({
+        arquivo: arquivos[indice],
+        ok: resposta && resposta.ok,
+        status: resposta ? resposta.status : 0
+      });
+      return testarProximo(indice + 1);
+    }).catch(function () {
+      resultados.push({
+        arquivo: arquivos[indice],
+        ok: false,
+        status: 0
+      });
+      return testarProximo(indice + 1);
+    });
+  }
+
+  return testarProximo(0);
+}
+
+function cfmarcQaVerificarRotasHash() {
+  var hashOriginal = window.location.hash || "#/" + ROTA_PADRAO;
+  var rotas = [
+    { hash: "#/dashboard", titulos: ["Dashboard"] },
+    { hash: "#/balanco", titulos: ["Balanço"] },
+    { hash: "#/cartoes", titulos: ["Cartões"] },
+    { hash: "#/importar", titulos: ["Importar", "Atualizar"] },
+    { hash: "#/configuracoes", titulos: ["Configurações"] }
+  ];
+  var falhas = [];
+  var indice = 0;
+
+  function verificarProxima() {
+    var rota;
+    var titulo;
+
+    if (indice >= rotas.length) {
+      window.location.hash = hashOriginal;
+      return cfmarcQaEsperar(200).then(function () {
+        if (falhas.length === 0) {
+          return {
+            status: "PASS",
+            detail: "Rotas hash renderizaram os títulos esperados; hash original restaurado"
+          };
+        }
+        return {
+          status: "FAIL",
+          detail: "Falhas de rota: " + falhas.join("; ")
+        };
+      });
+    }
+
+    rota = rotas[indice];
+    window.location.hash = rota.hash;
+
+    return cfmarcQaEsperar(200).then(function () {
+      titulo = cfmarcQaObterTextoTituloPagina();
+      if (!cfmarcQaTituloCorresponde(titulo, rota.titulos)) {
+        falhas.push(rota.hash + " (título: \"" + titulo + "\")");
+      }
+      indice += 1;
+      return verificarProxima();
+    });
+  }
+
+  return verificarProxima();
+}
+
+window.CFMarcQA = {
+  runServiceWorkerQA: function (modo) {
+    var checks = [];
+    var modoNormalizado = String(modo || "").toLowerCase();
+    var relatorio;
+
+    function finalizar() {
+      relatorio = {
+        mode: modoNormalizado,
+        url: window.location.href,
+        generatedAt: new Date().toISOString(),
+        summary: cfmarcQaResumirChecks(checks),
+        checks: checks,
+        recommendation: cfmarcQaCalcularRecomendacao(checks, modoNormalizado)
+      };
+
+      console.table(checks);
+      console.log("CFMarc QA — recomendação:", relatorio.recommendation);
+      return relatorio;
+    }
+
+    try {
+      if (modoNormalizado !== "online" && modoNormalizado !== "offline") {
+        cfmarcQaAdicionarCheck(checks, "mode", "Modo de QA", "FAIL", "Use \"online\" ou \"offline\"");
+        return Promise.resolve(finalizar());
+      }
+
+      var urlInfo = cfmarcQaClassificarUrlAtual();
+      cfmarcQaAdicionarCheck(checks, "url-origin", "URL de publicação", urlInfo.status, urlInfo.detail);
+
+      if (window.isSecureContext) {
+        cfmarcQaAdicionarCheck(checks, "secure-context", "Contexto seguro", "PASS", "HTTPS ou localhost");
+      } else {
+        cfmarcQaAdicionarCheck(checks, "secure-context", "Contexto seguro", "FAIL", "Service Worker exige contexto seguro");
+      }
+
+      if ("serviceWorker" in navigator) {
+        cfmarcQaAdicionarCheck(checks, "sw-supported", "Service Worker suportado", "PASS", "navigator.serviceWorker disponível");
+      } else {
+        cfmarcQaAdicionarCheck(checks, "sw-supported", "Service Worker suportado", "FAIL", "API indisponível neste navegador");
+        cfmarcQaAdicionarCheck(checks, "sw-registration", "Registro do Service Worker", "NOT_EXECUTED", "API indisponível");
+        cfmarcQaAdicionarCheck(checks, "sw-scope", "Escopo /cf_marc/", "NOT_EXECUTED", "API indisponível");
+        cfmarcQaAdicionarCheck(checks, "sw-script", "Script sw.js", "NOT_EXECUTED", "API indisponível");
+        cfmarcQaAdicionarCheck(checks, "sw-controller", "Página controlada pelo SW", "NOT_EXECUTED", "API indisponível");
+        return Promise.resolve(finalizar());
+      }
+
+      return cfmarcQaBuscarRegistroServiceWorker().then(function (registro) {
+        var scriptUrl = "";
+        var worker = null;
+
+        if (registro) {
+          worker = registro.active || registro.waiting || registro.installing;
+          if (worker && worker.scriptURL) {
+            scriptUrl = worker.scriptURL;
+          }
+
+          cfmarcQaAdicionarCheck(checks, "sw-registration", "Registro do Service Worker", "PASS", "Registro encontrado");
+
+          if (registro.scope && registro.scope.indexOf("/cf_marc") !== -1) {
+            cfmarcQaAdicionarCheck(checks, "sw-scope", "Escopo /cf_marc/", "PASS", registro.scope);
+          } else {
+            cfmarcQaAdicionarCheck(checks, "sw-scope", "Escopo /cf_marc/", "FAIL", "Escopo atual: " + (registro.scope || "—"));
+          }
+
+          if (scriptUrl.indexOf("sw.js") !== -1) {
+            cfmarcQaAdicionarCheck(checks, "sw-script", "Script sw.js", "PASS", scriptUrl);
+          } else {
+            cfmarcQaAdicionarCheck(checks, "sw-script", "Script sw.js", "FAIL", "Script: " + (scriptUrl || "—"));
+          }
+        } else {
+          cfmarcQaAdicionarCheck(checks, "sw-registration", "Registro do Service Worker", "FAIL", "Nenhum registro em ./");
+          cfmarcQaAdicionarCheck(checks, "sw-scope", "Escopo /cf_marc/", "NOT_EXECUTED", "Sem registro");
+          cfmarcQaAdicionarCheck(checks, "sw-script", "Script sw.js", "NOT_EXECUTED", "Sem registro");
+        }
+
+        if (navigator.serviceWorker.controller) {
+          cfmarcQaAdicionarCheck(
+            checks,
+            "sw-controller",
+            "Página controlada pelo SW",
+            "PASS",
+            navigator.serviceWorker.controller.scriptURL
+          );
+        } else {
+          cfmarcQaAdicionarCheck(
+            checks,
+            "sw-controller",
+            "Página controlada pelo SW",
+            "WARNING",
+            "Sem controller — recarregue uma vez online e execute o QA novamente"
+          );
+        }
+
+        if ("caches" in window) {
+          cfmarcQaAdicionarCheck(checks, "caches-supported", "Cache Storage suportado", "PASS", "window.caches disponível");
+        } else {
+          cfmarcQaAdicionarCheck(checks, "caches-supported", "Cache Storage suportado", "FAIL", "API indisponível");
+          cfmarcQaAdicionarCheck(checks, "cache-exists", "Cache cfmarc-app-shell-v1", "NOT_EXECUTED", "API indisponível");
+          cfmarcQaAdicionarCheck(checks, "cache-shell-files", "Arquivos do app shell em cache", "NOT_EXECUTED", "API indisponível");
+          cfmarcQaAdicionarCheck(checks, "cache-no-json", "Cache sem JSON financeiro", "NOT_EXECUTED", "API indisponível");
+          return Promise.resolve(finalizar());
+        }
+
+        return caches.keys().then(function (nomes) {
+          var temCache = nomes.indexOf("cfmarc-app-shell-v1") !== -1;
+
+          if (temCache) {
+            cfmarcQaAdicionarCheck(checks, "cache-exists", "Cache cfmarc-app-shell-v1", "PASS", "Cache encontrado");
+          } else {
+            cfmarcQaAdicionarCheck(checks, "cache-exists", "Cache cfmarc-app-shell-v1", "FAIL", "Caches: " + nomes.join(", "));
+          }
+
+          if (!temCache) {
+            cfmarcQaAdicionarCheck(checks, "cache-shell-files", "Arquivos do app shell em cache", "NOT_EXECUTED", "Cache ausente");
+            cfmarcQaAdicionarCheck(checks, "cache-no-json", "Cache sem JSON financeiro", "NOT_EXECUTED", "Cache ausente");
+            return continuarAposCache();
+          }
+
+          return cfmarcQaLerEntradasCache("cfmarc-app-shell-v1").then(function (entradas) {
+            var temIndexOuRaiz = false;
+            var temStyles = false;
+            var temAppJs = false;
+            var jsonSuspeito = [];
+            var j;
+            var tipo;
+            var urlEntrada;
+
+            for (j = 0; j < entradas.length; j++) {
+              urlEntrada = entradas[j].url;
+              tipo = cfmarcQaClassificarEntradaCache(urlEntrada);
+
+              if (tipo === "index.html" || tipo === "root") {
+                temIndexOuRaiz = true;
+              }
+              if (tipo === "styles.css") {
+                temStyles = true;
+              }
+              if (tipo === "app.js") {
+                temAppJs = true;
+              }
+              if (cfmarcQaCacheContemJsonOuBackup(urlEntrada)) {
+                jsonSuspeito.push(urlEntrada);
+              }
+            }
+
+            if (temIndexOuRaiz && temStyles && temAppJs) {
+              cfmarcQaAdicionarCheck(
+                checks,
+                "cache-shell-files",
+                "Arquivos do app shell em cache",
+                "PASS",
+                "index.html ou raiz, styles.css e app.js presentes (" + entradas.length + " entradas)"
+              );
+            } else {
+              cfmarcQaAdicionarCheck(
+                checks,
+                "cache-shell-files",
+                "Arquivos do app shell em cache",
+                "FAIL",
+                "index/raiz=" + temIndexOuRaiz + ", styles.css=" + temStyles + ", app.js=" + temAppJs
+              );
+            }
+
+            if (jsonSuspeito.length === 0) {
+              cfmarcQaAdicionarCheck(checks, "cache-no-json", "Cache sem JSON financeiro", "PASS", "Nenhum .json ou backup no cache");
+            } else {
+              cfmarcQaAdicionarCheck(
+                checks,
+                "cache-no-json",
+                "Cache sem JSON financeiro",
+                "FAIL",
+                jsonSuspeito.join(" | ")
+              );
+            }
+
+            return continuarAposCache();
+          });
+        });
+
+        function continuarAposCache() {
+          if (modoNormalizado === "online") {
+            if (navigator.onLine === false) {
+              cfmarcQaAdicionarCheck(
+                checks,
+                "online-fetch-shell",
+                "Fetch online do app shell",
+                "NOT_EXECUTED",
+                "Navegador está offline — execute em modo online"
+              );
+            } else {
+              return cfmarcQaTestarFetchShell("online").then(function (resultados) {
+                var fetchFalhou = [];
+                var k;
+
+                for (k = 0; k < resultados.length; k++) {
+                  if (!resultados[k].ok) {
+                    fetchFalhou.push(resultados[k].arquivo + " (" + resultados[k].status + ")");
+                  }
+                }
+
+                if (fetchFalhou.length === 0) {
+                  cfmarcQaAdicionarCheck(checks, "online-fetch-shell", "Fetch online do app shell", "PASS", "index.html, styles.css e app.js OK");
+                } else {
+                  cfmarcQaAdicionarCheck(checks, "online-fetch-shell", "Fetch online do app shell", "FAIL", fetchFalhou.join("; "));
+                }
+
+                return continuarAposFetch();
+              });
+            }
+          } else {
+            cfmarcQaAdicionarCheck(
+              checks,
+              "online-fetch-shell",
+              "Fetch online do app shell",
+              "NOT_EXECUTED",
+              "Modo offline selecionado"
+            );
+          }
+
+          if (modoNormalizado === "offline") {
+            if (navigator.onLine !== false) {
+              cfmarcQaAdicionarCheck(
+                checks,
+                "offline-context",
+                "Contexto offline do navegador",
+                "NOT_EXECUTED",
+                "Defina Network > Offline no DevTools e execute novamente"
+              );
+              cfmarcQaAdicionarCheck(
+                checks,
+                "offline-fetch-shell",
+                "Fetch offline do app shell",
+                "NOT_EXECUTED",
+                "Requer navigator.onLine === false"
+              );
+            } else {
+              cfmarcQaAdicionarCheck(checks, "offline-context", "Contexto offline do navegador", "PASS", "navigator.onLine === false");
+
+              return cfmarcQaTestarFetchShell("offline").then(function (resultados) {
+                var fetchFalhou = [];
+                var k;
+
+                for (k = 0; k < resultados.length; k++) {
+                  if (!resultados[k].ok) {
+                    fetchFalhou.push(resultados[k].arquivo + " (" + resultados[k].status + ")");
+                  }
+                }
+
+                if (fetchFalhou.length === 0) {
+                  cfmarcQaAdicionarCheck(checks, "offline-fetch-shell", "Fetch offline do app shell", "PASS", "index.html, styles.css e app.js OK offline");
+                } else {
+                  cfmarcQaAdicionarCheck(checks, "offline-fetch-shell", "Fetch offline do app shell", "FAIL", fetchFalhou.join("; "));
+                }
+
+                return continuarAposFetch();
+              });
+            }
+          } else {
+            cfmarcQaAdicionarCheck(
+              checks,
+              "offline-context",
+              "Contexto offline do navegador",
+              "NOT_EXECUTED",
+              "Modo online selecionado"
+            );
+            cfmarcQaAdicionarCheck(
+              checks,
+              "offline-fetch-shell",
+              "Fetch offline do app shell",
+              "NOT_EXECUTED",
+              "Execute runServiceWorkerQA(\"offline\") com Network > Offline"
+            );
+          }
+
+          return continuarAposFetch();
+        }
+
+        function continuarAposFetch() {
+          if (window.CFMarcStorage && window.CFMarcStorage.hasLocalData) {
+            cfmarcQaAdicionarCheck(
+              checks,
+              "local-data",
+              "Dados locais (CFMarcStorage)",
+              "PASS",
+              "hasLocalData() = " + String(window.CFMarcStorage.hasLocalData())
+            );
+          } else {
+            cfmarcQaAdicionarCheck(checks, "local-data", "Dados locais (CFMarcStorage)", "NOT_EXECUTED", "CFMarcStorage indisponível");
+          }
+
+          if (window.CFMarcData && window.CFMarcData.hasConfirmedImport) {
+            cfmarcQaAdicionarCheck(
+              checks,
+              "nav-data-state",
+              "Estado de importação (CFMarcData)",
+              "PASS",
+              "hasConfirmedImport() = " + String(window.CFMarcData.hasConfirmedImport())
+            );
+          } else {
+            cfmarcQaAdicionarCheck(checks, "nav-data-state", "Estado de importação (CFMarcData)", "NOT_EXECUTED", "CFMarcData indisponível");
+          }
+
+          return cfmarcQaVerificarRotasHash().then(function (resultadoRotas) {
+            cfmarcQaAdicionarCheck(checks, "hash-routes", "Rotas hash renderizam títulos", resultadoRotas.status, resultadoRotas.detail);
+            cfmarcQaAdicionarCheck(checks, "qa-helper", "Helper QA sem erros", "PASS", "Execução concluída");
+            return finalizar();
+          });
+        }
+      });
+    } catch (erro) {
+      cfmarcQaAdicionarCheck(checks, "qa-helper", "Helper QA sem erros", "FAIL", String(erro && erro.message ? erro.message : erro));
+      return Promise.resolve(finalizar());
+    }
+  }
+};
