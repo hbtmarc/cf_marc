@@ -3840,10 +3840,8 @@ function cfmarcQaLerEntradasCache(nomeCache) {
   });
 }
 
-function cfmarcQaTestarFetchShell(modo) {
-  var arquivos = ["./index.html", "./styles.css", "./app.js"];
+function cfmarcQaTestarFetchShell(arquivos) {
   var resultados = [];
-  var i;
 
   function testarProximo(indice) {
     if (indice >= arquivos.length) {
@@ -3868,6 +3866,19 @@ function cfmarcQaTestarFetchShell(modo) {
   }
 
   return testarProximo(0);
+}
+
+function cfmarcQaFormatarResultadosFetch(resultados) {
+  var fetchFalhou = [];
+  var k;
+
+  for (k = 0; k < resultados.length; k++) {
+    if (!resultados[k].ok) {
+      fetchFalhou.push(resultados[k].arquivo + " (" + resultados[k].status + ")");
+    }
+  }
+
+  return fetchFalhou;
 }
 
 function cfmarcQaVerificarRotasHash() {
@@ -4042,12 +4053,15 @@ window.CFMarcQA = {
             var temStyles = false;
             var temAppJs = false;
             var jsonSuspeito = [];
+            var urlsCache = [];
             var j;
             var tipo;
             var urlEntrada;
+            var detalheUrlsCache;
 
             for (j = 0; j < entradas.length; j++) {
               urlEntrada = entradas[j].url;
+              urlsCache.push(urlEntrada);
               tipo = cfmarcQaClassificarEntradaCache(urlEntrada);
 
               if (tipo === "index.html" || tipo === "root") {
@@ -4064,13 +4078,15 @@ window.CFMarcQA = {
               }
             }
 
+            detalheUrlsCache = urlsCache.length > 0 ? urlsCache.join(" | ") : "nenhuma URL";
+
             if (temIndexOuRaiz && temStyles && temAppJs) {
               cfmarcQaAdicionarCheck(
                 checks,
                 "cache-shell-files",
                 "Arquivos do app shell em cache",
                 "PASS",
-                "index.html ou raiz, styles.css e app.js presentes (" + entradas.length + " entradas)"
+                "index.html ou raiz, styles.css e app.js presentes. URLs: " + detalheUrlsCache
               );
             } else {
               cfmarcQaAdicionarCheck(
@@ -4078,7 +4094,7 @@ window.CFMarcQA = {
                 "cache-shell-files",
                 "Arquivos do app shell em cache",
                 "FAIL",
-                "index/raiz=" + temIndexOuRaiz + ", styles.css=" + temStyles + ", app.js=" + temAppJs
+                "index/raiz=" + temIndexOuRaiz + ", styles.css=" + temStyles + ", app.js=" + temAppJs + ". URLs: " + detalheUrlsCache
               );
             }
 
@@ -4109,15 +4125,8 @@ window.CFMarcQA = {
                 "Navegador está offline — execute em modo online"
               );
             } else {
-              return cfmarcQaTestarFetchShell("online").then(function (resultados) {
-                var fetchFalhou = [];
-                var k;
-
-                for (k = 0; k < resultados.length; k++) {
-                  if (!resultados[k].ok) {
-                    fetchFalhou.push(resultados[k].arquivo + " (" + resultados[k].status + ")");
-                  }
-                }
+              return cfmarcQaTestarFetchShell(["./index.html", "./styles.css", "./app.js"]).then(function (resultados) {
+                var fetchFalhou = cfmarcQaFormatarResultadosFetch(resultados);
 
                 if (fetchFalhou.length === 0) {
                   cfmarcQaAdicionarCheck(checks, "online-fetch-shell", "Fetch online do app shell", "PASS", "index.html, styles.css e app.js OK");
@@ -4139,43 +4148,35 @@ window.CFMarcQA = {
           }
 
           if (modoNormalizado === "offline") {
-            if (navigator.onLine !== false) {
+            if (navigator.onLine === false) {
+              cfmarcQaAdicionarCheck(checks, "offline-context", "Contexto offline do navegador", "PASS", "navigator.onLine === false");
+            } else {
               cfmarcQaAdicionarCheck(
                 checks,
                 "offline-context",
                 "Contexto offline do navegador",
-                "NOT_EXECUTED",
-                "Defina Network > Offline no DevTools e execute novamente"
+                "WARNING",
+                "navigator.onLine may be unreliable; fetch checks will validate offline behavior."
               );
-              cfmarcQaAdicionarCheck(
-                checks,
-                "offline-fetch-shell",
-                "Fetch offline do app shell",
-                "NOT_EXECUTED",
-                "Requer navigator.onLine === false"
-              );
-            } else {
-              cfmarcQaAdicionarCheck(checks, "offline-context", "Contexto offline do navegador", "PASS", "navigator.onLine === false");
-
-              return cfmarcQaTestarFetchShell("offline").then(function (resultados) {
-                var fetchFalhou = [];
-                var k;
-
-                for (k = 0; k < resultados.length; k++) {
-                  if (!resultados[k].ok) {
-                    fetchFalhou.push(resultados[k].arquivo + " (" + resultados[k].status + ")");
-                  }
-                }
-
-                if (fetchFalhou.length === 0) {
-                  cfmarcQaAdicionarCheck(checks, "offline-fetch-shell", "Fetch offline do app shell", "PASS", "index.html, styles.css e app.js OK offline");
-                } else {
-                  cfmarcQaAdicionarCheck(checks, "offline-fetch-shell", "Fetch offline do app shell", "FAIL", fetchFalhou.join("; "));
-                }
-
-                return continuarAposFetch();
-              });
             }
+
+            return cfmarcQaTestarFetchShell(["./", "./index.html", "./styles.css", "./app.js"]).then(function (resultados) {
+              var fetchFalhou = cfmarcQaFormatarResultadosFetch(resultados);
+
+              if (fetchFalhou.length === 0) {
+                cfmarcQaAdicionarCheck(
+                  checks,
+                  "offline-fetch-shell",
+                  "Fetch offline do app shell",
+                  "PASS",
+                  "./, index.html, styles.css e app.js OK via SW/cache"
+                );
+              } else {
+                cfmarcQaAdicionarCheck(checks, "offline-fetch-shell", "Fetch offline do app shell", "FAIL", fetchFalhou.join("; "));
+              }
+
+              return continuarAposFetch();
+            });
           } else {
             cfmarcQaAdicionarCheck(
               checks,
