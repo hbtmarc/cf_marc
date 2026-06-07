@@ -58,7 +58,9 @@ function formatCurrency(valor) {
   }
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
-    currency: "BRL"
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
   }).format(Number(valor));
 }
 
@@ -2473,6 +2475,115 @@ function renderCartoesPage() {
 /* --- Roteamento --- */
 
 var mensagemConfiguracoes = "";
+var tipoMensagemConfiguracoes = "sucesso";
+
+function formatConfiguracoesDataSalva(isoString) {
+  var data;
+  var dia;
+  var mes;
+  var ano;
+  var hora;
+  var minuto;
+
+  if (!isoString) {
+    return null;
+  }
+
+  try {
+    data = new Date(isoString);
+    if (isNaN(data.getTime())) {
+      return null;
+    }
+
+    dia = data.getDate();
+    mes = data.getMonth() + 1;
+    ano = data.getFullYear();
+    hora = data.getHours();
+    minuto = data.getMinutes();
+
+    return (
+      (dia < 10 ? "0" + dia : String(dia)) + "/" +
+      (mes < 10 ? "0" + mes : String(mes)) + "/" +
+      ano +
+      " às " +
+      (hora < 10 ? "0" + hora : String(hora)) + ":" +
+      (minuto < 10 ? "0" + minuto : String(minuto))
+    );
+  } catch (e) {
+    return null;
+  }
+}
+
+function obterPeriodoConfiguracoesLabel() {
+  var periodo;
+  var meta;
+
+  if (window.CFMarcData && window.CFMarcData.getActivePeriod) {
+    periodo = window.CFMarcData.getActivePeriod();
+    if (periodo) {
+      if (periodo.label) {
+        return periodo.label;
+      }
+      return formatPeriodLabel(periodo.year, periodo.month);
+    }
+  }
+
+  if (window.CFMarcStorage && window.CFMarcStorage.getStorageMeta) {
+    meta = window.CFMarcStorage.getStorageMeta();
+    if (meta && meta.activePeriod) {
+      return formatPeriodoTexto(meta.activePeriod);
+    }
+  }
+
+  return null;
+}
+
+function renderConfiguracoesStatusHtml(temDadosLocais) {
+  var html = "";
+  var periodoLabel;
+  var dataSalva;
+  var meta;
+  var htmlDetalhes = "";
+
+  if (temDadosLocais) {
+    periodoLabel = obterPeriodoConfiguracoesLabel();
+    meta = window.CFMarcStorage.getStorageMeta();
+    dataSalva = meta && meta.savedAt ? formatConfiguracoesDataSalva(meta.savedAt) : null;
+
+    if (periodoLabel) {
+      htmlDetalhes +=
+        "<div class=\"configuracoes__status-item\">" +
+          "<p class=\"configuracoes__status-rotulo\">Período ativo</p>" +
+          "<p class=\"configuracoes__status-valor\">" + escapeHtml(periodoLabel) + "</p>" +
+        "</div>";
+    }
+
+    if (dataSalva) {
+      htmlDetalhes +=
+        "<div class=\"configuracoes__status-item\">" +
+          "<p class=\"configuracoes__status-rotulo\">Última atualização</p>" +
+          "<p class=\"configuracoes__status-valor\">" + escapeHtml(dataSalva) + "</p>" +
+        "</div>";
+    }
+
+    html =
+      "<div class=\"configuracoes__status configuracoes__status--salvo\">" +
+        "<h3 class=\"configuracoes__status-titulo\">Arquivo financeiro salvo</h3>" +
+        (htmlDetalhes ? "<div class=\"configuracoes__status-detalhes\">" + htmlDetalhes + "</div>" : "") +
+        "<p class=\"configuracoes__status-texto\">Este arquivo está salvo somente neste navegador.</p>" +
+        "<a href=\"#/importar\" class=\"btn btn--secundario configuracoes__status-cta\">Atualizar arquivo</a>" +
+      "</div>";
+  } else {
+    html =
+      "<div class=\"configuracoes__status configuracoes__status--vazio\">" +
+        "<h3 class=\"configuracoes__status-titulo\">Nenhum arquivo salvo</h3>" +
+        "<p class=\"configuracoes__status-texto\">Importe um arquivo financeiro para manter os dados disponíveis após atualizar a página.</p>" +
+        "<a href=\"#/importar\" class=\"btn btn--secundario configuracoes__status-cta\">Importar arquivo</a>" +
+      "</div>";
+  }
+
+  return html;
+}
 
 function restaurarDadosLocais() {
   var payload;
@@ -2493,15 +2604,96 @@ function restaurarDadosLocais() {
     : new Date().toISOString();
 }
 
+function obterNomeArquivoBackup() {
+  var agora = new Date();
+  var ano = agora.getFullYear();
+  var mes = agora.getMonth() + 1;
+  var dia = agora.getDate();
+
+  return (
+    "cfmarc-backup-" +
+    ano + "-" +
+    (mes < 10 ? "0" + mes : String(mes)) + "-" +
+    (dia < 10 ? "0" + dia : String(dia)) +
+    ".json"
+  );
+}
+
+function exportarBackupLocal() {
+  var payload;
+  var jsonTexto;
+  var blob;
+  var url;
+  var link;
+
+  if (!window.CFMarcStorage || !window.CFMarcStorage.hasLocalData()) {
+    tipoMensagemConfiguracoes = "erro";
+    mensagemConfiguracoes = "Não foi possível exportar o backup.";
+    renderConfiguracoesPage();
+    return;
+  }
+
+  try {
+    payload = window.CFMarcStorage.loadImportedData();
+    if (!payload || !payload.importedData) {
+      tipoMensagemConfiguracoes = "erro";
+      mensagemConfiguracoes = "Não foi possível exportar o backup.";
+      renderConfiguracoesPage();
+      return;
+    }
+
+    jsonTexto = JSON.stringify(payload.importedData, null, 2);
+    blob = new Blob([jsonTexto], { type: "application/json" });
+    url = URL.createObjectURL(blob);
+    link = document.createElement("a");
+    link.href = url;
+    link.download = obterNomeArquivoBackup();
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    tipoMensagemConfiguracoes = "sucesso";
+    mensagemConfiguracoes = "Backup exportado.";
+    renderConfiguracoesPage();
+  } catch (e) {
+    tipoMensagemConfiguracoes = "erro";
+    mensagemConfiguracoes = "Não foi possível exportar o backup.";
+    renderConfiguracoesPage();
+  }
+}
+
 function renderConfiguracoesPage() {
   var secao = SECOES.configuracoes;
-  var htmlSucesso = "";
+  var htmlFeedback = "";
+  var htmlBackup = "";
+  var temDadosLocais = window.CFMarcStorage && window.CFMarcStorage.hasLocalData();
+  var htmlStatus = renderConfiguracoesStatusHtml(temDadosLocais);
+  var textoLimpar = temDadosLocais
+    ? "Remove o arquivo salvo neste navegador."
+    : "Não há arquivo salvo neste navegador para remover.";
+  var atributoBotaoLimpar = temDadosLocais ? "" : " disabled";
+  var classeFeedback = tipoMensagemConfiguracoes === "erro"
+    ? "configuracoes__erro"
+    : "configuracoes__sucesso";
+  var iconeFeedback = tipoMensagemConfiguracoes === "erro"
+    ? "ph-warning-circle"
+    : "ph-check-circle";
 
   if (mensagemConfiguracoes) {
-    htmlSucesso =
-      "<div class=\"configuracoes__sucesso\" role=\"status\">" +
-        "<i class=\"ph ph-check-circle\" aria-hidden=\"true\"></i>" +
+    htmlFeedback =
+      "<div class=\"" + classeFeedback + "\" role=\"status\">" +
+        "<i class=\"ph " + iconeFeedback + "\" aria-hidden=\"true\"></i>" +
         "<span>" + escapeHtml(mensagemConfiguracoes) + "</span>" +
+      "</div>";
+  }
+
+  if (temDadosLocais) {
+    htmlBackup =
+      "<div class=\"configuracoes__backup\">" +
+        "<p class=\"configuracoes__dados-texto\">Baixe uma cópia do arquivo salvo neste navegador.</p>" +
+        "<button type=\"button\" class=\"btn btn--secundario configuracoes__btn-exportar\" id=\"btn-exportar-backup\">Exportar backup</button>" +
       "</div>";
   }
 
@@ -2512,10 +2704,12 @@ function renderConfiguracoesPage() {
         secao.titulo +
       "</h2>" +
       "<p class=\"secao__texto\">" + secao.texto + "</p>" +
-      htmlSucesso +
-      "<div class=\"configuracoes__dados-locais\">" +
-        "<p class=\"configuracoes__dados-texto\">Remove o arquivo financeiro salvo neste navegador.</p>" +
-        "<button type=\"button\" class=\"btn btn--secundario\" id=\"btn-limpar-dados-locais\">Limpar dados locais</button>" +
+      htmlFeedback +
+      htmlStatus +
+      htmlBackup +
+      "<div class=\"configuracoes__dados-locais" + (temDadosLocais ? "" : " configuracoes__dados-locais--inativo") + "\">" +
+        "<p class=\"configuracoes__dados-texto\">" + escapeHtml(textoLimpar) + "</p>" +
+        "<button type=\"button\" class=\"btn btn--secundario configuracoes__btn-limpar\" id=\"btn-limpar-dados-locais\"" + atributoBotaoLimpar + ">Limpar dados locais</button>" +
       "</div>" +
     "</section>";
 
@@ -2530,6 +2724,7 @@ function limparDadosLocais() {
   window.appState.importedData = null;
   window.appState.importConfirmed = false;
   window.appState.importedAt = null;
+  tipoMensagemConfiguracoes = "sucesso";
   mensagemConfiguracoes = "Dados locais removidos.";
 
   atualizarNavImportar();
@@ -2538,9 +2733,14 @@ function limparDadosLocais() {
 
 function vincularEventosConfiguracoes() {
   var btnLimpar = document.getElementById("btn-limpar-dados-locais");
+  var btnExportar = document.getElementById("btn-exportar-backup");
 
   if (btnLimpar) {
     btnLimpar.addEventListener("click", limparDadosLocais);
+  }
+
+  if (btnExportar) {
+    btnExportar.addEventListener("click", exportarBackupLocal);
   }
 }
 
@@ -2622,6 +2822,7 @@ function navegar() {
 
   if (rota !== "configuracoes") {
     mensagemConfiguracoes = "";
+    tipoMensagemConfiguracoes = "sucesso";
   }
 
   atualizarMenuAtivo(rota);
@@ -3252,7 +3453,6 @@ function handleJsonFileSelection(evento) {
 
   sessao.error = null;
   sessao.success = null;
-  window.appState.importConfirmed = false;
 
   if (!arquivo) {
     renderImportarPage();
