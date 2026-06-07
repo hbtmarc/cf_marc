@@ -2,7 +2,8 @@
  * CFMarc — cache do app shell (arquivos estáticos locais)
  */
 
-var CACHE_NAME = "cfmarc-app-shell-v1";
+// Bump this version whenever index.html, styles.css, app.js or shell assets change.
+var CACHE_NAME = "cfmarc-app-shell-v2";
 
 var SHELL_FILES = [
   "./",

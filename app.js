@@ -3603,8 +3603,13 @@ function registrarServiceWorker() {
     return;
   }
 
-  navigator.serviceWorker.register("./sw.js").then(function () {
+  navigator.serviceWorker.register("./sw.js").then(function (registro) {
     console.log("CFMarc: Service Worker registrado.");
+    if (registro && registro.update) {
+      registro.update().catch(function () {
+        /* atualização opcional falhou — app continua */
+      });
+    }
   }).catch(function () {
     console.log("CFMarc: Service Worker não registrado.");
   });
@@ -3620,6 +3625,8 @@ window.addEventListener("hashchange", navegar);
 window.addEventListener("DOMContentLoaded", iniciarApp);
 
 /* --- QA interno (console) — Service Worker --- */
+
+var CFMARC_SHELL_CACHE_QA = "cfmarc-app-shell-v2";
 
 function cfmarcQaEsperar(ms) {
   return new Promise(function (resolve) {
@@ -3698,6 +3705,12 @@ function cfmarcQaCalcularRecomendacao(checks, modo) {
       ) {
         criticoNaoExecutado = true;
       }
+    }
+  }
+
+  for (i = 0; i < checks.length; i++) {
+    if (checks[i].id === "sw-controller" && checks[i].status === "WARNING") {
+      criticoNaoExecutado = true;
     }
   }
 
@@ -3995,7 +4008,7 @@ window.CFMarcQA = {
             "sw-controller",
             "Página controlada pelo SW",
             "WARNING",
-            "Sem controller — recarregue uma vez online e execute o QA novamente"
+            "Reload once online after SW registration, then run QA again."
           );
         }
 
@@ -4003,19 +4016,19 @@ window.CFMarcQA = {
           cfmarcQaAdicionarCheck(checks, "caches-supported", "Cache Storage suportado", "PASS", "window.caches disponível");
         } else {
           cfmarcQaAdicionarCheck(checks, "caches-supported", "Cache Storage suportado", "FAIL", "API indisponível");
-          cfmarcQaAdicionarCheck(checks, "cache-exists", "Cache cfmarc-app-shell-v1", "NOT_EXECUTED", "API indisponível");
+          cfmarcQaAdicionarCheck(checks, "cache-exists", "Cache " + CFMARC_SHELL_CACHE_QA, "NOT_EXECUTED", "API indisponível");
           cfmarcQaAdicionarCheck(checks, "cache-shell-files", "Arquivos do app shell em cache", "NOT_EXECUTED", "API indisponível");
           cfmarcQaAdicionarCheck(checks, "cache-no-json", "Cache sem JSON financeiro", "NOT_EXECUTED", "API indisponível");
           return Promise.resolve(finalizar());
         }
 
         return caches.keys().then(function (nomes) {
-          var temCache = nomes.indexOf("cfmarc-app-shell-v1") !== -1;
+          var temCache = nomes.indexOf(CFMARC_SHELL_CACHE_QA) !== -1;
 
           if (temCache) {
-            cfmarcQaAdicionarCheck(checks, "cache-exists", "Cache cfmarc-app-shell-v1", "PASS", "Cache encontrado");
+            cfmarcQaAdicionarCheck(checks, "cache-exists", "Cache " + CFMARC_SHELL_CACHE_QA, "PASS", "Cache encontrado");
           } else {
-            cfmarcQaAdicionarCheck(checks, "cache-exists", "Cache cfmarc-app-shell-v1", "FAIL", "Caches: " + nomes.join(", "));
+            cfmarcQaAdicionarCheck(checks, "cache-exists", "Cache " + CFMARC_SHELL_CACHE_QA, "FAIL", "Caches: " + nomes.join(", "));
           }
 
           if (!temCache) {
@@ -4024,7 +4037,7 @@ window.CFMarcQA = {
             return continuarAposCache();
           }
 
-          return cfmarcQaLerEntradasCache("cfmarc-app-shell-v1").then(function (entradas) {
+          return cfmarcQaLerEntradasCache(CFMARC_SHELL_CACHE_QA).then(function (entradas) {
             var temIndexOuRaiz = false;
             var temStyles = false;
             var temAppJs = false;
