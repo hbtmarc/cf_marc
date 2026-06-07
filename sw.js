@@ -3,7 +3,7 @@
  */
 
 // Bump this version whenever index.html, styles.css, app.js or shell assets change.
-var CACHE_NAME = "cfmarc-app-shell-v2";
+var CACHE_NAME = "cfmarc-app-shell-v3";
 
 var SHELL_FILES = [
   "./",

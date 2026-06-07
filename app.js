@@ -3626,7 +3626,7 @@ window.addEventListener("DOMContentLoaded", iniciarApp);
 
 /* --- QA interno (console) — Service Worker --- */
 
-var CFMARC_SHELL_CACHE_QA = "cfmarc-app-shell-v2";
+var CFMARC_SHELL_CACHE_QA = "cfmarc-app-shell-v3";
 
 function cfmarcQaEsperar(ms) {
   return new Promise(function (resolve) {
