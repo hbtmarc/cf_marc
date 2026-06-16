@@ -1,0 +1,189 @@
+{
+  "schemaVersion": "cfm.import.v1",
+  "source": {
+    "institution": "Banco Fictício SA",
+    "documentType": "bank_statement",
+    "label": "Extrato de Conta Corrente — Demonstração",
+    "exportedAt": "2026-06-01T10:00:00.000Z",
+    "periodStart": "2026-06-01",
+    "periodEnd": "2026-06-30",
+    "rawHash": "sha256:a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef12",
+    "externalRef": "demo-export-2026-06-001"
+  },
+  "accounts": [
+    {
+      "id": "acc_demo_corrente",
+      "name": "Conta Corrente Demo",
+      "type": "checking",
+      "institution": "Banco Fictício SA",
+      "lastFour": "7890",
+      "currency": "BRL",
+      "isActive": true
+    },
+    {
+      "id": "acc_demo_poupanca",
+      "name": "Poupança Reserva",
+      "type": "savings",
+      "institution": "Banco Fictício SA",
+      "lastFour": "4321",
+      "currency": "BRL",
+      "isActive": true
+    }
+  ],
+  "cards": [
+    {
+      "id": "card_demo_visa",
+      "name": "Cartão Principal",
+      "brand": "visa",
+      "lastFour": "1234",
+      "closingDay": 5,
+      "dueDay": 12,
+      "limitCents": 1500000,
+      "accountId": "acc_demo_corrente"
+    },
+    {
+      "id": "card_demo_master",
+      "name": "Cartão Reserva",
+      "brand": "mastercard",
+      "lastFour": "5678",
+      "closingDay": 15,
+      "dueDay": 22,
+      "limitCents": 800000,
+      "accountId": "acc_demo_corrente"
+    }
+  ],
+  "invoices": [
+    {
+      "id": "inv_2026_06_visa",
+      "cardId": "card_demo_visa",
+      "competenceMonth": "2026-06",
+      "dueDate": "2026-06-12",
+      "totalCents": 245000,
+      "status": "open"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "tx_salario_jun",
+      "accountId": "acc_demo_corrente",
+      "description": "Salário — Empresa Fictícia Ltda",
+      "category": "renda",
+      "type": "income",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-05",
+      "amountCents": 850000,
+      "flow": "in",
+      "externalRef": "ext_sal_2026_06_001"
+    },
+    {
+      "id": "tx_salario_jun_dup",
+      "accountId": "acc_demo_corrente",
+      "description": "Salário - Empresa Fictícia Ltda",
+      "category": "renda",
+      "type": "income",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-05",
+      "amountCents": 850000,
+      "flow": "in",
+      "_note": "Possível duplicidade de tx_salario_jun — mesma data, valor e conta"
+    },
+    {
+      "id": "tx_aluguel_jun",
+      "accountId": "acc_demo_corrente",
+      "description": "Aluguel residencial",
+      "category": "moradia",
+      "type": "expense",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-10",
+      "amountCents": 220000,
+      "flow": "out",
+      "externalRef": "ext_alug_2026_06_010"
+    },
+    {
+      "id": "tx_supermercado",
+      "cardId": "card_demo_visa",
+      "description": "Supermercado Central",
+      "category": "alimentacao",
+      "type": "credit_card_purchase",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-08",
+      "amountCents": 45000,
+      "flow": "out",
+      "source": {
+        "rawHash": "sha256:demo_supermercado_2026_06_08_45000"
+      }
+    },
+    {
+      "id": "tx_transferencia_interna",
+      "accountId": "acc_demo_corrente",
+      "description": "Transferência para poupança",
+      "category": "transferencia",
+      "type": "transfer",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-15",
+      "amountCents": 100000,
+      "flow": "neutral",
+      "counterpartAccountId": "acc_demo_poupanca",
+      "review": {
+        "required": true,
+        "reason": "Verificar se é transferência interna ou resgate de investimento"
+      }
+    },
+    {
+      "id": "tx_sem_type",
+      "accountId": "acc_demo_corrente",
+      "description": "Lançamento sem tipo definido",
+      "category": "outros",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-20",
+      "amountCents": 12000,
+      "flow": "out",
+      "_note": "Campo type ausente — deve aparecer como item inválido no relatório"
+    }
+  ],
+  "installmentPlans": [
+    {
+      "id": "plan_eletro_12x",
+      "cardId": "card_demo_visa",
+      "description": "Eletrônicos — 12 parcelas",
+      "totalInstallments": 12,
+      "currentInstallment": 3,
+      "installmentAmountCents": 35000,
+      "startCompetenceMonth": "2026-04",
+      "flow": "out"
+    }
+  ],
+  "recurringRules": [
+    {
+      "id": "rec_streaming",
+      "description": "Streaming — Plano Padrão",
+      "accountId": "acc_demo_corrente",
+      "amountCents": 5590,
+      "flow": "out",
+      "frequency": "monthly",
+      "dayOfMonth": 20,
+      "category": "lazer",
+      "isActive": true
+    },
+    {
+      "id": "rec_internet",
+      "description": "Internet fibra — 300 Mbps",
+      "accountId": "acc_demo_corrente",
+      "amountCents": 9990,
+      "flow": "out",
+      "frequency": "monthly",
+      "dayOfMonth": 8,
+      "category": "servicos",
+      "isActive": true
+    }
+  ],
+  "review": {
+    "status": "pending",
+    "notes": "Arquivo de demonstração — todos os dados são fictícios. Contém casos de teste: duplicidade, revisão pendente e item inválido.",
+    "suggestedActions": [
+      "Confirmar categorias de alimentação",
+      "Revisar transferência para poupança (tx_transferencia_interna)",
+      "Definir type em tx_sem_type"
+    ]
+  }
+}

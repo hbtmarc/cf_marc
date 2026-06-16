@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Controle Financeiro Mensal — gestão premium de finanças pessoais" />
+  <title>Controle Financeiro Mensal</title>
+  <link rel="stylesheet" href="assets/css/base.css" />
+  <link rel="stylesheet" href="assets/css/layout.css" />
+  <link rel="stylesheet" href="assets/css/components.css" />
+  <link rel="stylesheet" href="assets/css/pages.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="app-sidebar" id="app-sidebar" aria-label="Menu principal">
+      <div class="brand">
+        <div class="brand__icon" aria-hidden="true">CF</div>
+        <div class="brand__text">
+          <span class="brand__title">Controle Financeiro</span>
+          <span class="brand__subtitle">Mensal</span>
+        </div>
+      </div>
+      <nav aria-label="Navegação">
+        <ul class="nav-list">
+          <li>
+            <a href="#/dashboard" class="nav-list__link is-active" data-route="/dashboard">
+              <svg class="nav-list__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+              </svg>
+              Dashboard
+            </a>
+          </li>
+          <li>
+            <a href="#/importar" class="nav-list__link" data-route="/importar">
+              <svg class="nav-list__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 19h16"/>
+              </svg>
+              Importar
+            </a>
+          </li>
+          <li>
+            <a href="#/cartoes" class="nav-list__link" data-route="/cartoes">
+              <svg class="nav-list__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>
+              </svg>
+              Cartões
+            </a>
+          </li>
+          <li>
+            <a href="#/historico" class="nav-list__link" data-route="/historico">
+              <svg class="nav-list__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+              </svg>
+              Histórico
+            </a>
+          </li>
+        </ul>
+      </nav>
+    </aside>
+
+    <div class="sidebar-overlay" id="sidebar-overlay" aria-hidden="true"></div>
+
+    <header class="app-header">
+      <div style="display:flex;align-items:center;gap:0.75rem">
+        <button type="button" class="menu-toggle" id="menu-toggle" aria-label="Abrir menu">
+          <span class="menu-toggle__bar"></span>
+        </button>
+        <h1 class="header-title" id="header-title">Dashboard</h1>
+      </div>
+      <div class="header-meta">
+        <span class="header-badge">Fase 0.3.6-B · Vínculos cartão</span>
+      </div>
+    </header>
+
+    <main class="app-main" id="app-main">
+      <div class="app-main__inner">
+        <div id="app-outlet" role="main" aria-live="polite"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Ordem obrigatória: dependências antes do bootstrap -->
+  <script src="src/app/config.example.js"></script>
+  <script src="src/store/app.store.js"></script>
+  <script src="src/utils/formatters.js"></script>
+  <script src="src/utils/validators.js"></script>
+  <script src="src/schemas/import.schema.js"></script>
+  <script src="src/config/classification-rules.example.js"></script>
+  <script src="src/config/classification-rules.local.js" onerror="window.CFM=window.CFM||{};CFM.classificationRulesLocal=CFM.classificationRulesLocal||[]"></script>
+  <script src="src/config/card-snapshots.example.js"></script>
+  <script src="src/config/card-snapshots.local.js" onerror="window.CFM=window.CFM||{};CFM.cardSnapshotsLocal=CFM.cardSnapshotsLocal||[];CFM.cardLimitOverridesLocal=CFM.cardLimitOverridesLocal||[]"></script>
+  <script src="src/services/classification-rules.service.js"></script>
+  <script src="src/services/card-snapshot.service.js"></script>
+  <script src="src/services/import.service.js"></script>
+  <script src="src/pages/dashboard.page.js"></script>
+  <script src="src/pages/importer.page.js"></script>
+  <script src="src/pages/cards.page.js"></script>
+  <script src="src/pages/history.page.js"></script>
+  <script src="src/router/router.js"></script>
+  <script src="src/app/bootstrap.js"></script>
+  <script src="assets/js/main.js"></script>
+</body>
+</html>
