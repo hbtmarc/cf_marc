@@ -414,6 +414,34 @@ Lista de verificação manual por fase.
 
 ---
 
-## Como registrar
+## Fase 0.3.6-C — Snapshot completo e conciliação de faturas
+
+### Cartões
+- [ ] Aba **Cartões** exibe limite, usado, disponível e % usado para os 4 cartões
+- [ ] BB: R$ 8.152 usado / R$ 1.848 disponível
+- [ ] Nubank: R$ 10.606 / R$ 1.844
+- [ ] Porto: R$ 14.092,03 / R$ 2.107,97
+- [ ] Mercado Pago: R$ 364,97 / R$ 135,03
+- [ ] Fonte do snapshot visível (Snapshot local / JSON)
+- [ ] “Snapshot consistente” quando usado + disponível ≈ limite
+- [ ] Cartão sem `last4` real **não** mostra `···0000`; mostra “final não informado” ou só o nome
+
+### Faturas / conciliação
+- [ ] Diferenças falsas (soma fora do escopo) **não** aparecem como alerta crítico
+- [ ] Mensagem “Conciliação parcial — nem todas as transações…” quando escopo incompleto
+- [ ] Mercado Pago 2026-05: saldo credor R$ 7,49 sem alerta falso por `amountDueCents: 0`
+- [ ] Pagamentos de fatura, stubs e parcelas futuras **não** entram na soma de compras vinculadas
+
+### Recorrências
+- [ ] Resumo: total + breakdown (JSON / regra pessoal / candidatas)
+- [ ] Badge da aba Recorrências = total reconhecido (não só JSON)
+
+### Geral
+- [ ] JSON real: 206 válidos, 0 inválidos
+- [ ] Console sem erros e sem dump de valores financeiros
+- [ ] Nada gravado; Firebase/Auth/RTDB ausentes
+
+---
+
 
 Atualizar tabela de critérios em `STATUS_DO_PROJETO.md` ao concluir cada fase.

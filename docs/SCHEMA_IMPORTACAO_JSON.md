@@ -93,6 +93,55 @@ Rastreabilidade da origem **sem dados sensíveis**.
 | `confidence` | enum | `high`, `medium`, `low` |
 | `review.required` | boolean | Revisão se dados ambíguos |
 
+### Entidade enriquecida na UI (Fase 0.3.6-C)
+
+Após merge JSON + overlay local, cada cartão expõe:
+
+| Campo | Descrição |
+|-------|-----------|
+| `limitCents` | Limite efetivo |
+| `usedCents` | Utilizado no snapshot |
+| `availableCents` | Disponível no snapshot |
+| `usagePercent` | Percentual usado |
+| `snapshotSource` | `import_json`, `snapshot_local`, `limit_override_local` |
+| `snapshotMonth` | Mês do snapshot aplicado |
+| `snapshotDate` | Data do snapshot (se existir) |
+| `snapshotConsistent` | `true` se `usedCents + availableCents ≈ limitCents` |
+
+> `lastFour` placeholder (`0000`) não é exibido na UI.
+
+---
+
+## Conciliação de faturas (Fase 0.3.6-C)
+
+Função local: `buildInvoiceReconciliation(invoice, transactions, context)`.
+
+Transações **incluídas** quando:
+
+- `invoiceExternalRef` / `invoiceId` coincide com a fatura; **e**
+- `competenceMonth` da transação = competência da fatura (quando ambos presentes).
+
+Transações **excluídas**:
+
+- Pagamento de fatura (`credit_card_payment`)
+- Saldo credor / receita indevida em fatura credora
+- Stub / `referenceOnly`
+- Parcelas futuras ou `status: planned|scheduled`
+- Transações do cartão no mês **sem** vínculo explícito à fatura (geram conciliação parcial)
+
+Campos de saída:
+
+| Campo | Descrição |
+|-------|-----------|
+| `invoiceTotalCents` | `amountDueCents` ou `totalCents` |
+| `linkedPurchasesCents` | Compras vinculadas |
+| `linkedFeesCents` | Tarifas |
+| `linkedRefundsCents` | Estornos |
+| `linkedPaymentsCents` | Pagamentos (informativo, fora da soma de compras) |
+| `creditBalanceCents` | Saldo credor da fatura (não é receita) |
+| `reconciliationDeltaCents` | Diferença quando confiança alta |
+| `confidence` | `high`, `partial`, `low`, `n/a` |
+
 ---
 
 ## `invoices[]`

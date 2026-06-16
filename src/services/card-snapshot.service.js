@@ -154,16 +154,86 @@ window.CFM = window.CFM || {};
     return false;
   }
 
+  function isPlaceholderLastFour(lastFour) {
+    var s = String(lastFour || "").trim();
+    if (!s) return true;
+    if (/^0+$/.test(s)) return true;
+    if (s.length !== 4) return true;
+    return false;
+  }
+
+  function formatLastFourDisplay(lastFour) {
+    if (isPlaceholderLastFour(lastFour)) return null;
+    return String(lastFour).trim();
+  }
+
+  function validateSnapshotConsistency(limitCents, usedCents, availableCents) {
+    if (limitCents == null || usedCents == null || availableCents == null) {
+      return { consistent: null, deltaCents: 0, message: "" };
+    }
+    var sum = usedCents + availableCents;
+    var delta = Math.abs(sum - limitCents);
+    if (delta <= 1) {
+      return { consistent: true, deltaCents: delta, message: "Snapshot consistente" };
+    }
+    return {
+      consistent: false,
+      deltaCents: delta,
+      message: "Snapshot inconsistente — usado + disponível difere do limite em " + delta + " centavos"
+    };
+  }
+
   function resolveCardSnapshot(card, snapshots, snapshotMonth) {
-    var month = snapshotMonth || "";
-    var best = null;
+    var withMonth = null;
+    var anyMonth  = null;
     (snapshots || []).forEach(function (snap) {
       if (!cardMatchesEntry(card, snap)) return;
-      if (month && snap.snapshotMonth && snap.snapshotMonth !== month) return;
-      if (!best || (snap.confidence === "high" && best.confidence !== "high")) best = snap;
-      else if (!best) best = snap;
+      if (!anyMonth || (snap.confidence === "high" && anyMonth.confidence !== "high")) {
+        anyMonth = snap;
+      }
+      if (snapshotMonth && snap.snapshotMonth === snapshotMonth) {
+        if (!withMonth || (snap.confidence === "high" && withMonth.confidence !== "high")) {
+          withMonth = snap;
+        }
+      }
     });
-    return best;
+    return withMonth || anyMonth;
+  }
+
+  function mergeSnapshotOntoCard(card, snap, ov) {
+    var limitCents = snap && snap.limitCents != null ? snap.limitCents : (card.limitCents || 0);
+    if (ov && ov.limitCents != null) limitCents = ov.limitCents;
+
+    var usedCents = snap && snap.usedCents != null ? snap.usedCents : null;
+    var availableCents = snap && snap.availableCents != null ? snap.availableCents : null;
+
+    if (usedCents == null && availableCents != null && limitCents) {
+      usedCents = Math.max(0, limitCents - availableCents);
+    }
+    if (availableCents == null && usedCents != null && limitCents) {
+      availableCents = Math.max(0, limitCents - usedCents);
+    }
+
+    var snapshotSource = "import_json";
+    if (snap) snapshotSource = "snapshot_local";
+    else if (ov) snapshotSource = "limit_override_local";
+
+    var consistency = validateSnapshotConsistency(limitCents, usedCents, availableCents);
+
+    return {
+      limitCents:       limitCents,
+      usedCents:        usedCents,
+      availableCents:   availableCents,
+      usagePercent:     usedCents != null ? pctUsed(usedCents, limitCents) : null,
+      snapshotSource:   snapshotSource,
+      snapshotMonth:    snap ? snap.snapshotMonth : "",
+      snapshotDate:     snap ? snap.snapshotDate : "",
+      snapshotConfidence: snap ? snap.confidence : (ov ? "high" : "import"),
+      hasSnapshot:      !!(snap || ov),
+      limitFromOverlay: !!(snap || ov),
+      snapshotConsistent: consistency.consistent,
+      snapshotConsistencyMessage: consistency.message
+    };
   }
 
   function resolveCardAliases(card, snapshots, invoices, transactions, registry) {
@@ -215,46 +285,26 @@ window.CFM = window.CFM || {};
         if (cardMatchesEntry(card, o)) ov = o;
       });
 
-      var limitCents = snap ? snap.limitCents : (card.limitCents || 0);
-      if (ov && ov.limitCents != null) limitCents = ov.limitCents;
+      var merged = mergeSnapshotOntoCard(card, snap, ov);
+      var lastFour = formatLastFourDisplay(card.lastFour || card.last4);
 
-      var usedCents = snap ? snap.usedCents : null;
-      var availableCents = snap ? snap.availableCents : null;
-
-      if (usedCents == null && availableCents != null && limitCents) {
-        usedCents = Math.max(0, limitCents - availableCents);
-      }
-      if (availableCents == null && usedCents != null && limitCents) {
-        availableCents = Math.max(0, limitCents - usedCents);
-      }
-
-      var limitSource = "import_json";
-      if (snap) limitSource = "snapshot_local";
-      else if (ov) limitSource = "limit_override_local";
-      if (snap && ov && ov.limitCents != null) limitSource = "snapshot_local";
-
-      return {
+      return Object.assign({
         id:              card.id || "",
         externalRef:     card.externalRef || card.id || "",
         canonicalKey:    card.canonicalKey || "",
         name:            String(card.name || "").substring(0, 60),
         brand:           card.brand || "",
-        lastFour:        card.lastFour || card.last4 || "",
+        lastFour:        lastFour || "",
+        lastFourDisplay: lastFour ? ("···" + lastFour) : "",
+        lastFourMissing: !lastFour,
         issuer:          card.issuer || card.institution || "",
         closingDay:      card.closingDay || null,
         dueDay:          card.dueDay || null,
-        isActive:        card.isActive !== false,
-        limitCents:      limitCents,
-        usedCents:       usedCents,
-        availableCents:  availableCents,
-        usedPercent:     usedCents != null ? pctUsed(usedCents, limitCents) : null,
-        hasSnapshot:     !!(snap || ov),
-        snapshotMonth:   snap ? snap.snapshotMonth : snapshotMonth,
-        snapshotDate:    snap ? snap.snapshotDate : "",
-        limitSource:     limitSource,
-        snapshotConfidence: snap ? snap.confidence : (ov ? "high" : "import"),
-        limitFromOverlay: !!(snap || ov)
-      };
+        isActive:        card.isActive !== false
+      }, merged, {
+        usedPercent: merged.usagePercent,
+        limitSource: merged.snapshotSource
+      });
     });
   }
 
@@ -315,6 +365,163 @@ window.CFM = window.CFM || {};
     });
   }
 
+  function getInvoiceRefKeys(invoice) {
+    if (!invoice) return [];
+    var keys = [];
+    ["id", "externalRef", "invoiceExternalRef"].forEach(function (f) {
+      if (invoice[f]) keys.push(String(invoice[f]));
+    });
+    return keys;
+  }
+
+  function txMatchesInvoiceRef(tx, invRefKeys) {
+    if (!tx || !invRefKeys.length) return false;
+    var txRef = tx.invoiceId || tx.invoiceExternalRef || "";
+    if (!txRef) return false;
+    return invRefKeys.indexOf(String(txRef)) >= 0;
+  }
+
+  function isPlannedOrFutureTx(tx, invMonth) {
+    if (!tx) return true;
+    if (tx.status === "planned" || tx.status === "scheduled") return true;
+    if (invMonth && tx.competenceMonth && tx.competenceMonth > invMonth) return true;
+    return false;
+  }
+
+  function isOutOfScopeReconciliationTx(tx, invMonth) {
+    if (!tx) return true;
+    if (tx.isStub || tx.referenceOnly) return true;
+    if (tx.type === "credit_card_payment") return true;
+    if (tx.subtype === "credit_balance" || tx.type === "credit_balance") return true;
+    if (isPlannedOrFutureTx(tx, invMonth)) return true;
+    if (tx.installment && tx.installment.current && tx.installment.total) {
+      var cur = Number(tx.installment.current);
+      var tot = Number(tx.installment.total);
+      if (cur > 0 && tot > 0 && cur > tot) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Conciliação de fatura — apenas transações no escopo correto.
+   */
+  function buildInvoiceReconciliation(invoice, transactions, context) {
+    var ctx = context || {};
+    var registry = ctx.registry || { resolveCardId: function (r) { return r; } };
+    var isReference = !!(invoice.isStub || invoice.referenceOnly);
+    var invRefKeys = getInvoiceRefKeys(invoice);
+    var invMonth = invoice.competenceMonth || "";
+    var rawCardRef = invoice.cardId || invoice.cardExternalRef || "";
+    var resolvedCardId = registry.resolveCardId
+      ? registry.resolveCardId(rawCardRef) : rawCardRef;
+
+    var empty = {
+      invoiceTotalCents: invoice.amountDueCents != null ? invoice.amountDueCents : (invoice.totalCents || 0),
+      linkedPurchasesCents: 0,
+      linkedFeesCents: 0,
+      linkedRefundsCents: 0,
+      linkedPaymentsCents: 0,
+      creditBalanceCents: invoice.creditBalanceCents || 0,
+      reconciliationDeltaCents: 0,
+      confidence: "n/a",
+      isPartial: false,
+      linkedCount: 0,
+      linkedTxIndexes: [],
+      message: ""
+    };
+
+    if (isReference) {
+      empty.message = "Fatura de referência — sem conciliação consolidada.";
+      return empty;
+    }
+
+    var hasCredit = invoice.balanceDirection === "credit" &&
+      (invoice.creditBalanceCents || 0) > 0;
+
+    var linked = [];
+    var sameCardSameMonthWithoutRef = 0;
+
+    (transactions || []).forEach(function (tx, index) {
+      if (!tx) return;
+      var txCardRef = tx.cardId || tx.cardExternalRef || "";
+      var txCardResolved = registry.resolveCardId(txCardRef, tx.description);
+      var sameCard = resolvedCardId && txCardResolved === resolvedCardId;
+      var sameMonth = !invMonth || !tx.competenceMonth || tx.competenceMonth === invMonth;
+
+      if (sameCard && sameMonth && !txMatchesInvoiceRef(tx, invRefKeys)) {
+        if (tx.type === "credit_card_purchase" || tx.type === "expense") {
+          sameCardSameMonthWithoutRef++;
+        }
+      }
+
+      if (!txMatchesInvoiceRef(tx, invRefKeys)) return;
+      if (!sameMonth) return;
+      if (isOutOfScopeReconciliationTx(tx, invMonth)) return;
+      if (hasCredit && tx.type === "income" && tx.flow === "in") return;
+
+      linked.push({ tx: tx, index: index });
+    });
+
+    var purchases = 0, fees = 0, refunds = 0, payments = 0;
+    linked.forEach(function (item) {
+      var tx = item.tx;
+      if (tx.type === "credit_card_payment") {
+        payments += tx.amountCents || 0;
+      } else if (tx.type === "refund") {
+        refunds += tx.amountCents || 0;
+      } else if (tx.type === "fee") {
+        fees += tx.amountCents || 0;
+      } else if (tx.flow === "out" || tx.type === "credit_card_purchase" || tx.type === "expense") {
+        purchases += tx.amountCents || 0;
+      }
+    });
+
+    var invoiceTotal = invoice.amountDueCents != null
+      ? invoice.amountDueCents
+      : (invoice.totalCents || 0);
+    var linkedOutflow = purchases + fees - refunds;
+    var delta = invoiceTotal - linkedOutflow;
+
+    var isPartial = linked.length === 0 ||
+      sameCardSameMonthWithoutRef > 0 ||
+      (invRefKeys.length === 0);
+
+    var confidence = "high";
+    if (linked.length === 0) confidence = "low";
+    else if (isPartial) confidence = "partial";
+
+    if (hasCredit) {
+      delta = 0;
+      isPartial = linked.length === 0 && sameCardSameMonthWithoutRef > 0;
+    }
+
+    var message = "";
+    if (hasCredit) {
+      message = "Saldo credor — não entra na conciliação de compras.";
+    } else if (isPartial && confidence !== "high") {
+      message = "Conciliação parcial — nem todas as transações da fatura estão presentes no JSON.";
+    } else if (Math.abs(delta) <= 1 && linked.length > 0) {
+      message = "Conciliação consistente.";
+    }
+
+    return {
+      invoiceTotalCents: invoiceTotal,
+      linkedPurchasesCents: purchases,
+      linkedFeesCents: fees,
+      linkedRefundsCents: refunds,
+      linkedPaymentsCents: payments,
+      creditBalanceCents: invoice.creditBalanceCents || 0,
+      reconciliationDeltaCents: hasCredit ? 0 : delta,
+      confidence: confidence,
+      isPartial: isPartial,
+      linkedCount: linked.length,
+      linkedTxIndexes: linked.map(function (l) { return l.index; }),
+      hasCredit: hasCredit,
+      message: message,
+      sameCardOrphanCount: sameCardSameMonthWithoutRef
+    };
+  }
+
   function groupInvoices(allInvoices) {
     var groups = {
       consolidated: [],
@@ -345,9 +552,13 @@ window.CFM = window.CFM || {};
     resolveCardAliases:     resolveCardAliases,
     getEntityCardRef:       getEntityCardRef,
     loadLocalSnapshots:     loadLocalSnapshots,
-    buildCardSummaries:     buildCardSummaries,
-    attachCardLinks:        attachCardLinks,
-    groupInvoices:          groupInvoices,
+    buildCardSummaries:           buildCardSummaries,
+    attachCardLinks:              attachCardLinks,
+    groupInvoices:                groupInvoices,
+    buildInvoiceReconciliation:   buildInvoiceReconciliation,
+    validateSnapshotConsistency:  validateSnapshotConsistency,
+    formatLastFourDisplay:        formatLastFourDisplay,
+    isPlaceholderLastFour:        isPlaceholderLastFour,
     cardMatchesEntry:       cardMatchesEntry,
     detectCanonicalKey:     detectCanonicalKey,
     entityBelongsToCard:    entityBelongsToCard

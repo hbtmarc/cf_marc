@@ -568,18 +568,6 @@ window.CFM = window.CFM || {};
       if (inv && inv.invoiceExternalRef) invoiceMap[inv.invoiceExternalRef] = inv;
     });
 
-    /* ── Transações vinculadas por fatura ── */
-    var invoiceTxMap = {};
-    transactions.forEach(function (tx) {
-      if (!tx) return;
-      var invKey = tx.invoiceId || tx.invoiceExternalRef;
-      if (!invKey) return;
-      var inv = invoiceMap[invKey];
-      var bucket = inv ? (inv.id || invKey) : invKey;
-      if (!invoiceTxMap[bucket]) invoiceTxMap[bucket] = [];
-      invoiceTxMap[bucket].push(tx);
-    });
-
     /* ── Itens inválidos por índice ── */
     var invalidIndexes = {};
     validation.itemErrors.forEach(function (e) { invalidIndexes[e.index] = true; });
@@ -762,7 +750,9 @@ window.CFM = window.CFM || {};
         cardId:           resolvedCardId || rawCardRef || "",
         cardExternalRef:  tx.cardExternalRef || "",
         cardName:         card.name     || rawCardRef || "",
-        cardLastFour:     card.lastFour || "",
+        cardLastFour:     css.formatLastFourDisplay
+          ? (css.formatLastFourDisplay(card.lastFour || card.last4) || "")
+          : (card.lastFour || ""),
         invoiceId:        tx.invoiceId || tx.invoiceExternalRef || "",
         installmentPlanId:tx.installmentPlanId || tx.installmentPlanExternalRef || "",
         category:         tx.category   || "",
@@ -787,18 +777,31 @@ window.CFM = window.CFM || {};
     }).filter(Boolean);
 
     /* ── allInvoices (com conciliação) ── */
+    var reconContext = { registry: cardRegistry };
     var allInvoices = invoices.map(function (inv, i) {
       if (!inv || typeof inv !== "object") return null;
       var rawCardRef = inv.cardId || inv.cardExternalRef || "";
       var resolvedCardId = cardRegistry.resolveCardId(rawCardRef);
       var card       = cardMap[resolvedCardId] || cardMap[rawCardRef] || {};
       var invKey     = inv.id || inv.externalRef || inv.invoiceExternalRef || "";
-      var linkedTxs  = invoiceTxMap[invKey] || invoiceTxMap[inv.id] || [];
-      var linkedSum  = linkedTxs.reduce(function (s, tx) { return s + (tx.amountCents || 0); }, 0);
-      var diffCents  = (inv.totalCents || 0) - linkedSum;
       var hasCredit  = inv.balanceDirection === "credit" && (inv.creditBalanceCents || 0) > 0;
       var isReference = !!(inv.isStub || inv.referenceOnly);
       var amountDue  = inv.amountDueCents != null ? inv.amountDueCents : inv.totalCents;
+
+      var recon = css.buildInvoiceReconciliation
+        ? css.buildInvoiceReconciliation(inv, transactions, reconContext)
+        : null;
+
+      var linkedCount = recon ? recon.linkedCount : 0;
+      var diffCents   = recon ? recon.reconciliationDeltaCents : 0;
+      var isPartial   = recon ? recon.isPartial : false;
+      var confidence  = recon ? recon.confidence : "n/a";
+      var hasRealGap  = !isReference && !hasCredit && confidence === "high" &&
+                        !isPartial && linkedCount > 0 && Math.abs(diffCents) > 1;
+
+      var cardLastFour = css.formatLastFourDisplay
+        ? css.formatLastFourDisplay(card.lastFour || card.last4)
+        : (card.lastFour || "");
 
       return {
         index:              i,
@@ -808,7 +811,8 @@ window.CFM = window.CFM || {};
         cardExternalRef:    inv.cardExternalRef || "",
         cardName:           card.name || rawCardRef || "",
         cardBrand:          card.brand      || "",
-        cardLastFour:       card.lastFour   || "",
+        cardLastFour:       cardLastFour || "",
+        cardLastFourMissing: !cardLastFour,
         competenceMonth:    inv.competenceMonth || "",
         competenceFmt:      fmonth(inv.competenceMonth || ""),
         status:             inv.status  || "",
@@ -830,12 +834,19 @@ window.CFM = window.CFM || {};
         creditBalanceCents: inv.creditBalanceCents || 0,
         creditBalanceFmt:   fcents(inv.creditBalanceCents || 0),
         creditBehavior:     inv.creditBehavior || "",
-        linkedTransactionCount: linkedTxs.length,
-        linkedSumCents:     linkedSum,
-        linkedSumFmt:       fcents(linkedSum),
+        linkedTransactionCount: linkedCount,
+        linkedPurchasesCents: recon ? recon.linkedPurchasesCents : 0,
+        linkedPurchasesFmt: fcents(recon ? recon.linkedPurchasesCents : 0),
+        linkedFeesCents:    recon ? recon.linkedFeesCents : 0,
+        linkedRefundsCents: recon ? recon.linkedRefundsCents : 0,
+        linkedPaymentsCents: recon ? recon.linkedPaymentsCents : 0,
+        reconciliationDeltaCents: diffCents,
         reconciliationDiff: diffCents,
         reconciliationDiffFmt: fcents(Math.abs(diffCents)),
-        hasReconciliationGap: !isReference && linkedTxs.length > 0 && Math.abs(diffCents) > 0
+        reconciliationConfidence: confidence,
+        reconciliationPartial: isPartial,
+        reconciliationMessage: recon ? recon.message : "",
+        hasReconciliationGap: hasRealGap
       };
     }).filter(Boolean);
 
@@ -866,7 +877,9 @@ window.CFM = window.CFM || {};
         cardId:           resolvedCardId || rawCardRef || "",
         cardExternalRef:  plan.cardExternalRef || "",
         cardName:         card.name    || rawCardRef || "",
-        cardLastFour:     card.lastFour|| "",
+        cardLastFour:     css.formatLastFourDisplay
+          ? (css.formatLastFourDisplay(card.lastFour || card.last4) || "")
+          : (card.lastFour || ""),
         isInvoiceInstallment: kind === "invoice_installment",
         isFinancing:      kind === "financing",
         source:           "imported_json",
@@ -916,6 +929,17 @@ window.CFM = window.CFM || {};
       };
     }).filter(Boolean);
 
+    var recurringImportedCount = allRecurringRules.filter(function (r) {
+      return r.recurrenceKind === "imported";
+    }).length;
+    var recurringFromRulesCount = allRecurringRules.filter(function (r) {
+      return r.recurrenceKind === "personal_rule";
+    }).length;
+    var recurringCandidatesCount = allRecurringRules.filter(function (r) {
+      return r.recurrenceKind === "candidate";
+    }).length;
+    var recurringTotalCount = allRecurringRules.length;
+
     /* ── allAccounts ── */
     var allAccounts = accounts.map(function (acc) {
       if (!acc) return null;
@@ -945,14 +969,18 @@ window.CFM = window.CFM || {};
       : cardSummaries;
 
     cardSummaries = cardSummaries.map(function (card) {
-      var srcLabel = card.limitSource === "snapshot_local" ? "Snapshot local" :
-                     card.limitSource === "limit_override_local" ? "Override local" : "JSON";
+      var srcLabel = card.snapshotSource === "snapshot_local" ? "Snapshot local" :
+                     card.snapshotSource === "limit_override_local" ? "Override local" : "JSON";
+      var pct = card.usagePercent != null ? card.usagePercent : card.usedPercent;
       return Object.assign({}, card, {
         limitFmt:      fcents(card.limitCents || 0),
         usedFmt:       card.usedCents != null ? fcents(card.usedCents) : "—",
         availableFmt:  card.availableCents != null ? fcents(card.availableCents) : "—",
-        usedPercentLabel: card.usedPercent != null ? card.usedPercent + "%" : "—",
+        usedPercent:   pct,
+        usagePercentLabel: pct != null ? pct + "%" : "—",
+        usedPercentLabel: pct != null ? pct + "%" : "—",
         limitSourceLabel: srcLabel,
+        snapshotSourceLabel: srcLabel,
         consolidatedInvoiceTotalFmt: fcents(card.consolidatedInvoiceTotalCents || 0),
         purchaseTotalFmt: fcents(card.purchaseTotalCents || 0),
         futureInstallmentTotalFmt: fcents(card.futureInstallmentTotalCents || 0)
@@ -999,6 +1027,11 @@ window.CFM = window.CFM || {};
         transactions:      transactions.length,
         installmentPlans:  installmentPlans.length,
         recurringRules:    recurringRules.length,
+        recurringImported: recurringImportedCount,
+        recurringFromRules: recurringFromRulesCount,
+        recurringCandidates: recurringCandidatesCount,
+        recurringTotal:    recurringTotalCount,
+        recognizedRecurrences: recognizedRecurrences.length,
         valid:             validCount,
         invalid:           invalidCount,
         pendingReview:     reducedReview.manualReview.length,
@@ -1006,7 +1039,6 @@ window.CFM = window.CFM || {};
         autoResolved:      reducedReview.autoResolved.length,
         ruleClassified:    personalRulesCount,
         ruleResolved:      (reducedReview.ruleResolved || []).length,
-        recognizedRecurrences: recognizedRecurrences.length,
         recognizedFinancing:   financingCount,
         criticalReview:    criticalReviewCount,
         importantReview:   importantReviewCount,

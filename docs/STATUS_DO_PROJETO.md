@@ -621,3 +621,47 @@ A estrutura da 0.3.6 existia, mas vínculos falhavam por `cardExternalRef` ≠ `
 | 11 | Revisão efetiva no filtro | ✅ |
 | 12–13 | BMI/Protev/Pan fora de candidatos | ✅ |
 | 14–15 | Sem Firebase/persistência | ✅ |
+
+---
+
+## Fase 0.3.6-C — Snapshot completo e conciliação correta de faturas
+
+**Data:** 15/06/2026 | **Estado:** ✅ Concluída
+
+### Problema corrigido
+
+A aba Cartões exibia `Usado: —` / `Disponível: —` quando o snapshot local não batia o mês do `periodEnd` ou só aplicava `limitCents`. A aba Faturas somava transações fora do escopo (outras competências, parcelas futuras, pagamentos), gerando diferenças falsas. Contadores de recorrência divergiam entre resumo (17) e badge da aba (9). Cartões sem `last4` real apareciam como `···0000`.
+
+### Correções
+
+| Área | Correção |
+|------|----------|
+| Snapshot merge | `mergeSnapshotOntoCard` expõe `limitCents`, `usedCents`, `availableCents`, `usagePercent`, `snapshotSource`, `snapshotMonth`, `snapshotDate` |
+| Fallback mês | `resolveCardSnapshot` tenta mês do período e faz fallback para qualquer mês do mesmo cartão |
+| Consistência | Valida `used + available ≈ limit`; exibe “Snapshot consistente” ou aviso |
+| Aba Cartões | Limite, usado, disponível, % usado e fonte do snapshot obrigatórios |
+| `last4` | Placeholder `0000` oculto; exibe “final não informado” quando ausente |
+| Conciliação | `buildInvoiceReconciliation(invoice, transactions, context)` — escopo por `invoiceExternalRef`, competência, exclusão de pagamento/stub/saldo credor/parcelas futuras |
+| Mercado Pago | Saldo credor R$ 7,49 não gera alerta falso; `amountDueCents: 0` OK |
+| Recorrências | Contadores: JSON / regra pessoal / candidatas / total; badge alinhado ao total |
+
+### Valores esperados (snapshot local)
+
+| Cartão | Limite | Usado | Disponível |
+|--------|--------|-------|------------|
+| BB Platinum | R$ 10.000,00 | R$ 8.152,00 | R$ 1.848,00 |
+| Nubank | R$ 12.450,00 | R$ 10.606,00 | R$ 1.844,00 |
+| Porto | R$ 16.200,00 | R$ 14.092,03 | R$ 2.107,97 |
+| Mercado Pago | R$ 500,00 | R$ 364,97 | R$ 135,03 |
+
+### Critérios de aceite — Fase 0.3.6-C
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | 206 válidos / 0 inválidos | ✅ (validação local) |
+| 2–6 | Usado/disponível nos 4 cartões | ✅ |
+| 7 | Sem `···0000` enganoso | ✅ |
+| 8–9 | Faturas sem diferenças falsas; MP sem alerta credor | ✅ |
+| 10 | Conciliação parcial quando escopo incompleto | ✅ |
+| 11 | Contadores de recorrência consistentes/explicados | ✅ |
+| 12–14 | Sem persistência, Firebase, vazamento | ✅ |

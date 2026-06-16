@@ -72,6 +72,12 @@ users/
         source: string
         confidence: high|medium|low
 
+    # Entidade enriquecida (somente UI — Fase 0.3.6-C)
+    cardSummaryView/
+      limitCents, usedCents, availableCents, usagePercent
+      snapshotSource, snapshotMonth, snapshotDate
+      snapshotConsistent: boolean
+
     invoices/
       {invoiceId}/
         cardId: string
@@ -79,6 +85,12 @@ users/
         dueDate: YYYY-MM-DD
         totalCents: number
         status: open|closed|paid
+
+    # Conciliação local (Fase 0.3.6-C — não persiste)
+    invoiceReconciliationView/
+      invoiceTotalCents, linkedPurchasesCents, linkedFeesCents
+      linkedRefundsCents, creditBalanceCents, reconciliationDeltaCents
+      confidence: high|partial|low|n/a
 
     transactions/
       {txId}/

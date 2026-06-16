@@ -64,7 +64,7 @@ window.CFM = window.CFM || {};
     { id: "transactions", label: "Transações",            countKey: "transactions" },
     { id: "review",       label: "Itens para confirmar",  countKey: "pendingReview" },
     { id: "similarities", label: "Semelhanças",           countKey: "similaritiesTotal" },
-    { id: "recurring",    label: "Recorrências",          countKey: "recurringRules" },
+    { id: "recurring",    label: "Recorrências",          countKey: "recurringTotal" },
     { id: "installments", label: "Parcelamentos",         countKey: "installmentPlans" },
     { id: "privacy",      label: "Privacidade",           countKey: "privacyAlerts" }
   ];
@@ -177,7 +177,10 @@ window.CFM = window.CFM || {};
       { label: "Faturas",      value: c.invoices },
       { label: "Transações",   value: c.transactions },
       { label: "Parcelas",     value: c.installmentPlans },
-      { label: "Recorrências", value: c.recognizedRecurrences || c.recurringRules },
+      { label: "Recorrências (total)", value: c.recurringTotal || c.recognizedRecurrences || c.recurringRules },
+      { label: "Rec. JSON",            value: c.recurringImported || c.recurringRules || 0 },
+      { label: "Rec. regra pessoal",   value: c.recurringFromRules || 0 },
+      { label: "Rec. candidatas",      value: c.recurringCandidates || 0 },
       { label: "Válidos",                 value: c.valid,                  mod: "success" },
       { label: "Inválidos",               value: c.invalid,                mod: c.invalid > 0 ? "danger" : "" },
       { label: "Por regra pessoal",       value: c.ruleClassified || 0,    mod: "success" },
@@ -291,6 +294,13 @@ window.CFM = window.CFM || {};
    * TAB: CARTÕES
    * ════════════════════════════════════════════════ */
 
+  function formatCardLastFour(card) {
+    if (card.lastFourDisplay) return ' <span class="invoice-card__last4">' + esc(card.lastFourDisplay) + "</span>";
+    if (card.lastFour) return ' <span class="invoice-card__last4">···' + esc(card.lastFour) + "</span>";
+    if (card.lastFourMissing) return ' <span class="card-last4-missing">(final não informado)</span>';
+    return "";
+  }
+
   function buildCardsTab(report) {
     var cards = report.cardSummaries;
     if (!cards || cards.length === 0) return emptyPanel("Nenhum cartão encontrado no arquivo.");
@@ -298,27 +308,35 @@ window.CFM = window.CFM || {};
     var rows = cards.map(function (card) {
       var pct = card.usedPercent != null ? card.usedPercent : 0;
       var barCls = pct >= 90 ? "limit-bar__fill--danger" : pct >= 70 ? "limit-bar__fill--warning" : "limit-bar__fill--ok";
+      var consistencyHtml = "";
+      if (card.snapshotConsistencyMessage) {
+        var cCls = card.snapshotConsistent === true
+          ? "snapshot-status snapshot-status--ok"
+          : card.snapshotConsistent === false
+            ? "snapshot-status snapshot-status--warn"
+            : "snapshot-status";
+        consistencyHtml = '<p class="' + cCls + '">' + esc(card.snapshotConsistencyMessage) + "</p>";
+      }
 
       return (
         '<li class="card-limit-item">' +
         '  <div class="card-limit-item__header">' +
-        '    <span class="card-limit-item__name">' + esc(card.name) +
-        (card.lastFour ? ' <span class="invoice-card__last4">···' + esc(card.lastFour) + "</span>" : "") +
-        "</span>" +
+        '    <span class="card-limit-item__name">' + esc(card.name) + formatCardLastFour(card) + "</span>" +
         (card.hasSnapshot
-          ? ' <span class="status-chip status-chip--paid">' + esc(card.limitSourceLabel || "Snapshot local") + "</span>"
+          ? ' <span class="status-chip status-chip--paid">' + esc(card.snapshotSourceLabel || card.limitSourceLabel || "Snapshot local") + "</span>"
           : ' <span class="status-chip status-chip--other">Dados do JSON</span>') +
         "  </div>" +
         '  <div class="card-limit-item__amounts">' +
         '    <span>Limite: <strong>' + esc(card.limitFmt) + "</strong></span>" +
         '    <span>Usado: <strong>' + esc(card.usedFmt) + "</strong></span>" +
         '    <span>Disponível: <strong>' + esc(card.availableFmt) + "</strong></span>" +
+        (pct != null ? '    <span>Utilizado: <strong>' + pct + "%</strong></span>" : "") +
         "  </div>" +
         (card.usedPercent != null
           ? '<div class="limit-bar" role="presentation"><div class="limit-bar__fill ' + barCls +
-            '" style="width:' + pct + '%"></div></div>' +
-            '<p class="card-limit-item__pct">' + pct + "% utilizado</p>"
+            '" style="width:' + pct + '%"></div></div>'
           : "") +
+        consistencyHtml +
         '  <div class="card-limit-item__links">' +
         '<span><strong>' + card.linkedInvoiceCount + "</strong> fatura(s)</span>" +
         '<span><strong>' + card.linkedPurchaseCount + "</strong> compra(s)</span>" +
@@ -373,22 +391,32 @@ window.CFM = window.CFM || {};
     }
 
     var reconHtml = "";
-    if (!inv.isReference && inv.hasReconciliationGap) {
-      var diffLabel = inv.reconciliationDiff > 0 ? "fatura maior que transações" : "transações maiores que fatura";
+    if (!inv.isReference && inv.reconciliationPartial) {
+      reconHtml = '<div class="reconciliation-partial">ℹ️ ' +
+        esc(inv.reconciliationMessage || "Conciliação parcial — nem todas as transações da fatura estão presentes no JSON.") +
+        "</div>";
+    } else if (!inv.isReference && inv.hasReconciliationGap) {
+      var diffLabel = inv.reconciliationDiff > 0 ? "fatura maior que compras vinculadas" : "compras vinculadas maiores que fatura";
       reconHtml = '<div class="reconciliation-gap">⚖️ Diferença de ' +
         esc(inv.reconciliationDiffFmt) + " (" + esc(diffLabel) + ")</div>";
+    } else if (!inv.isReference && inv.linkedTransactionCount > 0 && inv.reconciliationMessage) {
+      reconHtml = '<div class="reconciliation-ok">✅ ' + esc(inv.reconciliationMessage) +
+        " (" + inv.linkedTransactionCount + " transação(ões))</div>";
     } else if (!inv.isReference && inv.linkedTransactionCount > 0) {
       reconHtml = '<div class="reconciliation-ok">✅ ' + inv.linkedTransactionCount + " transação(ões) vinculada(s)</div>";
     } else if (inv.isReference && inv.linkedTransactionCount > 0) {
       reconHtml = '<div class="reconciliation-ok">🔗 ' + inv.linkedTransactionCount + " transação(ões) vinculada(s)</div>";
     }
 
+    var cardLastFourHtml = inv.cardLastFour
+      ? ' <span class="invoice-card__last4">···' + esc(inv.cardLastFour) + "</span>"
+      : (inv.cardLastFourMissing ? ' <span class="card-last4-missing">(final não informado)</span>' : "");
+
     return (
       '<div class="' + cls + '">' +
       '  <div class="invoice-card__header">' +
       '    <div>' +
-      '      <p class="invoice-card__card-name">' + esc(inv.cardName) +
-      (inv.cardLastFour ? ' <span class="invoice-card__last4">···' + esc(inv.cardLastFour) + "</span>" : "") +
+      '      <p class="invoice-card__card-name">' + esc(inv.cardName) + cardLastFourHtml +
       "      </p>" +
       '      <p class="invoice-card__period">' + esc(inv.competenceFmt) + "</p>" +
       "    </div>" +
@@ -396,8 +424,7 @@ window.CFM = window.CFM || {};
       "  </div>" +
       amountHtml +
       (inv.isReference && inv.cardName
-        ? '<p class="invoice-stub-note">Cartão: <strong>' + esc(inv.cardName) +
-          (inv.cardLastFour ? " ···" + esc(inv.cardLastFour) : "") + "</strong></p>"
+        ? '<p class="invoice-stub-note">Cartão: <strong>' + esc(inv.cardName) + cardLastFourHtml + "</strong></p>"
         : "") +
       '  <div class="invoice-meta">' +
       (inv.dueDateFmt && !inv.isReference ? '<span class="invoice-meta__item">Vence: <strong>' + esc(inv.dueDateFmt) + "</strong></span>" : "") +
@@ -732,11 +759,22 @@ window.CFM = window.CFM || {};
       );
     });
 
+    var c = report.counters || {};
+    var breakdown =
+      '<p class="report-empty" style="font-style:normal;margin:0 0 1rem">' +
+      'Total reconhecido: <strong>' + (c.recurringTotal || rules.length) + "</strong> — " +
+      "JSON: <strong>" + (c.recurringImported || 0) + "</strong>, " +
+      "regra pessoal: <strong>" + (c.recurringFromRules || 0) + "</strong>, " +
+      "candidatas: <strong>" + (c.recurringCandidates || 0) + "</strong>. " +
+      "O resumo detalha cada origem; a aba lista todas as entradas reconhecidas." +
+      "</p>";
+
     return (
       '<div class="notice notice--info" role="note" style="margin-bottom:1rem">' +
       '  <span>ℹ️</span>' +
       '  <span>Recorrências do JSON, regras pessoais locais e sugestões do motor. Nada é gravado nesta fase.</span>' +
       "</div>" +
+      breakdown +
       '<ul class="entity-list">' + rows.join("") + "</ul>"
     );
   }
