@@ -481,6 +481,69 @@ window.CFM = window.CFM || {};
     return Object.keys(map).map(function (k) { return map[k]; });
   }
 
+  function filterFinancingSimilarities(pairs, transactions, installmentPlans, ruleApplications, val) {
+    if (!pairs || !pairs.length) return [];
+    var planByRef = {};
+    (installmentPlans || []).forEach(function (p) {
+      if (!p) return;
+      if (p.id) planByRef[p.id] = p;
+      if (p.externalRef) planByRef[p.externalRef] = p;
+    });
+    var appsByIndex = {};
+    (ruleApplications || []).forEach(function (a) {
+      appsByIndex[a.transactionIndex] = a;
+    });
+
+    function txPlanRef(tx) {
+      if (!tx) return "";
+      return String(tx.installmentPlanExternalRef || tx.installmentPlanId || "");
+    }
+
+    function isFinancingTx(tx, idx) {
+      if (!tx) return false;
+      var app = appsByIndex[idx];
+      if (app && (app.isFinancing ||
+          (app.classification && app.classification.installmentKind === "financing"))) {
+        return true;
+      }
+      if (tx.installmentKind === "financing" || tx.subtype === "financing") return true;
+      var pref = txPlanRef(tx);
+      if (pref && planByRef[pref] && planByRef[pref].kind === "financing") return true;
+      if (val && val.classifyInstallmentKind && val.classifyInstallmentKind(tx) === "financing") {
+        return true;
+      }
+      var desc = String(tx.description || "").toLowerCase();
+      if (/banco\s*pan|auto\s*pan/i.test(desc)) return true;
+      return false;
+    }
+
+    return pairs.filter(function (pair) {
+      var indices = [pair.index1, pair.index2, pair.indexA, pair.indexB];
+      for (var i = 0; i < indices.length; i++) {
+        var idx = indices[i];
+        if (idx == null) continue;
+        if (isFinancingTx(transactions[idx], idx)) return false;
+      }
+      return true;
+    });
+  }
+
+  function rebuildSimilarityCounts(similarityReport, groups) {
+    var g = groups || similarityReport.groups || {};
+    var classified =
+      (g.probable_duplicate || []).length +
+      (g.installment_related || []).length +
+      (g.recurring_candidate || []).length +
+      (g.similar_transfer || []).length;
+    similarityReport.classifiedCount = classified;
+    similarityReport.similaritiesTotal =
+      (g.exact_duplicate || []).length + classified +
+      (g.repeated_purchase || []).length;
+    similarityReport.duplicateOnlyCount =
+      (g.exact_duplicate || []).length + (g.probable_duplicate || []).length;
+    return similarityReport;
+  }
+
   function filterResolvedRecurringCandidates(candidates, ruleApplications, transactions) {
     if (!candidates || !candidates.length) return [];
     var byIndex = {};
@@ -524,6 +587,8 @@ window.CFM = window.CFM || {};
     var fmt  = CFM.formatters  || {};
     var val  = CFM.validators  || {};
 
+    if (val.normalizeImportPayload) payload = val.normalizeImportPayload(payload);
+
     var fcents = fmt.formatCurrencyFromCents || function (c) { return String(c) + " cts"; };
     var fsize  = fmt.formatFileSize          || function (b) { return b + " B"; };
     var fdate  = fmt.formatDate              || function (d) { return d; };
@@ -537,6 +602,10 @@ window.CFM = window.CFM || {};
     var installmentPlans = Array.isArray(payload.installmentPlans) ? payload.installmentPlans : [];
     var recurringRules   = Array.isArray(payload.recurringRules)   ? payload.recurringRules   : [];
 
+    if (val.linkOrphanInstallmentTransactions) {
+      val.linkOrphanInstallmentTransactions(transactions, installmentPlans);
+    }
+
     var src = payload.source || {};
     var context = {
       institution:  src.institution  || "",
@@ -549,6 +618,13 @@ window.CFM = window.CFM || {};
       cards: cards, cardsById: {}, refToId: {},
       resolveCardId: function (r) { return r || ""; }
     };
+
+    var brokenReferences = val.validateBrokenReferences
+      ? val.validateBrokenReferences(payload, { resolveCardId: cardRegistry.resolveCardId }) : [];
+    if (brokenReferences.length && validation && Array.isArray(validation.warnings)) {
+      brokenReferences.forEach(function (msg) { validation.warnings.push(msg); });
+    }
+
     var cardMap    = {};
     var accountMap = {};
     var invoiceMap = {};
@@ -655,16 +731,34 @@ window.CFM = window.CFM || {};
       simGroups.recurring_candidate = filteredRecurringRaw;
     }
 
+    var simFilterCtx = [transactions, installmentPlans, ruleApplications, val];
+    Object.keys(simGroups).forEach(function (key) {
+      simGroups[key] = filterFinancingSimilarities(simGroups[key], simFilterCtx[0], simFilterCtx[1], simFilterCtx[2], simFilterCtx[3]);
+    });
+    similarityReport.exactDuplicates = filterFinancingSimilarities(
+      similarityReport.exactDuplicates, transactions, installmentPlans, ruleApplications, val);
+    similarityReport.probableDuplicates = filterFinancingSimilarities(
+      similarityReport.probableDuplicates, transactions, installmentPlans, ruleApplications, val);
+    similarityReport.installmentRelated = filterFinancingSimilarities(
+      similarityReport.installmentRelated, transactions, installmentPlans, ruleApplications, val);
+    similarityReport.similarTransfers = filterFinancingSimilarities(
+      similarityReport.similarTransfers, transactions, installmentPlans, ruleApplications, val);
+    rebuildSimilarityCounts(similarityReport, simGroups);
+
     var exactDuplicates     = formatSimilarityPairs(similarityReport.exactDuplicates, fcents);
     var probableDuplicates  = formatSimilarityPairs(similarityReport.probableDuplicates, fcents);
     var installmentRelated  = formatSimilarityPairs(similarityReport.installmentRelated, fcents);
     var recurringCandidates = formatSimilarityPairs(filteredRecurringRaw, fcents);
-    var repeatedPurchases   = formatSimilarityPairs(similarityReport.repeatedPurchases, fcents);
+    var repeatedPurchases   = formatSimilarityPairs(
+      filterFinancingSimilarities(similarityReport.repeatedPurchases, transactions, installmentPlans, ruleApplications, val),
+      fcents);
     var similarTransfers    = formatSimilarityPairs(similarityReport.similarTransfers, fcents);
 
-    var recognizedRecurrences = crs.buildRecognizedRecurrences
+    var recognizedRecurrencesRaw = crs.buildRecognizedRecurrences
       ? crs.buildRecognizedRecurrences(ruleApplications, recurringRules, filteredRecurringRaw)
       : [];
+    var recognizedRecurrences = crs.dedupeRecognizedRecurrences
+      ? crs.dedupeRecognizedRecurrences(recognizedRecurrencesRaw) : recognizedRecurrencesRaw;
 
     recognizedRecurrences.forEach(function (r) {
       if (r.source !== "imported_json") return;
@@ -673,7 +767,8 @@ window.CFM = window.CFM || {};
       r.accountName = (accountMap[orig.accountId] || {}).name || "";
       r.cardName    = (cardMap[orig.cardId] || {}).name || "";
       r.dayOfMonth  = orig.dayOfMonth || null;
-      if (orig.amountCents) r.amountCents = orig.amountCents;
+      if (orig.expectedAmountCents) r.expectedAmountCents = orig.expectedAmountCents;
+      else if (orig.amountCents) r.expectedAmountCents = orig.amountCents;
     });
 
     var ruleAppByIndex = {};
@@ -694,6 +789,12 @@ window.CFM = window.CFM || {};
     });
     var originalReviewTxCount = txReviewItems.length;
     var effectiveReviewTxCount = Object.keys(effectiveReviewTxSet).length;
+    var invoiceReviewCount = invReviewItems.filter(function (i) { return !i.isStub; }).length;
+    var invoiceStubReviewCount = invReviewItems.filter(function (i) { return i.isStub; }).length;
+    var suggestionCount = reducedReview.reviewSuggestions.length;
+    var confirmReviewCount = reducedReview.manualReview.length;
+    var reviewReducedByRules = Math.max(0, originalReviewTxCount - effectiveReviewTxCount);
+    var badRawHashCount = val.countBadRawHashes ? val.countBadRawHashes(payload) : 0;
 
     /* ── Privacidade ── */
     var privacyAlerts = val.scanForSensitiveData
@@ -763,8 +864,6 @@ window.CFM = window.CFM || {};
           score: ruleApp.score,
           source: ruleApp.ruleSource
         } : null,
-        canonicalFingerprint: val.buildCanonicalFingerprint
-          ? val.buildCanonicalFingerprint(tx, context) : "",
         hasOriginalReview:  hasOriginalReview,
         needsEffectiveReview: needsEffectiveReview,
         hasPendingReview: needsEffectiveReview,
@@ -777,7 +876,10 @@ window.CFM = window.CFM || {};
     }).filter(Boolean);
 
     /* ── allInvoices (com conciliação) ── */
-    var reconContext = { registry: cardRegistry };
+    var reconContext = {
+      registry: cardRegistry,
+      isHistoricalPaymentForInvoice: val.isHistoricalPaymentForInvoice
+    };
     var allInvoices = invoices.map(function (inv, i) {
       if (!inv || typeof inv !== "object") return null;
       var rawCardRef = inv.cardId || inv.cardExternalRef || "";
@@ -797,7 +899,9 @@ window.CFM = window.CFM || {};
       var isPartial   = recon ? recon.isPartial : false;
       var confidence  = recon ? recon.confidence : "n/a";
       var hasRealGap  = !isReference && !hasCredit && confidence === "high" &&
-                        !isPartial && linkedCount > 0 && Math.abs(diffCents) > 1;
+                        !isPartial && linkedCount > 0 &&
+                        Math.abs(diffCents) > 1 &&
+                        !(recon && recon.explainedByPayments);
 
       var cardLastFour = css.formatLastFourDisplay
         ? css.formatLastFourDisplay(card.lastFour || card.last4)
@@ -838,8 +942,16 @@ window.CFM = window.CFM || {};
         linkedPurchasesCents: recon ? recon.linkedPurchasesCents : 0,
         linkedPurchasesFmt: fcents(recon ? recon.linkedPurchasesCents : 0),
         linkedFeesCents:    recon ? recon.linkedFeesCents : 0,
+        linkedAdjustmentsCents: recon ? recon.linkedAdjustmentsCents : 0,
         linkedRefundsCents: recon ? recon.linkedRefundsCents : 0,
         linkedPaymentsCents: recon ? recon.linkedPaymentsCents : 0,
+        invoiceChargesCents: recon ? recon.invoiceChargesCents : 0,
+        invoiceChargesFmt: fcents(recon ? recon.invoiceChargesCents : 0),
+        invoicePaymentsCents: recon ? recon.invoicePaymentsCents : 0,
+        invoicePaymentsFmt: fcents(recon ? recon.invoicePaymentsCents : 0),
+        statementSummary: recon ? recon.statementSummary : null,
+        explainedByPayments: recon ? recon.explainedByPayments : false,
+        linkedPaymentCount: recon ? recon.linkedPaymentCount : 0,
         reconciliationDeltaCents: diffCents,
         reconciliationDiff: diffCents,
         reconciliationDiffFmt: fcents(Math.abs(diffCents)),
@@ -912,13 +1024,20 @@ window.CFM = window.CFM || {};
       return {
         id:           rule.id  || "",
         description:  String(rule.description || "").substring(0, 80),
-        amountFmt:    rule.amountCents ? fcents(rule.amountCents) : "—",
-        amountCents:  rule.amountCents || 0,
+        amountFmt:    rule.expectedAmountCents ? fcents(rule.expectedAmountCents) :
+                      (rule.amountCents ? fcents(rule.amountCents) : "—"),
+        expectedAmountCents: rule.expectedAmountCents || rule.amountCents || 0,
+        type:         rule.type || "",
         flow:         rule.flow      || "",
         frequency:    rule.frequency || "",
+        categoryLabel: rule.categoryLabel || rule.category || "",
+        startCompetenceMonth: rule.startCompetenceMonth || "",
+        sourcePattern: rule.sourcePattern || "",
+        sourceInstitution: rule.sourceInstitution || "",
+        sourceLabels:   rule.sourceLabels || (rule.sourceLabel ? [rule.sourceLabel] : []),
+        sources:        rule.sources || (rule.source ? [rule.source] : []),
         dayOfMonth:   rule.dayOfMonth || null,
         isActive:     rule.isActive !== false,
-        category:     rule.category  || "",
         accountName:  rule.accountName || "",
         cardName:     rule.cardName    || "",
         source:       rule.source      || "imported_json",
@@ -930,13 +1049,18 @@ window.CFM = window.CFM || {};
     }).filter(Boolean);
 
     var recurringImportedCount = allRecurringRules.filter(function (r) {
-      return r.recurrenceKind === "imported";
+      return (r.sources && r.sources.indexOf("imported_json") >= 0) ||
+        r.recurrenceKind === "imported" ||
+        (r.sourceLabels && r.sourceLabels.indexOf("Importada do JSON") >= 0);
     }).length;
     var recurringFromRulesCount = allRecurringRules.filter(function (r) {
-      return r.recurrenceKind === "personal_rule";
+      return (r.sources && r.sources.indexOf("personal_local") >= 0) ||
+        r.recurrenceKind === "personal_rule" ||
+        (r.sourceLabels && r.sourceLabels.indexOf("Regra pessoal local") >= 0);
     }).length;
     var recurringCandidatesCount = allRecurringRules.filter(function (r) {
-      return r.recurrenceKind === "candidate";
+      return r.recurrenceKind === "candidate" ||
+        (r.sources && r.sources.indexOf("engine_suggested") >= 0);
     }).length;
     var recurringTotalCount = allRecurringRules.length;
 
@@ -1034,14 +1158,19 @@ window.CFM = window.CFM || {};
         recognizedRecurrences: recognizedRecurrences.length,
         valid:             validCount,
         invalid:           invalidCount,
-        pendingReview:     reducedReview.manualReview.length,
-        reviewSuggestions: reducedReview.reviewSuggestions.length,
+        pendingReview:     confirmReviewCount,
+        reviewSuggestions: suggestionCount,
+        suggestionCount:   suggestionCount,
+        confirmReviewCount: confirmReviewCount,
         autoResolved:      reducedReview.autoResolved.length,
         ruleClassified:    personalRulesCount,
         ruleResolved:      (reducedReview.ruleResolved || []).length,
         recognizedFinancing:   financingCount,
         criticalReview:    criticalReviewCount,
-        importantReview:   importantReviewCount,
+        importantReview:   importantReviewCount + criticalReviewCount,
+        importantReviewCount: importantReviewCount + criticalReviewCount,
+        criticalReviewCount: criticalReviewCount,
+        badRawHashCount:   badRawHashCount,
         exactDuplicates:   exactDuplicates.length,
         probableDuplicates:probableDuplicates.length,
         classifiedSimilarities: similarityReport.classifiedCount || 0,
@@ -1052,6 +1181,13 @@ window.CFM = window.CFM || {};
         duplicates:        similarityReport.duplicateOnlyCount || 0,
         invoiceReferences: (invoiceGroups.reference || []).length,
         cardsWithSnapshot: cardSummaries.filter(function (c) { return c.hasSnapshot; }).length,
+        rawReviewCount:    originalReviewTxCount,
+        effectiveReviewCount: effectiveReviewTxCount,
+        reviewReducedByRules: reviewReducedByRules,
+        reviewSuggestionsCount: reducedReview.reviewSuggestions.length,
+        invoiceReviewCount: invoiceReviewCount,
+        invoiceStubReviewCount: invoiceStubReviewCount,
+        brokenReferences:  brokenReferences.length,
         originalReviewTx:  originalReviewTxCount,
         effectiveReviewTx: effectiveReviewTxCount
       },
@@ -1103,6 +1239,8 @@ window.CFM = window.CFM || {};
       pendingReview: txReviewItems,
       duplicates: probableDuplicates,
 
+      brokenReferences:   brokenReferences,
+
       state:     state,
       persisted: false
     };
@@ -1115,7 +1253,9 @@ window.CFM = window.CFM || {};
   function processFile(file) {
     var fmt = CFM.formatters || {};
     return readJsonFile(file).then(function (text) {
-      var payload    = parseJsonText(text);
+      var val = CFM.validators || {};
+      var payload = parseJsonText(text);
+      if (val.normalizeImportPayload) payload = val.normalizeImportPayload(payload);
       var validation = validateImportPayload(payload);
 
       if (!validation.valid) {
@@ -1146,7 +1286,9 @@ window.CFM = window.CFM || {};
   /* ── Compatibilidade legada ── */
   function processImportText(rawText) {
     try {
-      var data       = parseJsonText(rawText);
+      var val = CFM.validators || {};
+      var data = parseJsonText(rawText);
+      if (val.normalizeImportPayload) data = val.normalizeImportPayload(data);
       var validation = validateImportPayload(data);
       if (!validation.valid) return { valid: false, errors: validation.fatal };
       return {

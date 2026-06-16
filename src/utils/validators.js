@@ -76,11 +76,268 @@ window.CFM = window.CFM || {};
 
   /* ── Acesso a campos da transação ── */
 
+  var SHA256_REGEX = /^sha256:[a-f0-9]{64}$/i;
+
+  var PT_MONTHS = {
+    janeiro: "01", fevereiro: "02", marco: "03", "março": "03", abril: "04",
+    maio: "05", junho: "06", julho: "07", agosto: "08", setembro: "09",
+    outubro: "10", novembro: "11", dezembro: "12"
+  };
+
+  function isValidSha256Hash(value) {
+    return typeof value === "string" && SHA256_REGEX.test(value.trim());
+  }
+
+  function relocateReadableHash(host) {
+    if (!host || typeof host !== "object") return;
+    var raw = host.rawHash;
+    if (raw === undefined) return;
+    if (isValidSha256Hash(raw)) return;
+    if (!isNonEmptyString(raw)) {
+      delete host.rawHash;
+      return;
+    }
+    if (!host.source || typeof host.source !== "object") host.source = {};
+    var fp = String(raw).trim();
+    if (!host.source.canonicalFingerprint) {
+      host.source.canonicalFingerprint = fp;
+    } else if (!host.source.rawFingerprint) {
+      host.source.rawFingerprint = fp;
+    }
+    delete host.rawHash;
+  }
+
+  function isNonEmptyString(v) {
+    return typeof v === "string" && v.trim().length > 0;
+  }
+
+  function normalizeHashFields(entity) {
+    if (!entity || typeof entity !== "object") return entity;
+    relocateReadableHash(entity);
+    if (entity.source && entity.source.rawHash !== undefined) {
+      var src = entity.source;
+      if (isValidSha256Hash(src.rawHash)) {
+        entity.rawHash = src.rawHash;
+      } else if (isNonEmptyString(src.rawHash)) {
+        if (!src.canonicalFingerprint) src.canonicalFingerprint = String(src.rawHash).trim();
+        else if (!src.rawFingerprint) src.rawFingerprint = String(src.rawHash).trim();
+      }
+      delete src.rawHash;
+    }
+    return entity;
+  }
+
+  function normalizeRecurringRule(rule) {
+    if (!rule || typeof rule !== "object") return rule;
+    var n = Object.assign({}, rule);
+    if (!n.externalRef && n.id) n.externalRef = n.id;
+    if (n.amountCents != null && n.expectedAmountCents == null) {
+      n.expectedAmountCents = n.amountCents;
+    }
+    delete n.amountCents;
+    if (n.category && !n.categoryLabel) n.categoryLabel = n.category;
+    delete n.category;
+    if (n.cadence && !n.frequency) n.frequency = n.cadence;
+    delete n.cadence;
+    if (!n.frequency) n.frequency = "monthly";
+    if (!n.type) n.type = n.flow === "in" ? "income" : "expense";
+    if (!n.flow) n.flow = n.type === "income" ? "in" : "out";
+    return n;
+  }
+
+  function normalizeImportPayload(payload) {
+    if (!payload || typeof payload !== "object") return payload;
+    normalizeHashFields(payload);
+    if (payload.source && typeof payload.source === "object") {
+      if (payload.source.rawHash !== undefined && !isValidSha256Hash(payload.source.rawHash)) {
+        if (isNonEmptyString(payload.source.rawHash)) {
+          if (!payload.source.canonicalFingerprint) {
+            payload.source.canonicalFingerprint = String(payload.source.rawHash).trim();
+          } else if (!payload.source.rawFingerprint) {
+            payload.source.rawFingerprint = String(payload.source.rawHash).trim();
+          }
+        }
+        delete payload.source.rawHash;
+      }
+    }
+
+    if (Array.isArray(payload.transactions)) {
+      payload.transactions = payload.transactions.map(function (tx) {
+        return tx ? normalizeHashFields(Object.assign({}, tx)) : tx;
+      });
+    }
+    if (Array.isArray(payload.recurringRules)) {
+      payload.recurringRules = payload.recurringRules.map(normalizeRecurringRule);
+    }
+    return payload;
+  }
+
   function getTxRawHash(tx) {
     if (!tx) return "";
-    var h = (tx.source && tx.source.rawHash) || tx.rawHash || "";
-    if (String(h).startsWith("sha256:0000")) return "";
-    return String(h);
+    var candidates = [
+      tx.rawHash,
+      tx.source && tx.source.rawHash
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      if (isValidSha256Hash(candidates[i])) return String(candidates[i]).trim();
+    }
+    return "";
+  }
+
+  function getTxTraceFingerprint(tx) {
+    if (!tx) return "";
+    var src = tx.source && typeof tx.source === "object" ? tx.source : {};
+    return String(src.canonicalFingerprint || src.rawFingerprint || "").trim();
+  }
+
+  function hasTxTraceability(tx) {
+    return !!getTxExternalRef(tx) || !!getTxRawHash(tx) || !!getTxTraceFingerprint(tx);
+  }
+
+  function parsePaymentCompetenceFromDescription(desc) {
+    var d = String(desc || "").toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    var keys = Object.keys(PT_MONTHS);
+    for (var i = 0; i < keys.length; i++) {
+      var monthName = keys[i];
+      var re = new RegExp(monthName + "\\s*[/\\-]?\\s*(\\d{4})", "i");
+      var match = d.match(re);
+      if (match) return match[1] + "-" + PT_MONTHS[monthName];
+    }
+    var numMatch = d.match(/(\d{1,2})\s*[/\\-]\s*(\d{4})/);
+    if (numMatch) {
+      var mm = numMatch[1].length === 1 ? "0" + numMatch[1] : numMatch[1];
+      return numMatch[2] + "-" + mm;
+    }
+    return null;
+  }
+
+  function isHistoricalPaymentForInvoice(tx, invMonth) {
+    if (!tx || tx.type !== "credit_card_payment") return false;
+    var payMonth = parsePaymentCompetenceFromDescription(tx.description);
+    if (payMonth && invMonth && payMonth !== invMonth) return true;
+    return false;
+  }
+
+  function merchantKeyFromDesc(desc) {
+    return stripInstallmentFromDesc(desc).substring(0, 32);
+  }
+
+  function linkOrphanInstallmentTransactions(transactions, installmentPlans) {
+    if (!Array.isArray(transactions) || !Array.isArray(installmentPlans)) {
+      return { linked: 0 };
+    }
+    var planByRef = {};
+    installmentPlans.forEach(function (p) {
+      if (!p) return;
+      if (p.id) planByRef[p.id] = p;
+      if (p.externalRef) planByRef[p.externalRef] = p;
+    });
+    var linked = 0;
+
+    function findPlanForTx(tx) {
+      var cur = getInstallmentCurrent(tx);
+      var tot = getInstallmentTotal(tx);
+      if (!cur || !tot || cur < 2) return null;
+      var mk = merchantKeyFromDesc(tx.description);
+      if (!mk) return null;
+
+      var i, sib, sibRef, plan, planMk, j, pl;
+      for (i = 0; i < transactions.length; i++) {
+        sib = transactions[i];
+        if (!sib || sib === tx) continue;
+        sibRef = getInstallmentPlanRef(sib);
+        if (!sibRef) continue;
+        plan = planByRef[sibRef];
+        if (!plan) continue;
+        planMk = merchantKeyFromDesc(plan.description || sib.description);
+        if (!descriptionsSimilar(mk, planMk)) continue;
+        if (plan.totalInstallments && tot !== plan.totalInstallments) continue;
+        if (plan.installmentAmountCents && !amountsNear(tx.amountCents, plan.installmentAmountCents)) continue;
+        if (!plan.installmentAmountCents && sib.amountCents && !amountsNear(tx.amountCents, sib.amountCents)) continue;
+        return plan;
+      }
+      for (j = 0; j < installmentPlans.length; j++) {
+        pl = installmentPlans[j];
+        if (!pl) continue;
+        if (pl.totalInstallments && pl.totalInstallments !== tot) continue;
+        if (!descriptionsSimilar(mk, merchantKeyFromDesc(pl.description))) continue;
+        if (pl.installmentAmountCents && !amountsNear(tx.amountCents, pl.installmentAmountCents)) continue;
+        return pl;
+      }
+      return null;
+    }
+
+    transactions.forEach(function (tx) {
+      if (!tx || getInstallmentPlanRef(tx)) return;
+      if (!getInstallmentCurrent(tx) || getInstallmentCurrent(tx) < 2) return;
+      var matchedPlan = findPlanForTx(tx);
+      if (!matchedPlan) return;
+      tx.installmentPlanExternalRef = matchedPlan.externalRef || matchedPlan.id;
+      linked++;
+    });
+    return { linked: linked };
+  }
+
+  function validateBrokenReferences(payload, options) {
+    var broken = [];
+    if (!payload || typeof payload !== "object") return broken;
+    var opts = options || {};
+    var resolveCard = opts.resolveCardId || function (r) { return r; };
+
+    var cardIds = {}, accountIds = {}, invoiceIds = {}, planIds = {};
+    (payload.cards || []).forEach(function (c) {
+      if (!c) return;
+      if (c.id) cardIds[c.id] = true;
+      if (c.externalRef) cardIds[c.externalRef] = true;
+    });
+    (payload.accounts || []).forEach(function (a) {
+      if (!a) return;
+      if (a.id) accountIds[a.id] = true;
+      if (a.externalRef) accountIds[a.externalRef] = true;
+    });
+    (payload.invoices || []).forEach(function (inv) {
+      if (!inv) return;
+      if (inv.id) invoiceIds[inv.id] = true;
+      if (inv.externalRef) invoiceIds[inv.externalRef] = true;
+      if (inv.invoiceExternalRef) invoiceIds[inv.invoiceExternalRef] = true;
+    });
+    (payload.installmentPlans || []).forEach(function (p) {
+      if (!p) return;
+      if (p.id) planIds[p.id] = true;
+      if (p.externalRef) planIds[p.externalRef] = true;
+    });
+
+    function refExists(ref, map, resolver) {
+      if (!ref) return true;
+      if (map[ref]) return true;
+      var resolved = resolver ? resolver(ref) : ref;
+      return !!(resolved && map[resolved]);
+    }
+
+    function checkRef(ref, map, label, index, resolver) {
+      if (!ref) return;
+      if (!refExists(ref, map, resolver)) {
+        broken.push(label + "[" + index + "]: referência quebrada — " + ref);
+      }
+    }
+
+    (payload.transactions || []).forEach(function (tx, i) {
+      if (!tx) return;
+      checkRef(tx.accountId, accountIds, "transactions", i);
+      checkRef(tx.cardId || tx.cardExternalRef, cardIds, "transactions", i, resolveCard);
+      checkRef(tx.invoiceId || tx.invoiceExternalRef, invoiceIds, "transactions", i);
+      checkRef(tx.installmentPlanId || tx.installmentPlanExternalRef, planIds, "transactions", i);
+    });
+    (payload.invoices || []).forEach(function (inv, i) {
+      if (!inv) return;
+      checkRef(inv.cardId || inv.cardExternalRef, cardIds, "invoices", i, resolveCard);
+    });
+    (payload.installmentPlans || []).forEach(function (p, i) {
+      if (!p) return;
+      checkRef(p.cardId || p.cardExternalRef, cardIds, "installmentPlans", i, resolveCard);
+    });
+    return broken;
   }
 
   function getTxExternalRef(tx) {
@@ -416,7 +673,7 @@ window.CFM = window.CFM || {};
     var invRef = tx.invoiceExternalRef || tx.invoiceId || "";
     var instCur = getInstallmentCurrent(tx);
     var instTot = getInstallmentTotal(tx);
-    var hash = getTxRawHash(tx);
+    var hash = getTxRawHash(tx) || getTxTraceFingerprint(tx);
     var date = getTxDate(tx) || getTxPostedDate(tx) || "";
     return [
       String(ctx.institution  || ""),
@@ -567,7 +824,7 @@ window.CFM = window.CFM || {};
   ];
 
   var SAFE_FIELD_NAMES = [
-    "id", "rawHash", "externalRef",
+    "id", "rawHash", "externalRef", "canonicalFingerprint", "rawFingerprint",
     "accountId", "cardId", "invoiceId", "installmentPlanId",
     "counterpartAccountId", "_note"
   ];
@@ -601,6 +858,34 @@ window.CFM = window.CFM || {};
       if (isSafeFieldName(key)) return;
       if (typeof obj[key] === "string") checkString(obj[key], prefix + "." + key, found);
     });
+  }
+
+  function countBadRawHashes(payload) {
+    var bad = 0;
+    if (!payload || typeof payload !== "object") return bad;
+
+    function checkEntity(entity) {
+      if (!entity || typeof entity !== "object") return;
+      if (entity.rawHash !== undefined && isNonEmptyString(entity.rawHash) &&
+          !isValidSha256Hash(entity.rawHash)) {
+        bad++;
+      }
+      if (entity.source && entity.source.rawHash !== undefined &&
+          isNonEmptyString(entity.source.rawHash) &&
+          !isValidSha256Hash(entity.source.rawHash)) {
+        bad++;
+      }
+    }
+
+    if (payload.source) {
+      if (payload.source.rawHash !== undefined && isNonEmptyString(payload.source.rawHash) &&
+          !isValidSha256Hash(payload.source.rawHash)) {
+        bad++;
+      }
+    }
+    (payload.transactions || []).forEach(checkEntity);
+    (payload.recurringRules || []).forEach(checkEntity);
+    return bad;
   }
 
   function scanForSensitiveData(payload) {
@@ -645,6 +930,18 @@ window.CFM = window.CFM || {};
     detectSimilarTransfers:      detectSimilarTransfers,
     detectIntraBatchDuplicates:  detectIntraBatchDuplicates,
     scanForSensitiveData:        scanForSensitiveData,
+    normalizeImportPayload:      normalizeImportPayload,
+    normalizeRecurringRule:      normalizeRecurringRule,
+    isValidSha256Hash:           isValidSha256Hash,
+    getTxRawHash:                getTxRawHash,
+    getTxTraceFingerprint:       getTxTraceFingerprint,
+    hasTxTraceability:           hasTxTraceability,
+    linkOrphanInstallmentTransactions: linkOrphanInstallmentTransactions,
+    validateBrokenReferences:    validateBrokenReferences,
+    isHistoricalPaymentForInvoice: isHistoricalPaymentForInvoice,
+    parsePaymentCompetenceFromDescription: parsePaymentCompetenceFromDescription,
+    countBadRawHashes:           countBadRawHashes,
+    SHA256_REGEX:                SHA256_REGEX,
     CONFIDENCE_LABELS:             CONFIDENCE_LABELS,
     CLASSIFICATION_LABELS:         CLASSIFICATION_LABELS
   };

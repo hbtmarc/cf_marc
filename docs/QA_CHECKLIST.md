@@ -443,5 +443,35 @@ Lista de verificação manual por fase.
 
 ---
 
+## Fase 0.3.6-D — Estabilização pré-Firebase
+
+**Arquivo canônico:** `cfm_import_v1_cardsnapshots.json`
+
+### Conciliação
+- [ ] Nubank: diferença explicada por pagamento/crédito (≤ 5¢) → mensagem verde, sem alerta amarelo
+- [ ] MP credor R$ 7,49 sem alerta falso
+
+### Semelhanças / financiamentos
+- [ ] Banco Pan Auto Pan **ausente** da aba Semelhanças
+- [ ] Banco Pan visível em Parcelamentos/Financiamentos
+
+### Recorrências
+- [ ] Mesmo item JSON + regra pessoal = **uma linha** com dois badges
+- [ ] Total da aba = itens únicos deduplicados
+
+### Revisão
+- [ ] “Para confirmar” (resumo) = itens críticos/importantes na aba (exclui sugestões)
+- [ ] Checkbox “Apenas revisão” filtra **somente transações** nesta aba
+- [ ] Contadores: bruta / efetiva / validação / sugestões separados
+
+### Hash / privacidade
+- [ ] `node scripts/test-phase-036d.js` → ALL PASS
+- [ ] `badRawHashCount = 0` no resumo após import
+- [ ] Nenhum fingerprint/hash na UI
+
+### Gate Firebase
+- [ ] Todos os itens acima OK antes de iniciar Fase 1 (Firebase/Auth/RTDB)
+
+---
 
 Atualizar tabela de critérios em `STATUS_DO_PROJETO.md` ao concluir cada fase.

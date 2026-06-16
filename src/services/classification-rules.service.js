@@ -266,6 +266,43 @@ window.CFM = window.CFM || {};
     return results;
   }
 
+  function recurrenceNormalizedKey(item) {
+    var desc = norm(item.description || "");
+    return desc + "|" + (item.flow || "out") + "|" + (item.frequency || "monthly");
+  }
+
+  function dedupeRecognizedRecurrences(items) {
+    var map = {};
+    (items || []).forEach(function (item) {
+      if (!item) return;
+      var key = recurrenceNormalizedKey(item);
+      if (!map[key]) {
+        map[key] = Object.assign({}, item, {
+          sourceLabels: item.sourceLabel ? [item.sourceLabel] : [],
+          sources:      item.source ? [item.source] : [],
+          recurrenceKinds: item.recurrenceKind ? [item.recurrenceKind] : []
+        });
+        return;
+      }
+      var merged = map[key];
+      if (item.sourceLabel && merged.sourceLabels.indexOf(item.sourceLabel) < 0) {
+        merged.sourceLabels.push(item.sourceLabel);
+      }
+      if (item.source && merged.sources.indexOf(item.source) < 0) {
+        merged.sources.push(item.source);
+      }
+      if (item.recurrenceKind && merged.recurrenceKinds.indexOf(item.recurrenceKind) < 0) {
+        merged.recurrenceKinds.push(item.recurrenceKind);
+      }
+      if (item.expectedAmountCents && !merged.expectedAmountCents) {
+        merged.expectedAmountCents = item.expectedAmountCents;
+      }
+      if (item.ruleId) merged.ruleId = item.ruleId;
+      if (merged.recurrenceKinds.length > 1) merged.recurrenceKind = "merged";
+    });
+    return Object.keys(map).map(function (k) { return map[k]; });
+  }
+
   function buildRecognizedRecurrences(ruleApplications, jsonRules, similarityPairs) {
     var seen = {};
     var list = [];
@@ -280,12 +317,17 @@ window.CFM = window.CFM || {};
     (jsonRules || []).forEach(function (rule) {
       if (!rule) return;
       add({
-        id:          rule.id || "",
+        id:          rule.externalRef || rule.id || "",
+        externalRef: rule.externalRef || rule.id || "",
         description: rule.description || "",
-        amountCents: rule.amountCents || 0,
+        expectedAmountCents: rule.expectedAmountCents || rule.amountCents || 0,
+        type:        rule.type || "expense",
         flow:        rule.flow || "out",
         frequency:   rule.frequency || "monthly",
-        category:    rule.category || "",
+        categoryLabel: rule.categoryLabel || rule.category || "",
+        startCompetenceMonth: rule.startCompetenceMonth || "",
+        sourcePattern: rule.sourcePattern || "",
+        sourceInstitution: rule.sourceInstitution || "",
         source:      "imported_json",
         sourceLabel: "Importada do JSON",
         recurrenceKind: "imported",
@@ -299,10 +341,10 @@ window.CFM = window.CFM || {};
       add({
         id:          "rule_" + app.ruleId,
         description: app.ruleLabel,
-        amountCents: 0,
+        expectedAmountCents: 0,
         flow:        c.flow || "out",
         frequency:   c.recurrenceFrequency || "monthly",
-        category:    c.categoryLabel || c.categoryId || "",
+        categoryLabel: c.categoryLabel || c.categoryId || "",
         source:      app.ruleSource || "personal_local",
         sourceLabel: app.ruleSource === "personal_local" ? "Regra pessoal local" : "Regra de exemplo",
         recurrenceKind: "personal_rule",
@@ -316,10 +358,10 @@ window.CFM = window.CFM || {};
       add({
         id:          "sim_" + pair.index1 + "_" + pair.index2,
         description: pair.description || "Recorrência candidata",
-        amountCents: 0,
+        expectedAmountCents: 0,
         flow:        "out",
         frequency:   "monthly",
-        category:    "",
+        categoryLabel: "",
         source:      "engine_suggested",
         sourceLabel: "Sugerida pelo motor",
         recurrenceKind: "candidate",
@@ -388,6 +430,7 @@ window.CFM = window.CFM || {};
     scoreRuleMatch:              scoreRuleMatch,
     explainRuleMatch:            explainRuleMatch,
     buildRecognizedRecurrences:  buildRecognizedRecurrences,
+    dedupeRecognizedRecurrences: dedupeRecognizedRecurrences,
     buildRecognizedFinancing:    buildRecognizedFinancing,
     isPixSentToPerson:           isPixSentToPerson,
     isPixReceivedFromPerson:     isPixReceivedFromPerson,

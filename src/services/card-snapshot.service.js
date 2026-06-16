@@ -388,18 +388,17 @@ window.CFM = window.CFM || {};
     return false;
   }
 
-  function isOutOfScopeReconciliationTx(tx, invMonth) {
+  function isOutOfScopeChargeTx(tx, invMonth) {
     if (!tx) return true;
     if (tx.isStub || tx.referenceOnly) return true;
     if (tx.type === "credit_card_payment") return true;
     if (tx.subtype === "credit_balance" || tx.type === "credit_balance") return true;
     if (isPlannedOrFutureTx(tx, invMonth)) return true;
-    if (tx.installment && tx.installment.current && tx.installment.total) {
-      var cur = Number(tx.installment.current);
-      var tot = Number(tx.installment.total);
-      if (cur > 0 && tot > 0 && cur > tot) return true;
-    }
     return false;
+  }
+
+  function sumPaymentTx(tx) {
+    return tx.amountCents || 0;
   }
 
   /**
@@ -408,6 +407,7 @@ window.CFM = window.CFM || {};
   function buildInvoiceReconciliation(invoice, transactions, context) {
     var ctx = context || {};
     var registry = ctx.registry || { resolveCardId: function (r) { return r; } };
+    var isHistoricalPayment = ctx.isHistoricalPaymentForInvoice || function () { return false; };
     var isReference = !!(invoice.isStub || invoice.referenceOnly);
     var invRefKeys = getInvoiceRefKeys(invoice);
     var invMonth = invoice.competenceMonth || "";
@@ -415,18 +415,38 @@ window.CFM = window.CFM || {};
     var resolvedCardId = registry.resolveCardId
       ? registry.resolveCardId(rawCardRef) : rawCardRef;
 
+    var invoiceTotal = invoice.amountDueCents != null
+      ? invoice.amountDueCents
+      : (invoice.totalCents || 0);
+    var previousBalance = invoice.previousBalanceCents || 0;
+
     var empty = {
-      invoiceTotalCents: invoice.amountDueCents != null ? invoice.amountDueCents : (invoice.totalCents || 0),
+      invoiceTotalCents: invoiceTotal,
+      invoiceChargesCents: 0,
+      invoicePaymentsCents: 0,
       linkedPurchasesCents: 0,
       linkedFeesCents: 0,
+      linkedAdjustmentsCents: 0,
       linkedRefundsCents: 0,
       linkedPaymentsCents: 0,
       creditBalanceCents: invoice.creditBalanceCents || 0,
       reconciliationDeltaCents: 0,
+      statementSummary: {
+        previousBalanceCents: previousBalance,
+        purchasesCents: 0,
+        feesCents: 0,
+        adjustmentsCents: 0,
+        refundsCents: 0,
+        paymentsCreditsCents: 0,
+        chargesCents: 0,
+        totalCents: invoiceTotal
+      },
       confidence: "n/a",
       isPartial: false,
       linkedCount: 0,
+      linkedPaymentCount: 0,
       linkedTxIndexes: [],
+      linkedPaymentIndexes: [],
       message: ""
     };
 
@@ -438,7 +458,8 @@ window.CFM = window.CFM || {};
     var hasCredit = invoice.balanceDirection === "credit" &&
       (invoice.creditBalanceCents || 0) > 0;
 
-    var linked = [];
+    var chargeLinked = [];
+    var paymentLinked = [];
     var sameCardSameMonthWithoutRef = 0;
 
     (transactions || []).forEach(function (tx, index) {
@@ -455,67 +476,114 @@ window.CFM = window.CFM || {};
       }
 
       if (!txMatchesInvoiceRef(tx, invRefKeys)) return;
+
+      if (tx.type === "credit_card_payment") {
+        if (!isHistoricalPayment(tx, invMonth)) {
+          paymentLinked.push({ tx: tx, index: index });
+        }
+        return;
+      }
+
       if (!sameMonth) return;
-      if (isOutOfScopeReconciliationTx(tx, invMonth)) return;
+      if (isOutOfScopeChargeTx(tx, invMonth)) return;
       if (hasCredit && tx.type === "income" && tx.flow === "in") return;
 
-      linked.push({ tx: tx, index: index });
+      chargeLinked.push({ tx: tx, index: index });
     });
 
-    var purchases = 0, fees = 0, refunds = 0, payments = 0;
-    linked.forEach(function (item) {
+    var purchases = 0, fees = 0, adjustments = 0, refunds = 0, payments = 0;
+    chargeLinked.forEach(function (item) {
       var tx = item.tx;
-      if (tx.type === "credit_card_payment") {
-        payments += tx.amountCents || 0;
-      } else if (tx.type === "refund") {
+      if (tx.type === "refund") {
         refunds += tx.amountCents || 0;
       } else if (tx.type === "fee") {
         fees += tx.amountCents || 0;
+      } else if (tx.type === "adjustment") {
+        adjustments += tx.amountCents || 0;
       } else if (tx.flow === "out" || tx.type === "credit_card_purchase" || tx.type === "expense") {
         purchases += tx.amountCents || 0;
       }
     });
 
-    var invoiceTotal = invoice.amountDueCents != null
-      ? invoice.amountDueCents
-      : (invoice.totalCents || 0);
-    var linkedOutflow = purchases + fees - refunds;
-    var delta = invoiceTotal - linkedOutflow;
+    paymentLinked.forEach(function (item) {
+      payments += sumPaymentTx(item.tx);
+    });
 
-    var isPartial = linked.length === 0 ||
+    var invoiceChargesCents = purchases + fees + adjustments - refunds;
+    var creditBalance = invoice.creditBalanceCents || 0;
+    var paymentsCredits = payments + creditBalance;
+    var netExpected = previousBalance + invoiceChargesCents - paymentsCredits;
+    var unexplainedDelta = invoiceTotal - netExpected;
+    var chargesOnlyDelta = invoiceTotal - invoiceChargesCents;
+    var RECON_TOLERANCE = 5;
+
+    var isPartial = chargeLinked.length === 0 ||
       sameCardSameMonthWithoutRef > 0 ||
-      (invRefKeys.length === 0);
+      invRefKeys.length === 0;
 
     var confidence = "high";
-    if (linked.length === 0) confidence = "low";
+    if (chargeLinked.length === 0 && paymentLinked.length === 0) confidence = "low";
     else if (isPartial) confidence = "partial";
 
+    var explainedByPayments = Math.abs(unexplainedDelta) <= RECON_TOLERANCE;
+    if (!explainedByPayments && paymentsCredits > 0) {
+      if (Math.abs(Math.abs(chargesOnlyDelta) - payments) <= RECON_TOLERANCE) explainedByPayments = true;
+      if (Math.abs(Math.abs(chargesOnlyDelta) - paymentsCredits) <= RECON_TOLERANCE) explainedByPayments = true;
+      if (Math.abs(chargesOnlyDelta + payments) <= RECON_TOLERANCE) explainedByPayments = true;
+    }
+
+    var reconciliationDeltaCents = unexplainedDelta;
+
     if (hasCredit) {
-      delta = 0;
-      isPartial = linked.length === 0 && sameCardSameMonthWithoutRef > 0;
+      reconciliationDeltaCents = 0;
+      isPartial = chargeLinked.length === 0 && sameCardSameMonthWithoutRef > 0;
+      explainedByPayments = true;
+    } else if (explainedByPayments) {
+      reconciliationDeltaCents = 0;
     }
 
     var message = "";
     if (hasCredit) {
       message = "Saldo credor — não entra na conciliação de compras.";
+    } else if (explainedByPayments && Math.abs(chargesOnlyDelta) > RECON_TOLERANCE) {
+      message = "Conciliação explicada por pagamento/crédito.";
     } else if (isPartial && confidence !== "high") {
       message = "Conciliação parcial — nem todas as transações da fatura estão presentes no JSON.";
-    } else if (Math.abs(delta) <= 1 && linked.length > 0) {
+    } else if (Math.abs(reconciliationDeltaCents) <= RECON_TOLERANCE && chargeLinked.length > 0) {
       message = "Conciliação consistente.";
     }
 
+    var statementSummary = {
+      previousBalanceCents: previousBalance,
+      purchasesCents: purchases,
+      feesCents: fees,
+      adjustmentsCents: adjustments,
+      refundsCents: refunds,
+      paymentsCreditsCents: paymentsCredits,
+      chargesCents: invoiceChargesCents,
+      totalCents: invoiceTotal
+    };
+
     return {
       invoiceTotalCents: invoiceTotal,
+      invoiceChargesCents: invoiceChargesCents,
+      invoicePaymentsCents: payments,
       linkedPurchasesCents: purchases,
       linkedFeesCents: fees,
+      linkedAdjustmentsCents: adjustments,
       linkedRefundsCents: refunds,
       linkedPaymentsCents: payments,
-      creditBalanceCents: invoice.creditBalanceCents || 0,
-      reconciliationDeltaCents: hasCredit ? 0 : delta,
+      creditBalanceCents: creditBalance,
+      reconciliationDeltaCents: reconciliationDeltaCents,
+      chargesOnlyDeltaCents: chargesOnlyDelta,
+      explainedByPayments: explainedByPayments,
+      statementSummary: statementSummary,
       confidence: confidence,
       isPartial: isPartial,
-      linkedCount: linked.length,
-      linkedTxIndexes: linked.map(function (l) { return l.index; }),
+      linkedCount: chargeLinked.length,
+      linkedPaymentCount: paymentLinked.length,
+      linkedTxIndexes: chargeLinked.map(function (l) { return l.index; }),
+      linkedPaymentIndexes: paymentLinked.map(function (l) { return l.index; }),
       hasCredit: hasCredit,
       message: message,
       sameCardOrphanCount: sameCardSameMonthWithoutRef

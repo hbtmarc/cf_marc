@@ -665,3 +665,48 @@ A aba Cartões exibia `Usado: —` / `Disponível: —` quando o snapshot local 
 | 10 | Conciliação parcial quando escopo incompleto | ✅ |
 | 11 | Contadores de recorrência consistentes/explicados | ✅ |
 | 12–14 | Sem persistência, Firebase, vazamento | ✅ |
+
+### Refinamentos (contrato canônico)
+
+| Área | Correção |
+|------|----------|
+| `rawHash` | Apenas `sha256:<64 hex>`; legível → `canonicalFingerprint`/`rawFingerprint` |
+| `recurringRules` | Formato único com `expectedAmountCents`, `categoryLabel`, `frequency` |
+| Conciliação | `invoiceChargesCents` vs `invoicePaymentsCents`; `statementSummary` |
+| Mercado Pago | Pagamento histórico (abril) não contamina fatura maio credora |
+| Airbnb | Parcela 2/6 vinculada ao plano por merchant + valor próximo |
+| Revisão | Contadores bruto vs efetivo; redução por regras explicada |
+| UI | Sem exibir hash/fingerprint; escape em todos os campos JSON |
+
+---
+
+## Fase 0.3.6-D — Estabilização final do importador (pré-Firebase)
+
+**Data:** 15/06/2026 | **Estado:** ✅ Concluída
+
+**Arquivo canônico de validação:** `cfm_import_v1_cardsnapshots.json` (local, não versionado)
+
+**Próxima fase bloqueada:** Firebase / Auth / RTDB — só após todos os critérios abaixo passarem com o JSON canônico.
+
+### Correções
+
+| Área | Correção |
+|------|----------|
+| Conciliação Nubank | Tolerância 5¢; mensagem “Conciliação explicada por pagamento/crédito”; sem alerta amarelo quando explicável |
+| Banco Pan | Excluído de Semelhanças; visível em Financiamentos/Parcelamentos e Recorrências |
+| Recorrências | Deduplicação por `normalizedKey`; badges múltiplas origens; total = itens únicos |
+| Revisão | `rawReviewCount` / `effectiveReviewCount` / `importantReviewCount` / `suggestionCount`; aba alinhada |
+| Hash | `badRawHashCount = 0` após normalização; teste `scripts/test-phase-036d.js` |
+
+### Critérios de aceite — Fase 0.3.6-D
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | 206 válidos / 0 inválidos (`cfm_import_v1_cardsnapshots.json`) | ✅ (validação local) |
+| 2 | 4 cartões snapshot consistente | ✅ |
+| 3 | MP credor R$ 7,49 sem alerta falso | ✅ |
+| 4 | Nubank sem alerta se diferença explicada por pagamento/crédito | ✅ |
+| 5 | Banco Pan fora de Semelhanças | ✅ |
+| 6 | Recorrências sem duplicação visual | ✅ |
+| 7 | `badRawHashCount = 0` | ✅ |
+| 8 | Console limpo; nada persistido; Firebase ausente | ✅ |

@@ -233,18 +233,21 @@ flow = "neutral" → transferência interna / não afeta saldo consolidado
 
 ---
 
-## `recurringRules[]`
+## `recurringRules[]` (formato canônico — Fase 0.3.6-C)
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `id` | string | |
+| `externalRef` | string | Identificador estável |
 | `description` | string | |
-| `accountId` | string | |
-| `amountCents` | int+ | |
-| `flow` | `out` | (typical) |
-| `frequency` | enum | `monthly`, `weekly`, `yearly` |
-| `dayOfMonth` | int? | |
-| `category` | string | |
+| `type` | enum | `income`, `expense`, … |
+| `flow` | enum | `in`, `out` |
+| `frequency` | enum | `monthly`, `weekly`, `yearly` (não usar `cadence`) |
+| `expectedAmountCents` | int+ | Valor esperado (legado: `amountCents` migrado na importação) |
+| `categoryLabel` | string | |
+| `startCompetenceMonth` | YYYY-MM | |
+| `sourcePattern` | string? | Padrão de origem |
+| `sourceInstitution` | string? | |
+| `review` | object? | Revisão humana quando aplicável |
 | `isActive` | boolean | |
 
 ---
@@ -268,7 +271,8 @@ Arquivo: `src/schemas/import.schema.js`
 - `schemaVersion` exato (`cfm.import.v1`)
 - `source.institution` e `source.documentType` obrigatórios
 - Cada transação: `competenceMonth`, `amountCents` positivo, `flow` válido, `description`, `type` canônico
-- Rastreabilidade: aviso quando ausentes `externalRef` e `source.rawHash`
+- Rastreabilidade: aviso quando ausentes `externalRef` e hash/fingerprint
+- `source.rawHash` e `tx.rawHash`: apenas `sha256:<64 hex>`; impressões legíveis → `source.canonicalFingerprint`
 - Validação completa de FKs e unicidade — Fase 1+
 
 ---

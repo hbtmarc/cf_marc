@@ -17,6 +17,8 @@ window.CFM = window.CFM || {};
   var MONTH_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
   var DATE_REGEX  = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
+  var SHA256_REGEX = /^sha256:[a-f0-9]{64}$/i;
+
   /* ── helpers ── */
   function isPositiveInteger(v) {
     return typeof v === "number" && Number.isInteger(v) && v > 0;
@@ -44,8 +46,12 @@ window.CFM = window.CFM || {};
     if (source.periodEnd !== undefined && !DATE_REGEX.test(source.periodEnd)) {
       fatal.push("source.periodEnd: deve ser data válida no formato YYYY-MM-DD.");
     }
-    if (source.rawHash !== undefined && !isNonEmptyString(source.rawHash)) {
-      fatal.push("source.rawHash: quando presente, deve ser string não vazia.");
+    if (source.rawHash !== undefined) {
+      if (!isNonEmptyString(source.rawHash)) {
+        fatal.push("source.rawHash: quando presente, deve ser string não vazia.");
+      } else if (!SHA256_REGEX.test(source.rawHash.trim())) {
+        fatal.push("source.rawHash: deve ser SHA-256 no formato sha256:<64 hex> (use source.canonicalFingerprint para impressões legíveis).");
+      }
     }
     if (source.externalRef !== undefined && !isNonEmptyString(source.externalRef)) {
       fatal.push("source.externalRef: quando presente, deve ser string não vazia.");
@@ -88,9 +94,20 @@ window.CFM = window.CFM || {};
     /* traceabilidade — aviso, não erro fatal */
     var txSource = tx.source && typeof tx.source === "object" ? tx.source : null;
     var hasTrace = isNonEmptyString(tx.externalRef) ||
-      (txSource && isNonEmptyString(txSource.rawHash));
+      (txSource && isNonEmptyString(txSource.rawHash) && SHA256_REGEX.test(txSource.rawHash.trim())) ||
+      (tx.rawHash && SHA256_REGEX.test(String(tx.rawHash).trim())) ||
+      (txSource && isNonEmptyString(txSource.canonicalFingerprint)) ||
+      (txSource && isNonEmptyString(txSource.rawFingerprint));
     if (!hasTrace) {
-      warnings.push(base + ": sem externalRef nem source.rawHash — rastreabilidade reduzida.");
+      warnings.push(base + ": sem externalRef nem rastreio (rawHash SHA-256 ou fingerprint) — rastreabilidade reduzida.");
+    }
+
+    if (tx.rawHash !== undefined && isNonEmptyString(tx.rawHash) && !SHA256_REGEX.test(tx.rawHash.trim())) {
+      warnings.push(base + ": rawHash legível será normalizado para source.canonicalFingerprint/rawFingerprint.");
+    }
+    if (txSource && txSource.rawHash !== undefined && isNonEmptyString(txSource.rawHash) &&
+        !SHA256_REGEX.test(txSource.rawHash.trim())) {
+      warnings.push(base + ": source.rawHash legível será normalizado para fingerprint.");
     }
 
     /* revisão solicitada */
@@ -106,6 +123,24 @@ window.CFM = window.CFM || {};
     var last = card.lastFour !== undefined ? card.lastFour : card.last4;
     if (last !== undefined && String(last).length > 4) {
       warnings.push("cards[" + index + "]: lastFour/last4 deve ter no máximo 4 caracteres.");
+    }
+  }
+
+  /* ── recurring rule ── */
+  function validateRecurringRule(rule, index, warnings) {
+    if (!rule || typeof rule !== "object") return;
+    var base = "recurringRules[" + index + "]";
+    if (!isNonEmptyString(rule.externalRef) && !isNonEmptyString(rule.id)) {
+      warnings.push(base + ": externalRef recomendado.");
+    }
+    if (rule.rawHash !== undefined && isNonEmptyString(rule.rawHash) && !SHA256_REGEX.test(rule.rawHash.trim())) {
+      warnings.push(base + ": rawHash legível deve ir em source.canonicalFingerprint.");
+    }
+    if (rule.amountCents != null && rule.expectedAmountCents == null) {
+      warnings.push(base + ": amountCents legado — será migrado para expectedAmountCents.");
+    }
+    if (rule.cadence) {
+      warnings.push(base + ": cadence legado — use frequency.");
     }
   }
 
@@ -151,6 +186,12 @@ window.CFM = window.CFM || {};
     if (Array.isArray(data.cards)) {
       data.cards.forEach(function (card, i) {
         validateCard(card, i, warnings);
+      });
+    }
+
+    if (Array.isArray(data.recurringRules)) {
+      data.recurringRules.forEach(function (rule, i) {
+        validateRecurringRule(rule, i, warnings);
       });
     }
 
