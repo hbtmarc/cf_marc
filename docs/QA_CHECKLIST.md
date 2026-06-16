@@ -474,4 +474,169 @@ Lista de verificação manual por fase.
 
 ---
 
+## Fase 0.3.6-E — Estabilização final (cartões, faturas, confirmação zero)
+
+**Arquivo canônico:** `cfm_import_v1_cardsnapshots.json`
+
+### Cartões (cardSnapshots prioritário)
+- [ ] Limite/usado/disponível vêm de `payload.cardSnapshots` (não só overlay local)
+- [ ] BB, MP, Porto, Nubank com valores corretos (tabela em STATUS_DO_PROJETO.md)
+- [ ] `usedCents + availableCents === limitCents` (±1 centavo)
+- [ ] Cartão sem snapshot: “snapshot ausente”, não R$ 0,00
+
+### Faturas / conciliação
+- [ ] UI: Encargos, Pagamentos/créditos, Liquidação bancária (quando houver), Status final
+- [ ] MP 2026-05: saldo credor R$ 7,49 sem alerta falso
+- [ ] Porto/Nubank: diferença explicada por pagamento/crédito (≤5¢) → verde, sem amarelo
+- [ ] Pagamento citando outro mês (ex.: abril/2026) não entra na fatura de maio
+- [ ] `hasReconciliationGap` só quando sem explicação
+
+### Itens para confirmar
+- [ ] Badge da aba = `blockingConfirmCount` (0 com JSON canônico)
+- [ ] Stubs só em Faturas > Referências/Stubs
+- [ ] Transferência mesma titularidade auto-resolvida
+- [ ] Sugestões separadas, não bloqueantes
+
+### Contadores
+- [ ] Resumo: bloqueantes vs informativas em semelhanças (não “0” ambíguo com badge 12)
+- [ ] `blockingSimilarityCount`, `informationalSimilarityCount`, `personalRuleAppliedCount`
+
+### Testes automatizados
+- [ ] `node scripts/test-phase-036d.js` → ALL PASS
+- [ ] `node scripts/test-phase-036e.js` → ALL PASS
+- [ ] `badRawHashCount = 0`; sem hash/fingerprint na UI
+
+### Gate Firebase
+- [ ] Critérios 0.3.6-E OK antes de Fase 1
+
+---
+
+## Fase 0.3.6-F — Zero bloqueios e conciliação sem liquidação no delta
+
+**Arquivo canônico:** `cfm_import_v1_cardsnapshots.json`
+
+### Cartões
+- [ ] Badge de origem exibe string legível (“Snapshot do JSON”, “Snapshot local”, “Snapshot ausente”)
+- [ ] **Nenhum** `[object Object]` na aba Cartões
+- [ ] 4 cartões com limite/usado/disponível corretos via `cardSnapshots`
+
+### Faturas / conciliação
+- [ ] Encargos, pagamentos/créditos internos e **liquidação bancária** exibidos separadamente
+- [ ] Liquidação bancária **não** gera `hasReconciliationGap`
+- [ ] Nubank: total R$ 752,46, encargos R$ 752,45, liquidação R$ 2.752,46 → sem alerta amarelo
+- [ ] Porto: encargos = total → status verde, liquidação à parte
+- [ ] MP: saldo credor R$ 7,49 sem alerta; pagamento abril fora de maio
+- [ ] Ourocard: `partial` informativo, não bloqueante
+
+### Bloqueios e contadores
+- [ ] Aba “Itens para confirmar”: badge = `blockingConfirmCount` (0 com JSON canônico)
+- [ ] Resumo: “Semelh. bloqueantes” vs “Semelh. informativas” coerentes com tabs
+- [ ] “Classif. por regra pessoal” reflete `personalRuleAppliedCount`
+
+### Testes automatizados
+- [ ] `node scripts/test-phase-036d.js` → ALL PASS
+- [ ] `node scripts/test-phase-036e.js` → ALL PASS
+- [ ] `node scripts/test-phase-036f.js` → ALL PASS
+
+### Gate Firebase
+- [ ] Critérios 0.3.6-F OK antes de Fase 1
+
+---
+
+## Fase 0.3.7 — Responsividade premium (`#/importar`)
+
+**Arquivo canônico:** `cfm_import_v1_cardsnapshots.json` (validação funcional inalterada)
+
+### Breakpoints (DevTools)
+- [ ] **1440px / 1280px:** sidebar fixa; faturas em 3 colunas; KPIs em grade ampla
+- [ ] **1024px:** sidebar compacta; faturas 2 colunas; cartões 2 colunas
+- [ ] **768px:** drawer lateral; KPIs 2 colunas; filtros empilhados
+- [ ] **430px / 390px / 375px / 320px:** 1 coluna; action bar sticky; sem scroll horizontal
+
+### Abas e KPIs
+- [ ] Abas scrollam horizontalmente; fade indica overflow; “Privacidade” acessível
+- [ ] KPIs essenciais visíveis; métricas técnicas em bloco expansível
+- [ ] Contadores e valores monetários **não** truncados
+
+### Conteúdo por aba
+- [ ] **Cartões:** barra de uso dentro do card; snapshot legível
+- [ ] **Faturas:** encargos / liquidação / status legíveis em mobile
+- [ ] **Transações:** card (descrição+valor, tags, meta); checkbox revisão confortável
+- [ ] **Semelhanças / Recorrências / Parcelamentos:** 1 coluna no mobile
+
+### Ações e regressão
+- [ ] Barra inferior sticky no mobile; botão confirmar desabilitado
+- [ ] `node scripts/test-phase-036d.js` → ALL PASS
+- [ ] `node scripts/test-phase-036e.js` → ALL PASS
+- [ ] `node scripts/test-phase-036f.js` → ALL PASS
+- [ ] 206 válidos, 0 bloqueantes, faturas sem alertas falsos (JSON canônico)
+
+### Gate Firebase
+- [ ] UI 0.3.7 OK; critérios financeiros 0.3.6-F mantidos
+
+---
+
+## Fase 0.3.8 — UX final do importador (`#/importar`)
+
+**Arquivo canônico:** `cfm_import_v1_cardsnapshots.json` (validação funcional inalterada)
+
+### Visão principal (sem modo técnico)
+- [ ] Sem `amountCents`, `rawHash`, schema, exemplo JSON ou boas práticas de dev na tela padrão
+- [ ] Resumo: status, lançamentos, pendências, cartões, faturas, parcelas, recorrências, sugestões opcionais
+- [ ] KPIs legíveis (sem quebra “con-tas” / “car-tões”)
+- [ ] “Detalhes técnicos da validação” fechado por padrão; conteúdo dev dentro dele
+
+### Abas renomeadas
+- [ ] Lançamentos · Revisar · Observações · Segurança — todas acessíveis com scroll/fade
+
+### Por aba
+- [ ] **Revisar:** estado positivo quando 0 bloqueantes; sugestões marcadas como opcionais
+- [ ] **Observações:** “Essas observações não bloqueiam a importação.”
+- [ ] **Segurança:** checklist CPF / cartão / linha digitável / sequência sensível
+
+### Breakpoints
+- [ ] 1440 / 1280 / 1024 / 768 / 430 / 390 / 375 / 320 — sem scroll horizontal no body
+- [ ] Desktop usa largura ampla; mobile com action bar sticky
+
+### Regressão
+- [ ] Importar JSON canônico → 206 válidos, 0 bloqueantes, 4 cartões, 6 faturas, 12 observações informativas
+- [ ] MP / Porto / Nubank sem alertas falsos
+- [ ] `node scripts/test-phase-036d.js` → ALL PASS
+- [ ] `node scripts/test-phase-036e.js` → ALL PASS
+- [ ] `node scripts/test-phase-036f.js` → ALL PASS
+
+### Gate Firebase
+- [ ] UI 0.3.8 OK; critérios financeiros 0.3.6-F mantidos
+
+---
+
+## Fase 0.3.9 — Contrato canônico (`cfm.import.v1`)
+
+**Documento:** [CONTRATO_IMPORTACAO_CFM_V1.md](./CONTRATO_IMPORTACAO_CFM_V1.md)
+
+### Script de contrato
+- [ ] `node scripts/validate-import-contract.js data/sample-import.cfm.v1.json` → **PASS**
+- [ ] `node scripts/validate-import-contract.js <cfm_import_v1_cardsnapshots.json> --canonical` → **PASS** (arquivo local, fora do Git)
+
+### Contrato
+- [ ] `schemaVersion` = `cfm.import.v1`
+- [ ] `cardSnapshots[]` válidos (FK, aritmética, `source` string)
+- [ ] `badRawHashCount` = 0
+- [ ] 0 pendências bloqueantes no importador (JSON canônico)
+- [ ] Gerador não emite `cadence` nem `amountCents` em `recurringRules`
+- [ ] Seção **CORREÇÕES NECESSÁRIAS NO GERADOR JSON** vazia ou endereçada
+
+### Regressão
+- [ ] UI Fase 0.3.8 preservada (sem alteração visual)
+- [ ] Nenhum dado real versionado
+- [ ] Console limpo (sem dump de payload)
+- [ ] `node scripts/test-phase-036d.js` → ALL PASS
+- [ ] `node scripts/test-phase-036e.js` → ALL PASS
+- [ ] `node scripts/test-phase-036f.js` → ALL PASS
+
+### Gate Firebase
+- [ ] Contrato PASS no JSON de produção **antes** de Fase 1 (Auth + RTDB)
+
+---
+
 Atualizar tabela de critérios em `STATUS_DO_PROJETO.md` ao concluir cada fase.

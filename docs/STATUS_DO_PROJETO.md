@@ -710,3 +710,186 @@ A aba Cartões exibia `Usado: —` / `Disponível: —` quando o snapshot local 
 | 6 | Recorrências sem duplicação visual | ✅ |
 | 7 | `badRawHashCount = 0` | ✅ |
 | 8 | Console limpo; nada persistido; Firebase ausente | ✅ |
+
+---
+
+## Fase 0.3.6-E — Estabilização final: cartões, faturas e confirmação zero
+
+**Data:** 16/06/2026 | **Estado:** ✅ Concluída
+
+**Arquivo canônico de validação:** `cfm_import_v1_cardsnapshots.json` (local, não versionado)
+
+### Correções
+
+| Área | Correção |
+|------|----------|
+| Snapshots | `payload.cardSnapshots` prioritário sobre overlay local; `cards[]` só cadastro estrutural |
+| Snapshot ausente | Exibe “snapshot ausente”, nunca R$ 0,00 fictício |
+| Conciliação | `invoiceChargesCents`, `invoicePaymentsCreditsCents`, `settlementPaymentsCents`, `creditBalanceCents` separados |
+| Status fatura | `consistent`, `explained_by_payment`, `partial`, `credit_balance`, `requires_review` |
+| `hasReconciliationGap` | Só quando diferença não explicada (tolerância 5¢) |
+| Revisão | Stubs informativos; transferência mesma titularidade auto-resolvida; `blockingConfirmCount = 0` |
+| Contadores | `blockingConfirmCount`, `blockingSimilarityCount`, `informationalSimilarityCount`, etc. |
+| Teste | `node scripts/test-phase-036e.js` |
+
+### Valores esperados (cardSnapshots no JSON)
+
+| Cartão | Limite | Usado | Disponível |
+|--------|--------|-------|------------|
+| BB/Ourocard | R$ 10.000,00 | R$ 8.152,00 | R$ 1.848,00 |
+| Mercado Pago | R$ 500,00 | R$ 364,97 | R$ 135,03 |
+| Porto | R$ 16.200,00 | R$ 14.092,03 | R$ 2.107,97 |
+| Nubank | R$ 12.450,00 | R$ 10.606,00 | R$ 1.844,00 |
+
+### Critérios de aceite — Fase 0.3.6-E
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | 206 válidos / 0 inválidos | ✅ (validação local) |
+| 2 | `badRawHashCount = 0` | ✅ |
+| 3 | 4 cartões com limite/usado/disponível corretos | ✅ |
+| 4 | MP credor R$ 7,49 sem alerta falso | ✅ |
+| 5 | Porto/Nubank sem alerta se diferença explicada | ✅ |
+| 6 | Itens para confirmar = 0 (stubs/sugestões/auto-resolvidos) | ✅ |
+| 7 | Semelhanças: 0 bloqueantes, informativas separadas | ✅ |
+| 8 | Reimportação: 206 já importados, 0 duplicatas | ✅ (simulação local) |
+| 9 | Console limpo; sem persistência/Firebase | ✅ |
+| 10 | Documentação e QA atualizados | ✅ |
+
+---
+
+## Fase 0.3.6-F — Estabilização final: zero bloqueios e conciliação correta
+
+**Data:** 16/06/2026 | **Estado:** ✅ Concluída
+
+**Arquivo canônico:** `cfm_import_v1_cardsnapshots.json`
+
+### Correções
+
+| Área | Correção |
+|------|----------|
+| Badge cartões | `normalizeSnapshotSourceKey` + `getSnapshotSourceLabel` — fim do `[object Object]` quando `source` é objeto |
+| Conciliação | Liquidação bancária (`settlementPaymentsCents`) exibida à parte, **nunca** entra no delta |
+| Nubank | Encargos R$ 752,45 vs total R$ 752,46 (1¢) → `consistent`, sem alerta amarelo |
+| Porto / MP | Sem gap falso; saldo credor preservado |
+| Ourocard | `partial` informativo, não bloqueante |
+| Contadores | Label “Classif. por regra pessoal” alinhado a `personalRuleAppliedCount` |
+| Testes | `node scripts/test-phase-036f.js` |
+
+### Critérios de aceite — Fase 0.3.6-F
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | Nenhum `[object Object]` na aba Cartões | ✅ |
+| 2 | Nubank/Porto/MP sem alerta falso de conciliação | ✅ |
+| 3 | Liquidação bancária separada dos encargos | ✅ |
+| 4 | `blockingConfirmCount = 0` (JSON canônico) | ✅ (testes + validação local) |
+| 5 | `test-phase-036d/e/f.js` ALL PASS | ✅ |
+| 6 | Sem Firebase/persistência | ✅ |
+
+---
+
+## Fase 0.3.7 — Responsividade premium do importador
+
+**Data:** 16/06/2026 | **Estado:** ✅ Concluída
+
+**Escopo:** apenas UI/CSS/markup da tela `#/importar` — lógica financeira da 0.3.6-F intacta.
+
+### Entregas
+
+| Área | Melhoria |
+|------|----------|
+| Layout shell | Breakpoints 1280 / 1024 / 768 / 380; sidebar drawer &lt;768px; tokens `--importer-padding`, `--touch-target` |
+| Abas | Scroll horizontal com snap, fade lateral, altura mínima 44px |
+| KPIs | Grade essencial (7 métricas) + `<details>` métricas técnicas |
+| Cartões / faturas | Grid 1→2→3 colunas; valores sem ellipsis |
+| Transações | Layout card no mobile; filtros empilhados; checkbox com área de toque |
+| Ações | Barra sticky no mobile com safe-area; confirmar continua desabilitado |
+| Acessibilidade | Foco visível; `esc()` preservado |
+
+### Critérios de aceite — Fase 0.3.7
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | Sem scroll horizontal no body (320–1440px) | ✅ (CSS) |
+| 2 | Tabs scrolláveis sem cortar “Privacidade” | ✅ |
+| 3 | Transações legíveis em mobile (card layout) | ✅ |
+| 4 | Valores financeiros sem truncamento | ✅ |
+| 5 | Lógica 0.3.6-F intacta; testes d/e/f ALL PASS | ✅ |
+| 6 | Nenhuma persistência/Firebase adicionada | ✅ |
+
+---
+
+## Fase 0.3.8 — UX final do importador (usuário)
+
+**Data:** 16/06/2026 | **Estado:** ✅ Concluída
+
+**Escopo:** hierarquia visual, largura útil, simplificação da UI, modo técnico recolhido — lógica financeira 0.3.6-F intacta.
+
+### Entregas
+
+| Área | Melhoria |
+|------|----------|
+| Largura | `app-main` até 96rem; containers `min-width: 0`; sem coluna estreita |
+| Abas | Labels curtas (Lançamentos, Revisar, Observações, Segurança); scroll + fade |
+| Resumo | KPIs de usuário (status, lançamentos, pendências, cartões, faturas, parcelas, recorrências, sugestões) |
+| Modo técnico | `<details>` “Detalhes técnicos da validação” fechado por padrão |
+| Rodapé idle | Schema, campos canônicos e avisos de dev removidos da visão principal |
+| Abas | Estados positivos em Revisar; observações informativas; checklist simples em Segurança |
+
+### Critérios de aceite — Fase 0.3.8
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | UI orientada ao usuário final (sem ruído técnico na visão principal) | ✅ |
+| 2 | Aba “Segurança” sempre navegável | ✅ |
+| 3 | Resumo responde “posso importar com segurança?” | ✅ |
+| 4 | Lógica 0.3.6-F intacta; testes d/e/f ALL PASS | ✅ |
+| 5 | Nenhuma persistência/Firebase/gerador JSON alterado | ✅ |
+
+---
+
+## Fase 0.3.9 — Contrato canônico Importador + Gerador JSON
+
+**Data:** 16/06/2026 | **Estado:** ✅ Concluída
+
+**Objetivo:** Camada testável e auditável do contrato `cfm.import.v1` para impedir divergências entre Gerador JSON e Importador.
+
+### Arquivos criados/alterados
+
+| Arquivo | Papel |
+|---------|-------|
+| `docs/CONTRATO_IMPORTACAO_CFM_V1.md` | Contrato normativo + invariantes |
+| `src/schemas/import.contract.js` | Validação de contrato reutilizável |
+| `scripts/validate-import-contract.js` | CLI de regressão + relatório Gerador JSON |
+| `data/sample-import.cfm.v1.json` | Fixture sintética segura atualizada |
+| `docs/SCHEMA_IMPORTACAO_JSON.md` | Link para contrato e CLI |
+| `docs/QA_CHECKLIST.md` | Seção Fase 0.3.9 |
+
+### Riscos mitigados
+
+| Risco | Mitigação |
+|-------|-----------|
+| Gerador emite campos obsoletos (`cadence`, `amountCents` em recorrência) | Bloqueio/avisos no contrato + seção de correções |
+| `cardSnapshots[].source` como objeto | Erro bloqueante com fix explícito |
+| Snapshots inconsistentes (used+available≠limit) | Validação aritmética ±1¢ |
+| rawHash legível | `badRawHashCount` + normalização documentada |
+| JSON real no Git | Continua gitignored; fixture sintética versionada |
+| Regressão financeira | Testes 036d/e/f + `--canonical` opcional |
+
+### Critérios de aceite — Fase 0.3.9
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | Documento de contrato completo | ✅ |
+| 2 | Script CLI sem dependências npm | ✅ |
+| 3 | Fixture sintética segura | ✅ |
+| 4 | UI 0.3.8 preservada | ✅ |
+| 5 | Testes 036d/e/f ALL PASS | ✅ |
+| 6 | Nenhuma persistência/Firebase | ✅ |
+
+### Próximos passos
+
+1. Rodar `validate-import-contract.js` no JSON canônico local antes de cada release do Gerador JSON.
+2. Corrigir divergências listadas em **CORREÇÕES NECESSÁRIAS NO GERADOR JSON**.
+3. **Bloqueio explícito:** Firebase Auth + RTDB só após contrato PASS no arquivo de produção.

@@ -1,6 +1,6 @@
 /**
- * Página de importação — Fase 0.3.6
- * Tabs, semelhanças classificadas, revisão agrupada, assistente financeiro local.
+ * Página de importação — Fase 0.3.8
+ * UX orientada ao usuário final; detalhes técnicos recolhidos.
  * Nada é gravado. Firebase será integrado na Fase 1.
  */
 window.CFM = window.CFM || {};
@@ -32,10 +32,10 @@ window.CFM = window.CFM || {};
   };
 
   var OVERALL_STATUS = {
-    ready:        { icon: "✅", label: "Arquivo validado",                mod: "ready"        },
-    has_pending:  { icon: "📋", label: "Pronto para revisar",             mod: "has-pending"  },
-    has_blockers: { icon: "❌", label: "Correção necessária",            mod: "has-blockers" },
-    empty:        { icon: "📭", label: "Arquivo sem dados relevantes",    mod: "empty"        }
+    ready:        { icon: "✅", label: "Arquivo validado",             mod: "ready"        },
+    has_pending:  { icon: "📋", label: "Precisa revisar",                mod: "has-pending"  },
+    has_blockers: { icon: "❌", label: "Precisa revisar",                mod: "has-blockers" },
+    empty:        { icon: "📭", label: "Arquivo sem dados relevantes", mod: "empty"        }
   };
 
   var SIMILARITY_SECTIONS = [
@@ -58,15 +58,15 @@ window.CFM = window.CFM || {};
   };
 
   var TABS = [
-    { id: "summary",      label: "Resumo",               countKey: null },
-    { id: "cards",        label: "Cartões",              countKey: "cards" },
-    { id: "invoices",     label: "Faturas",               countKey: "invoices" },
-    { id: "transactions", label: "Transações",            countKey: "transactions" },
-    { id: "review",       label: "Itens para confirmar",  countKey: "pendingReview" },
-    { id: "similarities", label: "Semelhanças",           countKey: "similaritiesTotal" },
-    { id: "recurring",    label: "Recorrências",          countKey: "recurringTotal" },
-    { id: "installments", label: "Parcelamentos",         countKey: "installmentPlans" },
-    { id: "privacy",      label: "Privacidade",           countKey: "privacyAlerts" }
+    { id: "summary",      label: "Resumo",        countKey: null },
+    { id: "cards",        label: "Cartões",       countKey: "cards" },
+    { id: "invoices",     label: "Faturas",        countKey: "invoices" },
+    { id: "transactions", label: "Lançamentos",  countKey: "transactions" },
+    { id: "review",       label: "Revisar",        countKey: "blockingConfirmCount" },
+    { id: "similarities", label: "Observações",    countKey: "blockingSimilarityCount" },
+    { id: "recurring",    label: "Recorrências",   countKey: "recurringTotal" },
+    { id: "installments", label: "Parcelas",       countKey: "installmentPlans" },
+    { id: "privacy",      label: "Segurança",      countKey: "privacyAlerts" }
   ];
 
   /* ════════════════════════════════════════════════
@@ -158,95 +158,109 @@ window.CFM = window.CFM || {};
    * TAB: SUMMARY
    * ════════════════════════════════════════════════ */
 
-  function buildSummaryTab(report) {
-    var c   = report.counters;
-    var src = report.source;
-    var si  = OVERALL_STATUS[report.overallStatus] || OVERALL_STATUS.ready;
+  function buildStatItem(s) {
+    var cls = "stat-item" + (s.mod ? " stat-item--" + s.mod : "");
+    var titleAttr = s.title ? ' title="' + esc(s.title) + '"' : "";
+    var valueHtml = s.isText
+      ? '<span class="stat-item__value stat-item__value--text">' + esc(String(s.value)) + "</span>"
+      : '<span class="stat-item__value">' + s.value + "</span>";
+    var subHtml = s.sub ? '<span class="stat-item__sub">' + esc(s.sub) + "</span>" : "";
+    return '<div class="' + cls + '"' + titleAttr + ">" + valueHtml +
+           '<span class="stat-item__label">' + esc(s.label) + "</span>" + subHtml + "</div>";
+  }
 
-    /* source info */
+  function buildSchemaReferenceBlock() {
+    return (
+      '<div class="schema-ref">' +
+      'Referência: <code>docs/SCHEMA_IMPORTACAO_JSON.md</code>' +
+      '&nbsp;·&nbsp; Exemplo: <code>data/sample-import.cfm.v1.json</code>' +
+      "</div>" +
+      '<ul class="feature-list">' +
+      '  <li class="feature-list__item"><span class="feature-list__dot"></span>' +
+      '    <span class="feature-list__text"><strong>amountCents</strong> sempre positivo; direção definida por <strong>flow</strong> (<code>in</code> / <code>out</code> / <code>neutral</code>).</span></li>' +
+      '  <li class="feature-list__item"><span class="feature-list__dot"></span>' +
+      '    <span class="feature-list__text"><strong>type</strong> obrigatório — valores canônicos: <code>income</code>, <code>expense</code>, <code>transfer</code>, <code>credit_card_purchase</code>, <code>credit_card_payment</code>, <code>adjustment</code>, <code>fee</code>, <code>refund</code>.</span></li>' +
+      '  <li class="feature-list__item"><span class="feature-list__dot"></span>' +
+      '    <span class="feature-list__text"><strong>creditBalanceCents</strong> com <code>balanceDirection: "credit"</code> indica saldo a favor, nunca receita.</span></li>' +
+      '  <li class="feature-list__item"><span class="feature-list__dot"></span>' +
+      '    <span class="feature-list__text">Arquivos financeiros reais nunca devem ser versionados no repositório.</span></li>' +
+      "</ul>"
+    );
+  }
+
+  function buildPrivacyDeveloperNotes() {
+    return (
+      '<div class="privacy-instructions">' +
+      '  <h4 class="report-section__title">Boas práticas (desenvolvedor)</h4>' +
+      '  <ul class="entity-list">' +
+      '    <li class="entity-list__item">Não copie arquivos financeiros reais para <code>/data</code> do projeto.</li>' +
+      '    <li class="entity-list__item">Nunca commite <code>*.real.json</code> ou <code>*.sensitive.json</code>.</li>' +
+      '    <li class="entity-list__item">Use apenas <code>lastFour</code> para identificar cartões — nunca o número completo.</li>' +
+      '    <li class="entity-list__item">Armazene <code>rawHash</code> apenas como SHA-256 (<code>sha256:&lt;64 hex&gt;</code>); impressões legíveis vão em <code>canonicalFingerprint</code>.</li>' +
+      "  </ul></div>"
+    );
+  }
+
+  function buildIdleTechnicalDetails() {
+    return (
+      '<details class="import-tech-details import-tech-details--idle">' +
+      '<summary class="import-tech-details__summary">Detalhes técnicos da validação</summary>' +
+      '<div class="import-tech-details__body">' +
+      buildSchemaReferenceBlock() +
+      "</div></details>"
+    );
+  }
+
+  function buildTechnicalDetailsSection(report) {
+    var c = report.counters || {};
+    var src = report.source || {};
+
     var srcRows = "";
     if (src.institution)  srcRows += '<div class="source-info__row"><dt>Instituição</dt><dd>' + esc(src.institution)  + "</dd></div>";
     if (src.documentType) srcRows += '<div class="source-info__row"><dt>Tipo</dt><dd>'        + esc(src.documentType) + "</dd></div>";
     if (src.periodStart)  srcRows += '<div class="source-info__row"><dt>Período</dt><dd>'     + esc(src.periodStart)  + " → " + esc(src.periodEnd || "—") + "</dd></div>";
     if (src.label)        srcRows += '<div class="source-info__row"><dt>Origem</dt><dd>'      + esc(src.label)        + "</dd></div>";
+    if (report.schema)    srcRows += '<div class="source-info__row"><dt>Schema</dt><dd><code>' + esc(report.schema) + "</code></dd></div>";
 
-    /* stat grid */
-    var stats = [
-      { label: "Contas",       value: c.accounts },
-      { label: "Cartões",      value: c.cards },
-      { label: "Faturas",      value: c.invoices },
-      { label: "Transações",   value: c.transactions },
-      { label: "Parcelas",     value: c.installmentPlans },
-      { label: "Recorrências (total)", value: c.recurringTotal || c.recognizedRecurrences || c.recurringRules },
-      { label: "Rec. JSON",            value: c.recurringImported || c.recurringRules || 0 },
-      { label: "Rec. regra pessoal",   value: c.recurringFromRules || 0 },
-      { label: "Rec. candidatas",      value: c.recurringCandidates || 0 },
-      { label: "Válidos",                 value: c.valid,                  mod: "success" },
-      { label: "Inválidos",               value: c.invalid,                mod: c.invalid > 0 ? "danger" : "" },
-      { label: "Por regra pessoal",       value: c.ruleClassified || 0,    mod: "success" },
-      { label: "Revisão JSON (bruta)",    value: c.rawReviewCount != null ? c.rawReviewCount : (c.originalReviewTx || 0) },
-      { label: "Revisão efetiva (tx)",    value: c.effectiveReviewCount != null ? c.effectiveReviewCount : (c.effectiveReviewTx || 0) },
-      { label: "Para confirmar",          value: c.confirmReviewCount != null ? c.confirmReviewCount : c.pendingReview, mod: (c.pendingReview || 0) > 0 ? "warning" : "" },
-      { label: "Validação necessária",    value: c.importantReviewCount != null ? c.importantReviewCount : ((c.importantReview || 0) + (c.criticalReview || 0)) },
-      { label: "Sugestões",               value: c.suggestionCount != null ? c.suggestionCount : (c.reviewSuggestions || 0), mod: "" },
-      { label: "Reduzidas por regra",     value: c.reviewReducedByRules || 0, mod: (c.reviewReducedByRules || 0) > 0 ? "success" : "" },
-      { label: "Auto-resolvidos",         value: c.autoResolved || 0,      mod: "success" },
-      { label: "Rev. fatura (não stub)",  value: c.invoiceReviewCount || 0 },
-      { label: "Rev. fatura stub",        value: c.invoiceStubReviewCount || 0 },
-      { label: "Hash inválido (rawHash)", value: c.badRawHashCount != null ? c.badRawHashCount : 0, mod: (c.badRawHashCount || 0) > 0 ? "danger" : "success" },
-      { label: "Financiamentos",          value: c.recognizedFinancing || 0, mod: "" },
-      { label: "Dup. exatas",             value: c.exactDuplicates || 0,   mod: (c.exactDuplicates || 0) > 0 ? "danger" : "" },
-      { label: "Dup. prováveis",          value: c.probableDuplicates || 0,mod: (c.probableDuplicates || 0) > 0 ? "warning" : "" },
-      { label: "Semelhanças",             value: c.classifiedSimilarities || 0, mod: "" }
+    var technicalStats = [
+      { label: "Contas",                    value: c.accounts },
+      { label: "Válidos",                   value: c.valid,                  mod: "success" },
+      { label: "Inválidos",                 value: c.invalid,                mod: c.invalid > 0 ? "danger" : "" },
+      { label: "Rec. JSON",                 value: c.recurringImported || c.recurringRules || 0 },
+      { label: "Rec. regra pessoal",        value: c.recurringFromRules || 0 },
+      { label: "Rec. candidatas",           value: c.recurringCandidates || 0 },
+      { label: "Revisão JSON (bruta)",      value: c.rawTransactionReviewCount != null ? c.rawTransactionReviewCount : (c.rawReviewCount != null ? c.rawReviewCount : (c.originalReviewTx || 0)) },
+      { label: "Revisão efetiva (tx)",      value: c.effectiveTransactionReviewCount != null ? c.effectiveTransactionReviewCount : (c.effectiveReviewCount != null ? c.effectiveReviewCount : (c.effectiveReviewTx || 0)) },
+      { label: "Validação necessária",      value: c.importantReviewCount != null ? c.importantReviewCount : ((c.importantReview || 0) + (c.criticalReview || 0)) },
+      { label: "Reduzidas por regra",       value: c.reviewReducedByRules || 0, mod: (c.reviewReducedByRules || 0) > 0 ? "success" : "" },
+      { label: "Auto-resolvidos",           value: c.autoResolved || 0,      mod: "success" },
+      { label: "Classif. por regra pessoal", value: c.personalRuleAppliedCount != null ? c.personalRuleAppliedCount : (c.ruleClassified || 0), mod: (c.personalRuleAppliedCount || c.ruleClassified || 0) > 0 ? "success" : "" },
+      { label: "Rev. fatura (não stub)",    value: c.invoiceReviewCount || 0 },
+      { label: "Stubs de fatura",           value: c.invoiceStubCount != null ? c.invoiceStubCount : (c.invoiceStubReviewCount || 0) },
+      { label: "Hash inválido (rawHash)",   value: c.badRawHashCount != null ? c.badRawHashCount : 0, mod: (c.badRawHashCount || 0) > 0 ? "danger" : "success" },
+      { label: "Financiamentos",            value: c.recognizedFinancing || 0 },
+      { label: "Dup. exatas",               value: c.exactDuplicates || 0,   mod: (c.exactDuplicates || 0) > 0 ? "danger" : "" },
+      { label: "Dup. prováveis",            value: c.probableDuplicates || 0,mod: (c.probableDuplicates || 0) > 0 ? "warning" : "" },
+      { label: "Semelh. bloqueantes",       value: c.blockingSimilarityCount != null ? c.blockingSimilarityCount : (c.classifiedSimilarities || 0), mod: (c.blockingSimilarityCount || 0) > 0 ? "warning" : "" },
+      { label: "Semelh. informativas",      value: c.informationalSimilarityCount != null ? c.informationalSimilarityCount : (c.informationalSimilarities || 0) }
     ];
 
-    var statHtml = stats.map(function (s) {
-      var cls = "stat-item" + (s.mod ? " stat-item--" + s.mod : "");
-      return '<div class="' + cls + '"><span class="stat-item__value">' + s.value +
-             '</span><span class="stat-item__label">' + esc(s.label) + "</span></div>";
-    }).join("");
-
-    /* quick status message for summary */
-    var statusNote = "";
-    if (report.overallStatus === "has_blockers") {
-      statusNote = "Corrija os erros estruturais antes de confirmar a importação futura.";
-    } else if (report.overallStatus === "has_pending") {
-      statusNote = "A maioria dos itens foi classificada automaticamente. Revise apenas os pontos ambíguos.";
-    } else {
-      statusNote = "Arquivo pronto. Nada é gravado nesta fase.";
-    }
-
-    var reimport = report.reimportSimulation || {};
-    var reimportCounts = reimport.counts || {};
-    var reimportHtml = "";
-    if (reimportCounts.already_imported || reimportCounts.exact_duplicate) {
-      reimportHtml =
-        '<section class="reimport-panel">' +
-        '  <h4 class="report-section__title">Simulação de reimportação (idempotência local)</h4>' +
-        '  <p class="report-empty" style="font-style:normal;margin:0.5rem 0">' +
-        '    Reimportar o mesmo arquivo resultaria em: ' +
-        '<strong>' + (reimportCounts.already_imported || 0) + '</strong> já importados, ' +
-        '<strong>' + (reimportCounts.exact_duplicate || 0) + '</strong> duplicatas exatas. ' +
-        'Nenhum dado é gravado nesta fase.' +
-        '  </p></section>';
-    }
-
-    var autoResolved = report.autoResolvedReview || [];
-    var ruleResolved = report.ruleResolvedReview || [];
-    var autoHtml = "";
     var rulesNotice = "";
     if ((c.ruleClassified || 0) > 0 || report.personalRulesLoaded) {
       rulesNotice =
-        '<div class="notice notice--success" role="note" style="margin-bottom:1rem">' +
+        '<div class="notice notice--success" role="note">' +
         '  <span>✅</span>' +
         '  <span>Regras pessoais aplicadas localmente (' + (c.ruleClassified || 0) +
-        ' classificações). Revisão JSON: ' + (c.rawReviewCount || 0) +
-        ' → efetiva: ' + (c.effectiveReviewCount || 0) +
+        " classificações). Revisão JSON: " + (c.rawReviewCount || 0) +
+        " → efetiva: " + (c.effectiveReviewCount || 0) +
         ((c.reviewReducedByRules || 0) > 0
-          ? ' (' + c.reviewReducedByRules + ' reduzidas por regra, sem contar stubs/sugestões).'
-          : '.') +
-        ' Nada foi gravado nesta fase.</span></div>';
+          ? " (" + c.reviewReducedByRules + " reduzidas por regra)."
+          : ".") +
+        " Nada foi gravado nesta fase.</span></div>";
     }
+
+    var autoResolved = report.autoResolvedReview || [];
+    var autoHtml = "";
     if (autoResolved.length > 0) {
       autoHtml =
         '<section class="auto-resolved-panel">' +
@@ -262,16 +276,90 @@ window.CFM = window.CFM || {};
         "</ul></section>";
     }
 
+    var reimport = report.reimportSimulation || {};
+    var reimportCounts = reimport.counts || {};
+    var reimportHtml = "";
+    if (reimportCounts.already_imported || reimportCounts.exact_duplicate) {
+      reimportHtml =
+        '<section class="reimport-panel">' +
+        '  <h4 class="report-section__title">Simulação de reimportação (idempotência local)</h4>' +
+        '  <p class="report-empty" style="font-style:normal;margin:0.5rem 0">' +
+        "Reimportar o mesmo arquivo resultaria em: " +
+        "<strong>" + (reimportCounts.already_imported || 0) + "</strong> já importados, " +
+        "<strong>" + (reimportCounts.exact_duplicate || 0) + "</strong> duplicatas exatas." +
+        "  </p></section>";
+    }
+
     return (
-      '<dl class="source-info" style="margin-bottom:1rem">' + srcRows + '</dl>' +
+      '<details class="import-tech-details">' +
+      '<summary class="import-tech-details__summary">Detalhes técnicos da validação</summary>' +
+      '<div class="import-tech-details__body">' +
+      (srcRows ? '<dl class="source-info">' + srcRows + "</dl>" : "") +
       rulesNotice +
-      '<div class="stat-grid">' + statHtml + '</div>' +
-      autoHtml + reimportHtml +
+      '<div class="stat-grid stat-grid--secondary">' +
+      technicalStats.map(buildStatItem).join("") +
+      "</div>" +
+      autoHtml +
+      reimportHtml +
+      buildSchemaReferenceBlock() +
+      buildPrivacyDeveloperNotes() +
+      "</div></details>"
+    );
+  }
+
+  function buildSummaryTab(report) {
+    var c   = report.counters;
+    var si  = OVERALL_STATUS[report.overallStatus] || OVERALL_STATUS.ready;
+    var blocking = c.blockingConfirmCount != null ? c.blockingConfirmCount
+      : (c.confirmReviewCount != null ? c.confirmReviewCount : (c.pendingReview || 0));
+    var suggestions = c.suggestionCount != null ? c.suggestionCount : (c.reviewSuggestions || 0);
+    var recurringTotal = c.recurringTotal || c.recognizedRecurrences || c.recurringRules || 0;
+    var statusKpiLabel = report.overallStatus === "ready" ? "Arquivo validado" : "Precisa revisar";
+    var statusKpiMod = report.overallStatus === "ready" ? "success"
+      : (report.overallStatus === "has_blockers" ? "danger" : "warning");
+
+    var userStats = [
+      { label: "Status",        value: statusKpiLabel, isText: true, mod: statusKpiMod },
+      { label: "Lançamentos",   value: c.transactions },
+      { label: "Pendências",    value: blocking, mod: blocking > 0 ? "warning" : "success", title: "Pendências obrigatórias" },
+      { label: "Cartões",       value: c.cards },
+      { label: "Faturas",       value: c.invoices },
+      { label: "Parcelas",      value: c.installmentPlans },
+      { label: "Recorrências",  value: recurringTotal },
+      { label: "Sugestões",     value: suggestions, sub: "opcionais" }
+    ];
+
+    var heroMsg = "";
+    if (report.overallStatus === "has_blockers") {
+      heroMsg = "Há itens que precisam de correção antes de importar.";
+    } else if (report.overallStatus === "has_pending") {
+      heroMsg = "Revise os pontos indicados — a maioria já foi classificada automaticamente.";
+    } else {
+      heroMsg = "Seu arquivo está consistente. Nenhuma pendência bloqueante.";
+    }
+
+    var src = report.source || {};
+    var srcBrief = "";
+    if (src.institution || src.periodStart) {
+      srcBrief = '<p class="summary-source">';
+      if (src.institution) srcBrief += esc(src.institution);
+      if (src.periodStart) {
+        srcBrief += (src.institution ? " · " : "") + esc(src.periodStart) + " → " + esc(src.periodEnd || "—");
+      }
+      srcBrief += "</p>";
+    }
+
+    return (
+      '<section class="summary-hero import-status-banner import-status-banner--' + si.mod + '">' +
+      '  <div class="summary-hero__main">' +
+      '    <p class="summary-hero__eyebrow">Posso importar com segurança?</p>' +
+      '    <p class="summary-hero__title"><span aria-hidden="true">' + si.icon + '</span> ' + esc(si.label) + "</p>" +
+      '    <p class="summary-hero__text">' + esc(heroMsg) + "</p>" +
+      srcBrief +
+      "  </div></section>" +
+      '<div class="stat-grid stat-grid--summary">' + userStats.map(buildStatItem).join("") + "</div>" +
       buildSummaryCardsPanel(report) +
-      '<p class="report-empty" style="margin-top:0.75rem;font-style:normal">' +
-      '<span aria-hidden="true">' + si.icon + '</span> ' +
-      esc(si.label) + ' — ' + esc(statusNote) +
-      '</p>'
+      buildTechnicalDetailsSection(report)
     );
   }
 
@@ -282,22 +370,23 @@ window.CFM = window.CFM || {};
   function buildSummaryCardsPanel(report) {
     var cards = report.cardSummaries;
     if (!cards || !cards.length) return "";
-    var rows = cards.filter(function (c) { return c.hasSnapshot; }).slice(0, 4).map(function (card) {
+    var items = cards.filter(function (c) { return c.hasSnapshot; }).slice(0, 4).map(function (card) {
+      var pct = card.usedPercent != null ? card.usedPercent : null;
       return (
-        '<li class="entity-list__item card-summary-line">' +
-        '<strong>' + esc(card.name) + '</strong> — ' +
-        'Limite ' + esc(card.limitFmt) + ', usado ' + esc(card.usedFmt) +
-        ', disp. ' + esc(card.availableFmt) +
-        (card.usedPercent != null ? ' (' + card.usedPercent + '%)' : "") +
+        '<li class="summary-card-mini">' +
+        '  <p class="summary-card-mini__name">' + esc(card.name) + "</p>" +
+        '  <p class="summary-card-mini__row"><span>Limite</span><strong>' + esc(card.limitFmt) + "</strong></p>" +
+        '  <p class="summary-card-mini__row"><span>Usado</span><strong>' + esc(card.usedFmt) + "</strong></p>" +
+        '  <p class="summary-card-mini__row"><span>Disponível</span><strong>' + esc(card.availableFmt) + "</strong></p>" +
+        (pct != null ? '  <p class="summary-card-mini__pct">' + pct + "% utilizado</p>" : "") +
         "</li>"
       );
     }).join("");
-    if (!rows) return "";
+    if (!items) return "";
     return (
       '<section class="cards-summary-panel">' +
-      '  <h4 class="report-section__title">Limites de cartão (snapshot local)</h4>' +
-      '  <ul class="entity-list">' + rows + "</ul>" +
-      '  <p class="report-empty" style="font-style:normal;margin:0.5rem 0 0">Overlay local — não versionado. Nada gravado nesta fase.</p>' +
+      '  <h4 class="report-section__title">Cartões no arquivo</h4>' +
+      '  <ul class="summary-card-grid">' + items + "</ul>" +
       "</section>"
     );
   }
@@ -311,6 +400,20 @@ window.CFM = window.CFM || {};
     if (card.lastFour) return ' <span class="invoice-card__last4">···' + esc(card.lastFour) + "</span>";
     if (card.lastFourMissing) return ' <span class="card-last4-missing">(final não informado)</span>';
     return "";
+  }
+
+  function getSnapshotSourceLabel(source) {
+    var css = CFM.cardSnapshotService || {};
+    if (css.getSnapshotSourceLabel && css.normalizeSnapshotSourceKey) {
+      var key = (typeof source === "string" &&
+        /^(json|local|card|missing)$/.test(source))
+        ? source
+        : css.normalizeSnapshotSourceKey(source, "import_json");
+      return css.getSnapshotSourceLabel(key);
+    }
+    if (source == null || source === "") return "Snapshot ausente";
+    if (typeof source === "object") return "Snapshot do JSON";
+    return String(source);
   }
 
   function buildCardsTab(report) {
@@ -335,8 +438,10 @@ window.CFM = window.CFM || {};
         '  <div class="card-limit-item__header">' +
         '    <span class="card-limit-item__name">' + esc(card.name) + formatCardLastFour(card) + "</span>" +
         (card.hasSnapshot
-          ? ' <span class="status-chip status-chip--paid">' + esc(card.snapshotSourceLabel || card.limitSourceLabel || "Snapshot local") + "</span>"
-          : ' <span class="status-chip status-chip--other">Dados do JSON</span>') +
+          ? ' <span class="status-chip status-chip--paid">' +
+            esc(getSnapshotSourceLabel(card.snapshotSourceKey || card.snapshotSourceLabel || card.snapshotSource)) +
+            "</span>"
+          : ' <span class="status-chip status-chip--other">' + esc(getSnapshotSourceLabel("missing")) + "</span>") +
         "  </div>" +
         '  <div class="card-limit-item__amounts">' +
         '    <span>Limite: <strong>' + esc(card.limitFmt) + "</strong></span>" +
@@ -366,13 +471,7 @@ window.CFM = window.CFM || {};
       );
     });
 
-    return (
-      '<div class="notice notice--info" role="note" style="margin-bottom:1rem">' +
-      '  <span>ℹ️</span>' +
-      '  <span>Limite, usado e disponível vêm de snapshot local quando disponível. Não confundir limite com total de fatura.</span>' +
-      "</div>" +
-      '<ul class="entity-list card-limit-list">' + rows.join("") + "</ul>"
-    );
+    return '<ul class="card-limit-grid">' + rows.join("") + "</ul>";
   }
 
   function renderInvoiceCard(inv) {
@@ -408,22 +507,41 @@ window.CFM = window.CFM || {};
       stmtHtml =
         '<div class="invoice-statement-summary">' +
         '<span>Encargos: <strong>' + esc(inv.invoiceChargesFmt) + "</strong></span>" +
-        (inv.invoicePaymentsFmt && inv.linkedPaymentCount
-          ? '<span>Pagamentos: <strong>' + esc(inv.invoicePaymentsFmt) + "</strong></span>"
+        (inv.invoicePaymentsCreditsFmt && inv.invoicePaymentsCreditsCents
+          ? '<span>Pagamentos/créditos: <strong>' + esc(inv.invoicePaymentsCreditsFmt) + "</strong></span>"
+          : "") +
+        (inv.settlementPaymentsFmt && inv.settlementPaymentsCents
+          ? '<span>Liquidação bancária: <strong>' + esc(inv.settlementPaymentsFmt) + "</strong></span>"
           : "") +
         "</div>";
     }
+
+    var reconStatusLabel = {
+      consistent: "Consistente",
+      explained_by_payment: "Explicada por pagamento/crédito",
+      partial: "Parcial",
+      credit_balance: "Saldo credor",
+      requires_review: "Requer revisão"
+    };
 
     if (!inv.isReference && inv.reconciliationPartial) {
       reconHtml = '<div class="reconciliation-partial">ℹ️ ' +
         esc(inv.reconciliationMessage || "Conciliação parcial — nem todas as transações da fatura estão presentes no JSON.") +
         "</div>";
+    } else if (!inv.isReference && inv.hasCredit) {
+      reconHtml = '<div class="reconciliation-ok">💚 ' +
+        esc(inv.reconciliationMessage || "Saldo credor — não entra na conciliação de compras.") +
+        "</div>";
     } else if (!inv.isReference && inv.explainedByPayments && inv.reconciliationMessage) {
       reconHtml = '<div class="reconciliation-ok">✅ ' + esc(inv.reconciliationMessage) + "</div>";
-    } else if (!inv.isReference && inv.hasReconciliationGap) {
-      var diffLabel = inv.reconciliationDiff > 0 ? "fatura maior que compras vinculadas" : "compras vinculadas maiores que fatura";
+    } else if (!inv.isReference && inv.hasReconciliationGap && inv.reconciliationStatus === "requires_review") {
+      var diffLabel = inv.reconciliationDiff > 0 ? "fatura maior que encargos vinculados" : "encargos vinculados maiores que fatura";
       reconHtml = '<div class="reconciliation-gap">⚖️ Diferença de ' +
         esc(inv.reconciliationDiffFmt) + " (" + esc(diffLabel) + ")</div>";
+    } else if (!inv.isReference && inv.reconciliationStatus === "consistent" && inv.reconciliationMessage) {
+      reconHtml = '<div class="reconciliation-ok">✅ ' + esc(inv.reconciliationMessage) +
+        (inv.linkedTransactionCount ? " (" + inv.linkedTransactionCount + " transação(ões))" : "") +
+        "</div>";
     } else if (!inv.isReference && inv.linkedTransactionCount > 0 && inv.reconciliationMessage) {
       reconHtml = '<div class="reconciliation-ok">✅ ' + esc(inv.reconciliationMessage) +
         " (" + inv.linkedTransactionCount + " transação(ões))</div>";
@@ -431,6 +549,12 @@ window.CFM = window.CFM || {};
       reconHtml = '<div class="reconciliation-ok">✅ ' + inv.linkedTransactionCount + " transação(ões) vinculada(s)</div>";
     } else if (inv.isReference && inv.linkedTransactionCount > 0) {
       reconHtml = '<div class="reconciliation-ok">🔗 ' + inv.linkedTransactionCount + " transação(ões) vinculada(s)</div>";
+    }
+
+    if (!inv.isReference && inv.reconciliationStatus && inv.reconciliationStatus !== "n/a") {
+      var statusText = reconStatusLabel[inv.reconciliationStatus] || inv.reconciliationStatus;
+      reconHtml += '<p class="invoice-recon-status invoice-recon-status--' +
+        esc(inv.reconciliationStatus) + '">Status: <strong>' + esc(statusText) + "</strong></p>";
     }
 
     var cardLastFourHtml = inv.cardLastFour
@@ -479,11 +603,15 @@ window.CFM = window.CFM || {};
       return '<div class="invoice-grid">' + invoices.map(renderInvoiceCard).join("") + "</div>";
     }
 
+    var stubNotice = (groups.reference && groups.reference.length)
+      ? '<div class="notice notice--info" role="note" style="margin-bottom:1rem">' +
+        '  <span>ℹ️</span>' +
+        '  <span>Algumas entradas são referências de vínculo — não representam faturas consolidadas.</span>' +
+        "</div>"
+      : "";
+
     return (
-      '<div class="notice notice--info" role="note" style="margin-bottom:1rem">' +
-      '  <span>ℹ️</span>' +
-      '  <span>Stubs/referências mantêm vínculo com transações — não são faturas consolidadas. Saldo credor não é receita.</span>' +
-      "</div>" +
+      stubNotice +
       buildInvoiceSection("Faturas consolidadas", groups.consolidated) +
       buildInvoiceSection("Faturas abertas", groups.open) +
       buildInvoiceSection("Faturas pagas", groups.paid) +
@@ -522,10 +650,6 @@ window.CFM = window.CFM || {};
     var hasCards    = Object.keys(cards).length    > 0;
     var hasAccounts = Object.keys(accounts).length > 0;
     var reviewCount = txList.filter(function (tx) { return tx.needsEffectiveReview; }).length;
-    var originalReviewCount = report.counters && report.counters.originalReviewTx;
-    var originalNote = (originalReviewCount != null && originalReviewCount > reviewCount)
-      ? ' <span class="filter-bar__hint">(' + originalReviewCount + " no JSON)</span>"
-      : "";
 
     var cardSelect = hasCards
       ? '<select class="filter-bar__select" id="tx-filter-card"><option value="">Todos os cartões</option>' + optRows(cards) + '</select>'
@@ -536,14 +660,14 @@ window.CFM = window.CFM || {};
       : '<select class="filter-bar__select" id="tx-filter-account" hidden><option value=""></option></select>';
 
     var reviewFilter = reviewCount > 0
-      ? '<label class="filter-bar__label" title="Filtra somente transações nesta aba — não inclui faturas ou stubs">' +
-        '<input type="checkbox" id="tx-filter-review" /> Apenas revisão — transações (' + reviewCount + ")" + originalNote + "</label>"
+      ? '<label class="filter-bar__label">' +
+        '<input type="checkbox" id="tx-filter-review" /> Apenas itens para revisar (' + reviewCount + ")</label>"
       : '<input type="checkbox" id="tx-filter-review" hidden />';
 
     return (
       '<div class="filter-bar">' +
       '  <select class="filter-bar__select" id="tx-filter-type"><option value="">Todos os tipos</option>'          + optRows(types) + '</select>' +
-      '  <select class="filter-bar__select" id="tx-filter-flow"><option value="">Todos os flows</option>'          + optRows(flows) + '</select>' +
+      '  <select class="filter-bar__select" id="tx-filter-flow"><option value="">Todas as direções</option>'       + optRows(flows) + '</select>' +
       '  <select class="filter-bar__select" id="tx-filter-competence"><option value="">Todas as competências</option>' + monthOpts + '</select>' +
       cardSelect + accountSelect + reviewFilter +
       '  <span class="filter-bar__count" id="tx-filter-count"></span>' +
@@ -567,15 +691,19 @@ window.CFM = window.CFM || {};
 
       parts.push(
         '<li class="' + cls + '">' +
-        '  <span class="tx-item__flow">' + flowBadge(tx.flow) + "</span>" +
-        '  <span class="tx-item__desc">' + esc(tx.description) + "</span>" +
-        '  <span class="tx-item__badges">' + typeBadge(tx.type) + "</span>" +
-        '  <span class="tx-item__amount">' + esc(tx.amountFmt) + "</span>" +
-        '  <span class="tx-item__meta">' +
+        '  <div class="tx-item__main">' +
+        '    <span class="tx-item__desc">' + esc(tx.description) + "</span>" +
+        '    <span class="tx-item__amount">' + esc(tx.amountFmt) + "</span>" +
+        "  </div>" +
+        '  <div class="tx-item__tags">' +
+        flowBadge(tx.flow) + typeBadge(tx.type) +
+        (tx.needsEffectiveReview ? '<span class="tx-item__review-flag" title="' + esc(tx.reviewReason) + '">⚠</span>' : "") +
+        "  </div>" +
+        '  <div class="tx-item__meta">' +
         '    <span class="tx-item__date">' + esc(tx.date || tx.competenceMonth) + "</span>" +
         (via ? '<span class="tx-item__via">' + esc(via) + "</span>" : "") +
-        (tx.needsEffectiveReview ? '<span class="tx-item__review-flag" title="' + esc(tx.reviewReason) + '">⚠</span>' : "") +
-        "  </span>" +
+        (tx.invoiceId ? '<span class="tx-item__invoice">Fatura: ' + esc(tx.invoiceId) + "</span>" : "") +
+        "  </div>" +
         "</li>"
       );
     });
@@ -635,27 +763,52 @@ window.CFM = window.CFM || {};
 
     if (!hasConfirm && !hasSuggestions) {
       var autoN = (report.autoResolvedReview || []).length;
-      if (autoN > 0) {
+      return (
+        '<div class="review-empty-state">' +
+        '  <div class="notice notice--success" role="status">' +
+        '    <span>✅</span>' +
+        '    <span><strong>Tudo certo para importar.</strong> Nenhuma pendência obrigatória.' +
+        (autoN > 0 ? " " + autoN + " itens foram classificados automaticamente." : "") +
+        "    </span></div></div>"
+      );
+    }
+
+    if (!hasConfirm && hasSuggestions) {
+      var meta = REVIEW_PRIORITY_META.low;
+      var itemsHtml = suggestionGroup.items.map(function (item) {
+        var entityLabel = item.entityType === "invoice" ? "Fatura" : "Lançamento";
         return (
-          '<div class="notice notice--success" role="note">' +
-          '  <span>✅</span>' +
-          '  <span>A maioria dos itens foi classificada automaticamente (' + autoN +
-          ' resolvidos). Nenhuma revisão crítica pendente.</span></div>'
+          '<li class="review-item ' + meta.cls + '">' +
+          '  <div class="review-item__header">' +
+          '    <span class="review-item__entity">' + esc(entityLabel) + " #" + item.index + "</span>" +
+          "  </div>" +
+          '  <p class="review-item__desc">' + esc(item.description) + "</p>" +
+          '  <p class="review-item__reason">' + esc(item.reason) + "</p>" +
+          "</li>"
         );
-      }
-      return emptyPanel("Nenhum item pendente de confirmação.");
+      }).join("");
+      return (
+        '<div class="review-empty-state">' +
+        '  <div class="notice notice--success" role="status">' +
+        '    <span>✅</span>' +
+        '    <span><strong>Nenhuma pendência obrigatória.</strong> As sugestões abaixo são opcionais e não bloqueiam a importação.</span>' +
+        "  </div></div>" +
+        '<section class="review-group review-group--suggestions ' + meta.cls + '">' +
+        '  <h4 class="review-group__title">' + meta.icon + " Sugestões opcionais" +
+        '    <span class="review-group__count">' + suggestionGroup.items.length + "</span></h4>" +
+        '  <ul class="review-list">' + itemsHtml + "</ul></section>"
+      );
     }
 
     return (
       '<div class="notice notice--info" role="note" style="margin-bottom:1rem">' +
       '  <span>ℹ️</span>' +
-      '  <span><strong>Para confirmar</strong> lista itens críticos/importantes (transações e faturas). ' +
-      'Sugestões abaixo são opcionais e não bloqueiam a importação.</span>' +
+      '  <span>Itens abaixo exigem sua atenção antes de importar. Sugestões opcionais aparecem ao final e não bloqueiam.</span>' +
       "</div>" +
       confirmGroups.filter(function (g) { return g.items.length > 0; }).map(function (group) {
         var meta = REVIEW_PRIORITY_META[group.id] || REVIEW_PRIORITY_META.important;
         var itemsHtml = group.items.map(function (item) {
-          var entityLabel = item.entityType === "invoice" ? "Fatura" : "Transação";
+          var entityLabel = item.entityType === "invoice" ? "Fatura" : "Lançamento";
           return (
             '<li class="review-item ' + meta.cls + '">' +
             '  <div class="review-item__header">' +
@@ -702,7 +855,7 @@ window.CFM = window.CFM || {};
           }).join("");
           return (
             '<section class="review-group review-group--suggestions ' + meta.cls + '">' +
-            '  <h4 class="review-group__title">' + meta.icon + " Sugestões (não bloqueantes)" +
+            '  <h4 class="review-group__title">' + meta.icon + " Sugestões opcionais" +
             '    <span class="review-group__count">' + suggestionGroup.items.length + "</span></h4>" +
             '  <ul class="review-list">' + itemsHtml + "</ul></section>"
           );
@@ -716,12 +869,12 @@ window.CFM = window.CFM || {};
    * ════════════════════════════════════════════════ */
 
   function buildSimilaritiesTab(report) {
-    var total = (report.counters && report.counters.similaritiesTotal) || 0;
-    var infoCount = (report.counters && report.counters.informationalSimilarities) || 0;
+    var blocking = (report.counters && report.counters.blockingSimilarityCount) || 0;
+    var infoCount = (report.counters && report.counters.informationalSimilarityCount) || 0;
     var repeated = report.repeatedPurchases || [];
 
-    if (!total && !infoCount) {
-      return emptyPanel("Nenhuma semelhança relevante detectada neste arquivo.");
+    if (!blocking && !infoCount && repeated.length === 0) {
+      return emptyPanel("Nenhuma observação relevante neste arquivo.");
     }
 
     var sectionsHtml = SIMILARITY_SECTIONS.map(function (sec) {
@@ -740,22 +893,26 @@ window.CFM = window.CFM || {};
     if (repeated.length > 0) {
       infoHtml =
         '<section class="report-section similarity-section similarity-section--info">' +
-        '  <h4 class="report-section__title">' + esc(INFORMATIONAL_SIMILARITY.title) +
+        '  <h4 class="report-section__title">Compras repetidas' +
         '    <span class="similarity-section__count">' + repeated.length + "</span></h4>" +
-        '  <p class="report-empty" style="font-style:normal;margin-bottom:0.5rem">Transações legítimas em dias diferentes — não exige revisão.</p>' +
+        '  <p class="similarity-intro">Transações legítimas em dias diferentes — não indicam erro.</p>' +
         '  <ul class="similarity-list">' +
         repeated.map(function (pair) { return similarityPairRow(pair, INFORMATIONAL_SIMILARITY.title); }).join("") +
         "</ul></section>";
     }
 
     if (!sectionsHtml && !infoHtml) {
-      return emptyPanel("Nenhuma semelhança relevante detectada neste arquivo.");
+      return emptyPanel("Nenhuma observação relevante neste arquivo.");
     }
 
     return (
-      '<div class="notice notice--info" role="note" style="margin-bottom:1rem">' +
+      '<div class="notice notice--info similarity-notice" role="note">' +
       '  <span>ℹ️</span>' +
-      '  <span>Nenhum item é removido automaticamente. Financiamentos (ex.: Banco Pan) aparecem em Parcelamentos, não aqui.</span>' +
+      '  <span><strong>Essas observações não bloqueiam a importação.</strong> ' +
+      (blocking > 0
+        ? blocking + " bloqueante(s) · "
+        : "0 bloqueantes · ") +
+      infoCount + " informativa(s).</span>" +
       "</div>" +
       sectionsHtml + infoHtml
     );
@@ -825,24 +982,8 @@ window.CFM = window.CFM || {};
       );
     });
 
-    var c = report.counters || {};
-    var breakdown =
-      '<p class="report-empty" style="font-style:normal;margin:0 0 1rem">' +
-      'Total único: <strong>' + (c.recurringTotal || rules.length) + "</strong> — " +
-      "itens deduplicados por descrição/flow/frequência. " +
-      "Origens: JSON <strong>" + (c.recurringImported || 0) + "</strong>, " +
-      "regra pessoal <strong>" + (c.recurringFromRules || 0) + "</strong>, " +
-      "candidatas <strong>" + (c.recurringCandidates || 0) + "</strong> " +
-      "(uma linha pode ter múltiplas origens)." +
-      "</p>";
-
     return (
-      '<div class="notice notice--info" role="note" style="margin-bottom:1rem">' +
-      '  <span>ℹ️</span>' +
-      '  <span>Recorrências do JSON, regras pessoais locais e sugestões do motor. Nada é gravado nesta fase.</span>' +
-      "</div>" +
-      breakdown +
-      '<ul class="entity-list">' + rows.join("") + "</ul>"
+      '<ul class="entity-list recurring-list">' + rows.join("") + "</ul>"
     );
   }
 
@@ -905,10 +1046,10 @@ window.CFM = window.CFM || {};
     var alerts = report.privacyAlerts || [];
 
     var CHECKS = [
-      { type: "cpf",         label: "CPF" },
-      { type: "card_number", label: "número de cartão completo" },
-      { type: "boleto",      label: "código de barras / linha digitável" },
-      { type: "long_number", label: "sequência numérica longa (≥ 12 dígitos)" }
+      { type: "cpf",         label: "CPF detectado" },
+      { type: "card_number", label: "cartão completo detectado" },
+      { type: "boleto",      label: "linha digitável detectada" },
+      { type: "long_number", label: "sequência numérica sensível detectada" }
     ];
 
     var checkRows = CHECKS.map(function (chk) {
@@ -917,7 +1058,7 @@ window.CFM = window.CFM || {};
         return (
           '<div class="privacy-check privacy-check--ok">' +
           '  <span aria-hidden="true">✅</span>' +
-          '  <span>Nenhum ' + esc(chk.label) + ' detectado</span>' +
+          '  <span>Nenhum ' + esc(chk.label) + "</span>" +
           "</div>"
         );
       }
@@ -933,21 +1074,11 @@ window.CFM = window.CFM || {};
       return '<ul class="issue-list" style="margin-top:0.5rem">' + items + "</ul>";
     }).join("");
 
+    var c = report.counters || {};
+
     return (
-      '<div class="notice notice--warning" role="note" style="margin-bottom:1rem">' +
-      '  <span>⚠</span>' +
-      '  <span>Este arquivo contém dados financeiros pessoais. Não compartilhe nem versione no repositório.</span>' +
-      "</div>" +
-      checkRows +
-      '<div class="privacy-instructions">' +
-      '  <h4 class="report-section__title" style="margin-top:1rem">Boas práticas</h4>' +
-      '  <ul class="entity-list" style="margin-top:0.5rem">' +
-      '    <li class="entity-list__item">Não copie arquivos financeiros reais para <code>/data</code> do projeto.</li>' +
-      '    <li class="entity-list__item">Nunca commite <code>*.real.json</code> ou <code>*.sensitive.json</code>.</li>' +
-      '    <li class="entity-list__item">Use apenas <code>lastFour</code> para identificar cartões — nunca o número completo.</li>' +
-      '    <li class="entity-list__item">Armazene <code>rawHash</code> apenas como SHA-256 (<code>sha256:&lt;64 hex&gt;</code>); impressões legíveis vão em <code>canonicalFingerprint</code>.</li>' +
-      "  </ul>" +
-      "</div>"
+      '<p class="privacy-intro">Verificação automática de dados sensíveis no arquivo importado.</p>' +
+      checkRows
     );
   }
 
@@ -959,9 +1090,8 @@ window.CFM = window.CFM || {};
     return (
       '<div class="upload-zone" id="upload-zone" role="region" aria-label="Área de importação de arquivo JSON">' +
       '  <div class="upload-zone__icon" aria-hidden="true">📄</div>' +
-      '  <p class="upload-zone__title">Arraste um JSON aqui ou selecione um arquivo.</p>' +
-      '  <p class="upload-zone__hint">schemaVersion: <code>cfm.import.v1</code></p>' +
-      '  <p class="upload-zone__types">Tipos: <code>income</code>, <code>expense</code>, <code>transfer</code>, <code>credit_card_purchase</code>, <code>credit_card_payment</code>, <code>adjustment</code>, <code>fee</code>, <code>refund</code></p>' +
+      '  <p class="upload-zone__title">Arraste seu arquivo JSON aqui ou selecione no dispositivo.</p>' +
+      '  <p class="upload-zone__hint">Formato aceito: exportação Controle Financeiro Mensal (.json)</p>' +
       '  <div class="upload-zone__actions">' +
       '    <label class="btn btn--primary" tabindex="0" role="button" id="import-file-label">' +
       '      Selecionar arquivo' +
@@ -999,30 +1129,30 @@ window.CFM = window.CFM || {};
   }
 
   function buildReportHtml(report) {
-    var si = OVERALL_STATUS[report.overallStatus] || OVERALL_STATUS.ready;
-
-    /* status banner */
-    var banner =
-      '<div class="import-status-banner import-status-banner--' + si.mod + '" role="status">' +
-      '  <span class="import-status-banner__icon" aria-hidden="true">' + si.icon + "</span>" +
-      '  <div>' +
-      '    <p class="import-status-banner__text">' + esc(si.label) + "</p>" +
-      '    <p class="import-status-banner__sub">Validação local. Nada é gravado no Firebase nesta fase.</p>' +
-      "  </div>" +
-      "</div>";
-
-    /* file info */
     var fileInfo =
       '<div class="import-file-info">' +
-      '  <code>' + esc(report.fileName || "") + "</code>" +
+      '  <span class="import-file-info__name">' + esc(report.fileName || "") + "</span>" +
+      (report.source && report.source.institution
+        ? ' · <span class="import-file-info__bank">' + esc(report.source.institution) + "</span>"
+        : "") +
       " · " + esc(report.fileSizeFormatted || "") +
-      " · <code>" + esc(report.schema || "") + "</code>" +
-      (report.source.institution ? " · <strong>" + esc(report.source.institution) + "</strong>" : "") +
       "</div>";
 
     /* tab nav */
     var tabBtns = TABS.map(function (tab, i) {
       var count = tab.countKey ? (report.counters[tab.countKey] || 0) : 0;
+      if (tab.id === "similarities") {
+        var infoN = report.counters.informationalSimilarityCount || 0;
+        var badge = count > 0 ? countBadge(count) :
+          (infoN > 0 ? '<span class="tab-badge tab-badge--info" title="' + infoN + ' informativas">' + infoN + "</span>" : "");
+        return (
+          '<button class="tab-btn' + (i === 0 ? " is-active" : "") + '"' +
+          '  data-tab="' + tab.id + '" role="tab"' +
+          '  aria-controls="tab-' + tab.id + '">' +
+          esc(tab.label) + badge +
+          "</button>"
+        );
+      }
       var badge = count > 0 ? countBadge(count) : "";
       return (
         '<button class="tab-btn' + (i === 0 ? " is-active" : "") + '"' +
@@ -1046,9 +1176,13 @@ window.CFM = window.CFM || {};
 
     return (
       '<div class="import-report-container">' +
-      banner + fileInfo +
-      '<nav class="import-tabs" role="tablist" aria-label="Painéis de importação">' +
+      fileInfo +
+      '<div class="import-tabs-wrap">' +
+      '  <div class="import-tabs-fade import-tabs-fade--left" aria-hidden="true"></div>' +
+      '  <nav class="import-tabs" role="tablist" aria-label="Painéis de importação">' +
       tabBtns + "</nav>" +
+      '  <div class="import-tabs-fade import-tabs-fade--right" aria-hidden="true"></div>' +
+      "</div>" +
       '<div class="tab-panels">' + tabPanels + "</div>" +
       "</div>"
     );
@@ -1056,13 +1190,13 @@ window.CFM = window.CFM || {};
 
   function buildActions() {
     return (
-      '<div class="import-actions">' +
+      '<div class="import-actions import-actions-bar" role="group" aria-label="Ações da importação">' +
       '  <button type="button" class="btn btn--ghost" id="import-clear">Limpar importação</button>' +
       '  <button type="button" class="btn btn--primary" disabled aria-disabled="true"' +
       '          title="Confirmação será liberada após Firebase Auth + RTDB Rules">' +
       "    Confirmar importação" +
       "  </button>" +
-      '  <span class="import-actions__note">Confirmação será liberada após Firebase Auth + RTDB Rules. Nada é gravado nesta fase.</span>' +
+      '  <p class="import-actions__note">A confirmação final será liberada em uma fase futura. Nada é gravado agora.</p>' +
       "</div>"
     );
   }
@@ -1087,6 +1221,8 @@ window.CFM = window.CFM || {};
   function resetToIdle(container) {
     currentReport = null;
     renderedTabs  = {};
+    var pageEl = container.querySelector(".page--import");
+    if (pageEl) pageEl.classList.remove("has-report");
     setContent(container, buildUploadZone());
     setActions(container, "");
     wireUploadZone(container);
@@ -1248,12 +1384,31 @@ window.CFM = window.CFM || {};
     wireDropZone(container);
   }
 
+  function wireTabScroll(container) {
+    var wrap = container.querySelector(".import-tabs-wrap");
+    var nav = container.querySelector(".import-tabs");
+    if (!wrap || !nav) return;
+
+    function updateFade() {
+      var maxScroll = nav.scrollWidth - nav.clientWidth;
+      var canScroll = maxScroll > 6;
+      wrap.classList.toggle("import-tabs-wrap--scrollable", canScroll);
+      wrap.classList.toggle("import-tabs-wrap--start", nav.scrollLeft > 6);
+      wrap.classList.toggle("import-tabs-wrap--end", canScroll && nav.scrollLeft < maxScroll - 6);
+    }
+
+    nav.addEventListener("scroll", updateFade, { passive: true });
+    window.addEventListener("resize", updateFade);
+    updateFade();
+  }
+
   function wireTabSystem(container) {
     container.querySelectorAll(".tab-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
         activateTab(btn.getAttribute("data-tab"), container);
       });
     });
+    wireTabScroll(container);
   }
 
   function wireActions(container) {
@@ -1280,8 +1435,11 @@ window.CFM = window.CFM || {};
 
         if (report.state === "error") {
           setContent(container, buildErrorState(report));
+          container.querySelector(".page--import").classList.remove("has-report");
         } else {
           setContent(container, buildReportHtml(report));
+          var pageEl = container.querySelector(".page--import");
+          if (pageEl) pageEl.classList.add("has-report");
           wireTabSystem(container);
         }
         setActions(container, buildActions());
@@ -1307,29 +1465,16 @@ window.CFM = window.CFM || {};
     container.innerHTML =
       '<div class="page-view page--import">' +
       '  <header class="page-header">' +
-      '    <h2 class="page-header__title">Importação rápida</h2>' +
-      '    <p class="page-header__desc">Arraste um JSON aqui ou selecione um arquivo no formato cfm.import.v1. Validação local — nada é gravado no Firebase nesta fase.</p>' +
+      '    <h2 class="page-header__title">Importar extrato</h2>' +
+      '    <p class="page-header__desc">Envie seu arquivo JSON para validar lançamentos, cartões e faturas antes de confirmar a importação.</p>' +
       "  </header>" +
       '  <div class="notice notice--warning" role="note">' +
       '    <span aria-hidden="true">⚠</span>' +
-      '    <span>Persistência desabilitada. A gravação no Firebase RTDB será implementada após integração de autenticação (Fase 1).</span>' +
+      '    <span>Validação local — nada é gravado nesta fase.</span>' +
       "  </div>" +
       '  <div id="import-content">' + buildUploadZone() + "</div>" +
       '  <div id="import-actions-wrap"></div>' +
-      '  <div class="schema-ref">' +
-      '    Referência: <code>docs/SCHEMA_IMPORTACAO_JSON.md</code>' +
-      '    &nbsp;·&nbsp; Exemplo: <code>data/sample-import.cfm.v1.json</code>' +
-      "  </div>" +
-      '  <ul class="feature-list">' +
-      '    <li class="feature-list__item"><span class="feature-list__dot"></span>' +
-      '      <span class="feature-list__text"><strong>amountCents</strong> sempre positivo; direção definida por <strong>flow</strong> (<code>in</code> / <code>out</code> / <code>neutral</code>).</span></li>' +
-      '    <li class="feature-list__item"><span class="feature-list__dot"></span>' +
-      '      <span class="feature-list__text"><strong>type</strong> obrigatório — valores canônicos: <code>income</code>, <code>expense</code>, <code>transfer</code>, <code>credit_card_purchase</code>, <code>credit_card_payment</code>, <code>adjustment</code>, <code>fee</code>, <code>refund</code>.</span></li>' +
-      '    <li class="feature-list__item"><span class="feature-list__dot"></span>' +
-      '      <span class="feature-list__text"><strong>creditBalanceCents</strong> com <code>balanceDirection: "credit"</code> indica saldo a favor, nunca receita.</span></li>' +
-      '    <li class="feature-list__item"><span class="feature-list__dot"></span>' +
-      '      <span class="feature-list__text">Arquivos financeiros reais nunca devem ser versionados no repositório.</span></li>' +
-      "  </ul>" +
+      buildIdleTechnicalDetails() +
       "</div>";
 
     wireUploadZone(container);

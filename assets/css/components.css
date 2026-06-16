@@ -509,6 +509,8 @@ label.btn {
   letter-spacing: 0.07em;
   color: var(--color-text-subtle);
   margin-top: 0.3rem;
+  line-height: 1.3;
+  hyphens: auto;
 }
 
 .stat-item--success .stat-item__value { color: var(--color-success); }
@@ -572,9 +574,6 @@ label.btn {
 
 .tx-item__desc {
   color: var(--color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   min-width: 0;
 }
 
@@ -675,24 +674,9 @@ label.btn {
   flex: 1 1 200px;
 }
 
-/* ── Responsividade das transações ── */
+/* ── Responsividade das transações (legado — ver pages.css 0.3.7) ── */
 @media (max-width: 600px) {
-  .tx-item {
-    grid-template-columns: auto 1fr;
-    grid-template-rows: auto auto;
-    row-gap: 0.25rem;
-  }
-  .tx-item__amount {
-    justify-self: end;
-    grid-column: 2;
-    grid-row: 2;
-  }
-  .tx-item__date {
-    grid-column: 2;
-    grid-row: 2;
-    display: none;
-  }
-  .stat-grid {
+  .stat-grid:not(.stat-grid--primary):not(.stat-grid--secondary) {
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 90px), 1fr));
   }
 }

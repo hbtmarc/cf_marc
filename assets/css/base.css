@@ -47,10 +47,15 @@
   --shadow-card: 0 1px 8px rgba(15, 23, 42, 0.08), 0 0 0 1px rgba(15, 23, 42, 0.04);
   --shadow-lg:   0 8px 32px rgba(15, 23, 42, 0.14);
 
-  /* Layout */
+  /* Layout — Fase 0.3.8 */
   --sidebar-width:  260px;
+  --sidebar-width-compact: 220px;
   --header-height:  64px;
   --content-max:    1200px;
+  --importer-max:   min(100%, 96rem);
+  --importer-padding: clamp(1rem, 2.5vw, 1.5rem);
+  --tab-min-height: 44px;
+  --touch-target:   44px;
 
   --transition: 180ms ease;
 }

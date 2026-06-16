@@ -643,6 +643,11 @@ window.CFM = window.CFM || {};
       groups.recurring_candidate.length +
       groups.similar_transfer.length;
 
+    var blockingSimilarityCount =
+      groups.exact_duplicate.length +
+      groups.probable_duplicate.length +
+      classifiedCount;
+
     var informationalCount = groups.repeated_purchase.length;
 
     return {
@@ -654,11 +659,9 @@ window.CFM = window.CFM || {};
       repeatedPurchases:   groups.repeated_purchase,
       similarTransfers:    groups.similar_transfer,
       classifiedCount:     classifiedCount,
+      blockingSimilarityCount: blockingSimilarityCount,
       informationalCount:  informationalCount,
-      similaritiesTotal:
-        groups.exact_duplicate.length +
-        groups.probable_duplicate.length +
-        classifiedCount,
+      similaritiesTotal:   blockingSimilarityCount + informationalCount,
       duplicateOnlyCount:
         groups.exact_duplicate.length +
         groups.probable_duplicate.length

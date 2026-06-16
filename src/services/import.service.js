@@ -114,7 +114,7 @@ window.CFM = window.CFM || {};
 
   function shouldRequireManualReview(item, tx, val, ruleApp) {
     if (item.entityType === "invoice") {
-      return !!item.isStub;
+      return false;
     }
     if (!tx) return true;
 
@@ -160,6 +160,13 @@ window.CFM = window.CFM || {};
       return false;
     }
 
+    if (tx.type === "transfer") {
+      var transferBlob = ((item.reason || "") + " " + (tx.description || "")).toLowerCase();
+      if (/mesma titularidade|titularidade aparente|conta pr[oó]pria|entre contas|transfer[eê]ncia interna/i.test(transferBlob)) {
+        return false;
+      }
+    }
+
     if (/pix/i.test(item.reason || "") && /pessoa/i.test(item.reason || "") &&
         /enviad|para\s/i.test(item.reason || "") &&
         tx.flow === "out") {
@@ -200,7 +207,7 @@ window.CFM = window.CFM || {};
       if (ruleApp.reviewPriority === "none" && ruleApp.autoResolve) return "low";
     }
     if (/inválido|referência quebrada|privacidade/i.test(item.reason || "")) return "critical";
-    if (item.entityType === "invoice" && item.isStub) return "important";
+    if (item.entityType === "invoice" && item.isStub) return "low";
     if (!shouldRequireManualReview(item, tx, val, ruleApp)) return "low";
 
     var cat = item.reviewCategoryId || inferReviewCategory(item).id;
@@ -293,9 +300,10 @@ window.CFM = window.CFM || {};
     });
 
     invReviewItems.forEach(function (item) {
+      if (item.isStub) return;
       item.importMetadata = buildImportMetadata({ description: item.description }, IMPORT_BATCH_ID);
-      var enriched = enrichReviewItem(item, !!item.isStub);
-      enriched.reviewPriority = item.isStub ? "important" : classifyReviewPriority(item, null, val, null);
+      var enriched = enrichReviewItem(item, false);
+      enriched.reviewPriority = classifyReviewPriority(item, null, val, null);
       if (enriched.reviewPriority === "low") suggestions.push(enriched);
       else manual.push(enriched);
     });
@@ -530,15 +538,20 @@ window.CFM = window.CFM || {};
 
   function rebuildSimilarityCounts(similarityReport, groups) {
     var g = groups || similarityReport.groups || {};
-    var classified =
+    var blocking =
+      (g.exact_duplicate || []).length +
       (g.probable_duplicate || []).length +
       (g.installment_related || []).length +
       (g.recurring_candidate || []).length +
       (g.similar_transfer || []).length;
-    similarityReport.classifiedCount = classified;
-    similarityReport.similaritiesTotal =
-      (g.exact_duplicate || []).length + classified +
-      (g.repeated_purchase || []).length;
+    var informational = (g.repeated_purchase || []).length;
+    similarityReport.blockingSimilarityCount = blocking;
+    similarityReport.informationalCount = informational;
+    similarityReport.classifiedCount =
+      (g.installment_related || []).length +
+      (g.recurring_candidate || []).length +
+      (g.similar_transfer || []).length;
+    similarityReport.similaritiesTotal = blocking + informational;
     similarityReport.duplicateOnlyCount =
       (g.exact_duplicate || []).length + (g.probable_duplicate || []).length;
     return similarityReport;
@@ -790,11 +803,14 @@ window.CFM = window.CFM || {};
     var originalReviewTxCount = txReviewItems.length;
     var effectiveReviewTxCount = Object.keys(effectiveReviewTxSet).length;
     var invoiceReviewCount = invReviewItems.filter(function (i) { return !i.isStub; }).length;
-    var invoiceStubReviewCount = invReviewItems.filter(function (i) { return i.isStub; }).length;
+    var invoiceStubCount = invReviewItems.filter(function (i) { return i.isStub; }).length;
     var suggestionCount = reducedReview.reviewSuggestions.length;
-    var confirmReviewCount = reducedReview.manualReview.length;
+    var blockingConfirmCount = reducedReview.manualReview.length;
+    var confirmReviewCount = blockingConfirmCount;
     var reviewReducedByRules = Math.max(0, originalReviewTxCount - effectiveReviewTxCount);
     var badRawHashCount = val.countBadRawHashes ? val.countBadRawHashes(payload) : 0;
+    var blockingSimilarityCount = similarityReport.blockingSimilarityCount || 0;
+    var informationalSimilarityCount = similarityReport.informationalCount || 0;
 
     /* ── Privacidade ── */
     var privacyAlerts = val.scanForSensitiveData
@@ -807,7 +823,7 @@ window.CFM = window.CFM || {};
       exactDuplicates,
       privacyAlerts,
       criticalReviewCount,
-      importantReviewCount
+      blockingConfirmCount
     );
 
     /* ── Contadores finais ── */
@@ -898,10 +914,8 @@ window.CFM = window.CFM || {};
       var diffCents   = recon ? recon.reconciliationDeltaCents : 0;
       var isPartial   = recon ? recon.isPartial : false;
       var confidence  = recon ? recon.confidence : "n/a";
-      var hasRealGap  = !isReference && !hasCredit && confidence === "high" &&
-                        !isPartial && linkedCount > 0 &&
-                        Math.abs(diffCents) > 1 &&
-                        !(recon && recon.explainedByPayments);
+      var hasRealGap = !isReference && !hasCredit &&
+                        recon && recon.reconciliationStatus === "requires_review";
 
       var cardLastFour = css.formatLastFourDisplay
         ? css.formatLastFourDisplay(card.lastFour || card.last4)
@@ -948,7 +962,12 @@ window.CFM = window.CFM || {};
         invoiceChargesCents: recon ? recon.invoiceChargesCents : 0,
         invoiceChargesFmt: fcents(recon ? recon.invoiceChargesCents : 0),
         invoicePaymentsCents: recon ? recon.invoicePaymentsCents : 0,
+        invoicePaymentsCreditsCents: recon ? recon.invoicePaymentsCreditsCents : 0,
+        invoicePaymentsCreditsFmt: fcents(recon ? recon.invoicePaymentsCreditsCents : 0),
+        settlementPaymentsCents: recon ? recon.settlementPaymentsCents : 0,
+        settlementPaymentsFmt: fcents(recon ? recon.settlementPaymentsCents : 0),
         invoicePaymentsFmt: fcents(recon ? recon.invoicePaymentsCents : 0),
+        reconciliationStatus: recon ? recon.reconciliationStatus : "n/a",
         statementSummary: recon ? recon.statementSummary : null,
         explainedByPayments: recon ? recon.explainedByPayments : false,
         linkedPaymentCount: recon ? recon.linkedPaymentCount : 0,
@@ -1083,7 +1102,8 @@ window.CFM = window.CFM || {};
       institution:  context.institution,
       documentType: context.documentType,
       periodEnd:    src.periodEnd || "",
-      registry:     cardRegistry
+      registry:     cardRegistry,
+      cardSnapshots: Array.isArray(payload.cardSnapshots) ? payload.cardSnapshots : []
     };
     var cardSummaries = css.buildCardSummaries
       ? css.buildCardSummaries(cards, cardContext) : [];
@@ -1093,13 +1113,23 @@ window.CFM = window.CFM || {};
       : cardSummaries;
 
     cardSummaries = cardSummaries.map(function (card) {
-      var srcLabel = card.snapshotSource === "snapshot_local" ? "Snapshot local" :
-                     card.snapshotSource === "limit_override_local" ? "Override local" : "JSON";
+      var srcKey = card.snapshotSourceKey ||
+        (css.normalizeSnapshotSourceKey
+          ? css.normalizeSnapshotSourceKey(card.snapshotSource, card.hasSnapshot ? "import_json" : "")
+          : (card.snapshotAbsent ? "missing" : "json"));
+      var srcLabel = css.getSnapshotSourceLabel
+        ? css.getSnapshotSourceLabel(srcKey)
+        : (card.snapshotSourceLabel || "Snapshot do JSON");
       var pct = card.usagePercent != null ? card.usagePercent : card.usedPercent;
+      var absentLabel = "snapshot ausente";
       return Object.assign({}, card, {
-        limitFmt:      fcents(card.limitCents || 0),
-        usedFmt:       card.usedCents != null ? fcents(card.usedCents) : "—",
-        availableFmt:  card.availableCents != null ? fcents(card.availableCents) : "—",
+        snapshotSourceKey: srcKey,
+        limitFmt:      card.hasSnapshot && card.limitCents != null
+          ? fcents(card.limitCents) : absentLabel,
+        usedFmt:       card.hasSnapshot && card.usedCents != null
+          ? fcents(card.usedCents) : absentLabel,
+        availableFmt:  card.hasSnapshot && card.availableCents != null
+          ? fcents(card.availableCents) : absentLabel,
         usedPercent:   pct,
         usagePercentLabel: pct != null ? pct + "%" : "—",
         usedPercentLabel: pct != null ? pct + "%" : "—",
@@ -1158,12 +1188,16 @@ window.CFM = window.CFM || {};
         recognizedRecurrences: recognizedRecurrences.length,
         valid:             validCount,
         invalid:           invalidCount,
-        pendingReview:     confirmReviewCount,
+        pendingReview:     blockingConfirmCount,
+        blockingConfirmCount: blockingConfirmCount,
         reviewSuggestions: suggestionCount,
         suggestionCount:   suggestionCount,
         confirmReviewCount: confirmReviewCount,
+        rawTransactionReviewCount: originalReviewTxCount,
+        effectiveTransactionReviewCount: effectiveReviewTxCount,
         autoResolved:      reducedReview.autoResolved.length,
         ruleClassified:    personalRulesCount,
+        personalRuleAppliedCount: personalRulesCount,
         ruleResolved:      (reducedReview.ruleResolved || []).length,
         recognizedFinancing:   financingCount,
         criticalReview:    criticalReviewCount,
@@ -1174,19 +1208,22 @@ window.CFM = window.CFM || {};
         exactDuplicates:   exactDuplicates.length,
         probableDuplicates:probableDuplicates.length,
         classifiedSimilarities: similarityReport.classifiedCount || 0,
-        informationalSimilarities: similarityReport.informationalCount || 0,
+        blockingSimilarityCount: blockingSimilarityCount,
+        informationalSimilarityCount: informationalSimilarityCount,
+        informationalSimilarities: informationalSimilarityCount,
         similaritiesTotal: similarityReport.similaritiesTotal || 0,
         duplicateOnlyCount: similarityReport.duplicateOnlyCount || 0,
         privacyAlerts:     privacyAlerts.length,
         duplicates:        similarityReport.duplicateOnlyCount || 0,
         invoiceReferences: (invoiceGroups.reference || []).length,
+        invoiceStubCount:  invoiceStubCount,
         cardsWithSnapshot: cardSummaries.filter(function (c) { return c.hasSnapshot; }).length,
         rawReviewCount:    originalReviewTxCount,
         effectiveReviewCount: effectiveReviewTxCount,
         reviewReducedByRules: reviewReducedByRules,
         reviewSuggestionsCount: reducedReview.reviewSuggestions.length,
         invoiceReviewCount: invoiceReviewCount,
-        invoiceStubReviewCount: invoiceStubReviewCount,
+        invoiceStubReviewCount: invoiceStubCount,
         brokenReferences:  brokenReferences.length,
         originalReviewTx:  originalReviewTxCount,
         effectiveReviewTx: effectiveReviewTxCount

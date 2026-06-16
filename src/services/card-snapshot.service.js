@@ -1,6 +1,7 @@
 /**
- * Snapshots e resolvedor de cartões — Fase 0.3.6-B
- * Overlay local (gitignored). Futuro: /users/{uid}/cardSnapshots
+ * Snapshots e resolvedor de cartões — Fase 0.3.6-F
+ * Prioridade: payload.cardSnapshots → overlay local → cadastro estrutural (cards[]).
+ * Futuro: /users/{uid}/cardSnapshots
  */
 window.CFM = window.CFM || {};
 
@@ -167,6 +168,45 @@ window.CFM = window.CFM || {};
     return String(lastFour).trim();
   }
 
+  function normalizeSnapshotSourceKey(source, origin) {
+    if (origin === "snapshot_local") return "local";
+    if (origin === "limit_override_local") return "local";
+
+    if (source == null || source === "") {
+      if (origin === "import_json") return "json";
+      return "missing";
+    }
+
+    if (typeof source === "string") {
+      var s = source.toLowerCase().trim();
+      if (s === "import_json" || s === "json" || s === "payload" || s === "import") return "json";
+      if (s === "snapshot_local" || s === "local" || s === "overlay") return "local";
+      if (s === "card" || s === "cards") return "card";
+      if (s === "missing") return "missing";
+      return "json";
+    }
+
+    if (typeof source === "object") {
+      var kind = source.type || source.kind || source.origin || source.label || "";
+      if (typeof kind === "string" && kind.trim()) {
+        return normalizeSnapshotSourceKey(kind, origin);
+      }
+      return origin === "import_json" ? "json" : "local";
+    }
+
+    return "missing";
+  }
+
+  function getSnapshotSourceLabel(sourceKey) {
+    switch (sourceKey) {
+      case "json":    return "Snapshot do JSON";
+      case "local":   return "Snapshot local";
+      case "card":    return "Dados do JSON";
+      case "missing": return "Snapshot ausente";
+      default:        return "Snapshot do JSON";
+    }
+  }
+
   function validateSnapshotConsistency(limitCents, usedCents, availableCents) {
     if (limitCents == null || usedCents == null || availableCents == null) {
       return { consistent: null, deltaCents: 0, message: "" };
@@ -183,7 +223,7 @@ window.CFM = window.CFM || {};
     };
   }
 
-  function resolveCardSnapshot(card, snapshots, snapshotMonth) {
+  function pickBestSnapshot(card, snapshots, snapshotMonth) {
     var withMonth = null;
     var anyMonth  = null;
     (snapshots || []).forEach(function (snap) {
@@ -200,23 +240,68 @@ window.CFM = window.CFM || {};
     return withMonth || anyMonth;
   }
 
-  function mergeSnapshotOntoCard(card, snap, ov) {
-    var limitCents = snap && snap.limitCents != null ? snap.limitCents : (card.limitCents || 0);
+  function resolveCardSnapshot(card, snapshots, snapshotMonth) {
+    return pickBestSnapshot(card, snapshots, snapshotMonth);
+  }
+
+  /**
+   * payload.cardSnapshots tem prioridade sobre overlay local.
+   * @returns {{ snap: object|null, origin: string }}
+   */
+  function resolveCardSnapshotFromSources(card, payloadSnapshots, localSnapshots, snapshotMonth) {
+    var fromPayload = pickBestSnapshot(card, payloadSnapshots, snapshotMonth);
+    if (fromPayload) return { snap: fromPayload, origin: "import_json" };
+    var fromLocal = pickBestSnapshot(card, localSnapshots, snapshotMonth);
+    if (fromLocal) return { snap: fromLocal, origin: "snapshot_local" };
+    return { snap: null, origin: "" };
+  }
+
+  function mergeSnapshotOntoCard(card, resolvedSnap, ov) {
+    var snap = resolvedSnap && resolvedSnap.snap ? resolvedSnap.snap : null;
+    var origin = resolvedSnap && resolvedSnap.origin ? resolvedSnap.origin : "";
+
+    if (!snap && !ov) {
+      return {
+        limitCents:       null,
+        usedCents:        null,
+        availableCents:   null,
+        usagePercent:     null,
+        snapshotSourceKey: "missing",
+        snapshotSource:   "missing",
+        snapshotSourceLabel: getSnapshotSourceLabel("missing"),
+        snapshotMonth:    "",
+        snapshotDate:     "",
+        snapshotConfidence: "",
+        hasSnapshot:      false,
+        snapshotAbsent:   true,
+        limitFromOverlay: false,
+        snapshotConsistent: null,
+        snapshotConsistencyMessage: "Snapshot ausente"
+      };
+    }
+
+    var limitCents = snap && snap.limitCents != null ? snap.limitCents : null;
     if (ov && ov.limitCents != null) limitCents = ov.limitCents;
 
     var usedCents = snap && snap.usedCents != null ? snap.usedCents : null;
     var availableCents = snap && snap.availableCents != null ? snap.availableCents : null;
 
-    if (usedCents == null && availableCents != null && limitCents) {
+    if (usedCents == null && availableCents != null && limitCents != null) {
       usedCents = Math.max(0, limitCents - availableCents);
     }
-    if (availableCents == null && usedCents != null && limitCents) {
+    if (availableCents == null && usedCents != null && limitCents != null) {
       availableCents = Math.max(0, limitCents - usedCents);
     }
 
-    var snapshotSource = "import_json";
-    if (snap) snapshotSource = "snapshot_local";
-    else if (ov) snapshotSource = "limit_override_local";
+    var rawSource = snap ? snap.source : null;
+    var snapshotSourceKey = "missing";
+    if (snap && origin === "import_json") {
+      snapshotSourceKey = normalizeSnapshotSourceKey(rawSource, "import_json");
+    } else if (snap && origin === "snapshot_local") {
+      snapshotSourceKey = "local";
+    } else if (ov) {
+      snapshotSourceKey = "local";
+    }
 
     var consistency = validateSnapshotConsistency(limitCents, usedCents, availableCents);
 
@@ -224,12 +309,15 @@ window.CFM = window.CFM || {};
       limitCents:       limitCents,
       usedCents:        usedCents,
       availableCents:   availableCents,
-      usagePercent:     usedCents != null ? pctUsed(usedCents, limitCents) : null,
-      snapshotSource:   snapshotSource,
+      usagePercent:     usedCents != null && limitCents ? pctUsed(usedCents, limitCents) : null,
+      snapshotSourceKey: snapshotSourceKey,
+      snapshotSource:   snapshotSourceKey,
+      snapshotSourceLabel: getSnapshotSourceLabel(snapshotSourceKey),
       snapshotMonth:    snap ? snap.snapshotMonth : "",
       snapshotDate:     snap ? snap.snapshotDate : "",
-      snapshotConfidence: snap ? snap.confidence : (ov ? "high" : "import"),
+      snapshotConfidence: snap ? snap.confidence : (ov ? "high" : ""),
       hasSnapshot:      !!(snap || ov),
+      snapshotAbsent:   false,
       limitFromOverlay: !!(snap || ov),
       snapshotConsistent: consistency.consistent,
       snapshotConsistencyMessage: consistency.message
@@ -270,7 +358,9 @@ window.CFM = window.CFM || {};
   }
 
   function buildCardSummaries(cards, context) {
-    var snapshots = loadLocalSnapshots();
+    var payloadSnapshots = (context && Array.isArray(context.cardSnapshots))
+      ? context.cardSnapshots.slice() : [];
+    var localSnapshots = loadLocalSnapshots();
     var overrides = loadLimitOverrides();
     var registry = context && context.registry
       ? context.registry
@@ -279,13 +369,15 @@ window.CFM = window.CFM || {};
       ? String(context.periodEnd).substring(0, 7) : "";
 
     return registry.cards.map(function (card) {
-      var snap = resolveCardSnapshot(card, snapshots, snapshotMonth);
-      var ov   = null;
+      var resolved = resolveCardSnapshotFromSources(
+        card, payloadSnapshots, localSnapshots, snapshotMonth
+      );
+      var ov = null;
       (overrides || []).forEach(function (o) {
         if (cardMatchesEntry(card, o)) ov = o;
       });
 
-      var merged = mergeSnapshotOntoCard(card, snap, ov);
+      var merged = mergeSnapshotOntoCard(card, resolved, ov);
       var lastFour = formatLastFourDisplay(card.lastFour || card.last4);
 
       return Object.assign({
@@ -303,7 +395,7 @@ window.CFM = window.CFM || {};
         isActive:        card.isActive !== false
       }, merged, {
         usedPercent: merged.usagePercent,
-        limitSource: merged.snapshotSource
+        limitSource: merged.snapshotSourceKey
       });
     });
   }
@@ -401,8 +493,16 @@ window.CFM = window.CFM || {};
     return tx.amountCents || 0;
   }
 
+  function isSettlementTx(tx, invRefKeys) {
+    if (!tx) return false;
+    if (tx.type === "credit_card_payment") return true;
+    var settles = tx.settlesInvoiceExternalRef || tx.settlesInvoiceId || "";
+    if (settles && invRefKeys.indexOf(String(settles)) >= 0) return true;
+    return false;
+  }
+
   /**
-   * Conciliação de fatura — apenas transações no escopo correto.
+   * Conciliação de fatura — encargos vs total; liquidação bancária exibida à parte.
    */
   function buildInvoiceReconciliation(invoice, transactions, context) {
     var ctx = context || {};
@@ -419,18 +519,26 @@ window.CFM = window.CFM || {};
       ? invoice.amountDueCents
       : (invoice.totalCents || 0);
     var previousBalance = invoice.previousBalanceCents || 0;
+    var creditBalance = invoice.creditBalanceCents || 0;
+    var RECON_TOLERANCE = 5;
 
     var empty = {
       invoiceTotalCents: invoiceTotal,
       invoiceChargesCents: 0,
+      invoicePaymentsCreditsCents: 0,
       invoicePaymentsCents: 0,
+      settlementPaymentsCents: 0,
       linkedPurchasesCents: 0,
       linkedFeesCents: 0,
       linkedAdjustmentsCents: 0,
       linkedRefundsCents: 0,
       linkedPaymentsCents: 0,
-      creditBalanceCents: invoice.creditBalanceCents || 0,
+      linkedCreditsCents: 0,
+      creditBalanceCents: creditBalance,
       reconciliationDeltaCents: 0,
+      chargesOnlyDeltaCents: 0,
+      explainedByPayments: false,
+      reconciliationStatus: "n/a",
       statementSummary: {
         previousBalanceCents: previousBalance,
         purchasesCents: 0,
@@ -438,6 +546,7 @@ window.CFM = window.CFM || {};
         adjustmentsCents: 0,
         refundsCents: 0,
         paymentsCreditsCents: 0,
+        settlementPaymentsCents: 0,
         chargesCents: 0,
         totalCents: invoiceTotal
       },
@@ -445,21 +554,25 @@ window.CFM = window.CFM || {};
       isPartial: false,
       linkedCount: 0,
       linkedPaymentCount: 0,
+      linkedSettlementCount: 0,
       linkedTxIndexes: [],
       linkedPaymentIndexes: [],
+      linkedSettlementIndexes: [],
+      hasCredit: false,
       message: ""
     };
 
     if (isReference) {
       empty.message = "Fatura de referência — sem conciliação consolidada.";
+      empty.reconciliationStatus = "reference";
       return empty;
     }
 
-    var hasCredit = invoice.balanceDirection === "credit" &&
-      (invoice.creditBalanceCents || 0) > 0;
+    var hasCredit = invoice.balanceDirection === "credit" && creditBalance > 0;
 
     var chargeLinked = [];
-    var paymentLinked = [];
+    var statementPaymentLinked = [];
+    var settlementLinked = [];
     var sameCardSameMonthWithoutRef = 0;
 
     (transactions || []).forEach(function (tx, index) {
@@ -477,21 +590,30 @@ window.CFM = window.CFM || {};
 
       if (!txMatchesInvoiceRef(tx, invRefKeys)) return;
 
-      if (tx.type === "credit_card_payment") {
-        if (!isHistoricalPayment(tx, invMonth)) {
-          paymentLinked.push({ tx: tx, index: index });
-        }
+      if (isSettlementTx(tx, invRefKeys)) {
+        if (isHistoricalPayment(tx, invMonth)) return;
+        settlementLinked.push({ tx: tx, index: index });
         return;
       }
 
       if (!sameMonth) return;
+
+      if (tx.type === "income" || tx.subtype === "credit_balance" || tx.type === "credit_balance") {
+        if (tx.flow === "in" || tx.subtype === "credit_balance" || tx.type === "credit_balance") {
+          statementPaymentLinked.push({ tx: tx, index: index, kind: "credit" });
+        }
+        return;
+      }
+
       if (isOutOfScopeChargeTx(tx, invMonth)) return;
       if (hasCredit && tx.type === "income" && tx.flow === "in") return;
 
       chargeLinked.push({ tx: tx, index: index });
     });
 
-    var purchases = 0, fees = 0, adjustments = 0, refunds = 0, payments = 0;
+    var purchases = 0, fees = 0, adjustments = 0, refunds = 0;
+    var statementPayments = 0, statementCredits = 0, settlementPayments = 0;
+
     chargeLinked.forEach(function (item) {
       var tx = item.tx;
       if (tx.type === "refund") {
@@ -505,52 +627,70 @@ window.CFM = window.CFM || {};
       }
     });
 
-    paymentLinked.forEach(function (item) {
-      payments += sumPaymentTx(item.tx);
+    statementPaymentLinked.forEach(function (item) {
+      var amt = sumPaymentTx(item.tx);
+      if (item.kind === "credit") statementCredits += amt;
+      else statementPayments += amt;
+    });
+
+    settlementLinked.forEach(function (item) {
+      settlementPayments += sumPaymentTx(item.tx);
     });
 
     var invoiceChargesCents = purchases + fees + adjustments - refunds;
-    var creditBalance = invoice.creditBalanceCents || 0;
-    var paymentsCredits = payments + creditBalance;
-    var netExpected = previousBalance + invoiceChargesCents - paymentsCredits;
-    var unexplainedDelta = invoiceTotal - netExpected;
-    var chargesOnlyDelta = invoiceTotal - invoiceChargesCents;
-    var RECON_TOLERANCE = 5;
+    var invoicePaymentsCreditsCents = statementPayments + statementCredits;
+    var statementNetCents = previousBalance + invoiceChargesCents - invoicePaymentsCreditsCents;
+    var chargesVsTotalDelta = invoiceTotal - invoiceChargesCents;
+    var reconciliationDeltaCents = invoiceTotal - statementNetCents;
 
     var isPartial = chargeLinked.length === 0 ||
       sameCardSameMonthWithoutRef > 0 ||
       invRefKeys.length === 0;
 
     var confidence = "high";
-    if (chargeLinked.length === 0 && paymentLinked.length === 0) confidence = "low";
-    else if (isPartial) confidence = "partial";
-
-    var explainedByPayments = Math.abs(unexplainedDelta) <= RECON_TOLERANCE;
-    if (!explainedByPayments && paymentsCredits > 0) {
-      if (Math.abs(Math.abs(chargesOnlyDelta) - payments) <= RECON_TOLERANCE) explainedByPayments = true;
-      if (Math.abs(Math.abs(chargesOnlyDelta) - paymentsCredits) <= RECON_TOLERANCE) explainedByPayments = true;
-      if (Math.abs(chargesOnlyDelta + payments) <= RECON_TOLERANCE) explainedByPayments = true;
+    if (chargeLinked.length === 0 && settlementLinked.length === 0 &&
+        statementPaymentLinked.length === 0) {
+      confidence = "low";
+    } else if (isPartial) {
+      confidence = "partial";
     }
 
-    var reconciliationDeltaCents = unexplainedDelta;
+    var explainedByPayments =
+      Math.abs(reconciliationDeltaCents) <= RECON_TOLERANCE ||
+      Math.abs(chargesVsTotalDelta) <= RECON_TOLERANCE ||
+      Math.abs(invoiceChargesCents - invoicePaymentsCreditsCents - invoiceTotal) <= RECON_TOLERANCE;
+
+    var reconciliationStatus = "requires_review";
 
     if (hasCredit) {
       reconciliationDeltaCents = 0;
-      isPartial = chargeLinked.length === 0 && sameCardSameMonthWithoutRef > 0;
       explainedByPayments = true;
+      reconciliationStatus = "credit_balance";
+    } else if (Math.abs(chargesVsTotalDelta) <= RECON_TOLERANCE) {
+      reconciliationDeltaCents = 0;
+      explainedByPayments = true;
+      reconciliationStatus = isPartial ? "partial" : "consistent";
     } else if (explainedByPayments) {
       reconciliationDeltaCents = 0;
+      reconciliationStatus = "explained_by_payment";
+    } else if (isPartial) {
+      reconciliationStatus = "partial";
     }
 
     var message = "";
     if (hasCredit) {
       message = "Saldo credor — não entra na conciliação de compras.";
-    } else if (explainedByPayments && Math.abs(chargesOnlyDelta) > RECON_TOLERANCE) {
-      message = "Conciliação explicada por pagamento/crédito.";
-    } else if (isPartial && confidence !== "high") {
-      message = "Conciliação parcial — nem todas as transações da fatura estão presentes no JSON.";
-    } else if (Math.abs(reconciliationDeltaCents) <= RECON_TOLERANCE && chargeLinked.length > 0) {
+    } else if (reconciliationStatus === "consistent") {
       message = "Conciliação consistente.";
+    } else if (reconciliationStatus === "explained_by_payment") {
+      message = "Conciliação explicada por pagamento/crédito.";
+    } else if (reconciliationStatus === "partial") {
+      message = "Conciliação parcial — nem todas as transações da fatura estão presentes no JSON.";
+      if (Math.abs(chargesVsTotalDelta) <= RECON_TOLERANCE) {
+        reconciliationDeltaCents = 0;
+      }
+    } else if (reconciliationStatus === "requires_review") {
+      message = "Conciliação requer revisão.";
     }
 
     var statementSummary = {
@@ -559,7 +699,8 @@ window.CFM = window.CFM || {};
       feesCents: fees,
       adjustmentsCents: adjustments,
       refundsCents: refunds,
-      paymentsCreditsCents: paymentsCredits,
+      paymentsCreditsCents: invoicePaymentsCreditsCents,
+      settlementPaymentsCents: settlementPayments,
       chargesCents: invoiceChargesCents,
       totalCents: invoiceTotal
     };
@@ -567,23 +708,29 @@ window.CFM = window.CFM || {};
     return {
       invoiceTotalCents: invoiceTotal,
       invoiceChargesCents: invoiceChargesCents,
-      invoicePaymentsCents: payments,
+      invoicePaymentsCreditsCents: invoicePaymentsCreditsCents,
+      invoicePaymentsCents: statementPayments + statementCredits,
+      settlementPaymentsCents: settlementPayments,
       linkedPurchasesCents: purchases,
       linkedFeesCents: fees,
       linkedAdjustmentsCents: adjustments,
       linkedRefundsCents: refunds,
-      linkedPaymentsCents: payments,
+      linkedPaymentsCents: statementPayments + statementCredits,
+      linkedCreditsCents: statementCredits,
       creditBalanceCents: creditBalance,
       reconciliationDeltaCents: reconciliationDeltaCents,
-      chargesOnlyDeltaCents: chargesOnlyDelta,
+      chargesOnlyDeltaCents: chargesVsTotalDelta,
       explainedByPayments: explainedByPayments,
+      reconciliationStatus: reconciliationStatus,
       statementSummary: statementSummary,
       confidence: confidence,
       isPartial: isPartial,
       linkedCount: chargeLinked.length,
-      linkedPaymentCount: paymentLinked.length,
+      linkedPaymentCount: statementPaymentLinked.length,
+      linkedSettlementCount: settlementLinked.length,
       linkedTxIndexes: chargeLinked.map(function (l) { return l.index; }),
-      linkedPaymentIndexes: paymentLinked.map(function (l) { return l.index; }),
+      linkedPaymentIndexes: statementPaymentLinked.map(function (l) { return l.index; }),
+      linkedSettlementIndexes: settlementLinked.map(function (l) { return l.index; }),
       hasCredit: hasCredit,
       message: message,
       sameCardOrphanCount: sameCardSameMonthWithoutRef
@@ -616,7 +763,8 @@ window.CFM = window.CFM || {};
     CANONICAL_ALIASES:      CANONICAL_ALIASES,
     buildCardRegistry:      buildCardRegistry,
     resolveCardId:          resolveCardId,
-    resolveCardSnapshot:    resolveCardSnapshot,
+    resolveCardSnapshot:          resolveCardSnapshot,
+    resolveCardSnapshotFromSources: resolveCardSnapshotFromSources,
     resolveCardAliases:     resolveCardAliases,
     getEntityCardRef:       getEntityCardRef,
     loadLocalSnapshots:     loadLocalSnapshots,
@@ -624,11 +772,14 @@ window.CFM = window.CFM || {};
     attachCardLinks:              attachCardLinks,
     groupInvoices:                groupInvoices,
     buildInvoiceReconciliation:   buildInvoiceReconciliation,
-    validateSnapshotConsistency:  validateSnapshotConsistency,
+    normalizeSnapshotSourceKey:   normalizeSnapshotSourceKey,
+    getSnapshotSourceLabel:       getSnapshotSourceLabel,
+    isSettlementTx:               isSettlementTx,
     formatLastFourDisplay:        formatLastFourDisplay,
     isPlaceholderLastFour:        isPlaceholderLastFour,
     cardMatchesEntry:       cardMatchesEntry,
     detectCanonicalKey:     detectCanonicalKey,
-    entityBelongsToCard:    entityBelongsToCard
+    entityBelongsToCard:    entityBelongsToCard,
+    validateSnapshotConsistency:  validateSnapshotConsistency
   };
 })(window.CFM);

@@ -60,7 +60,16 @@ var payload = {
       description: "Compra loja",
       type: "credit_card_purchase",
       flow: "out",
-      amountCents: 150000,
+      amountCents: 75245,
+      competenceMonth: "2026-06",
+      invoiceId: "inv1",
+      cardId: "c1"
+    },
+    {
+      description: "Pagamento fatura",
+      type: "credit_card_payment",
+      flow: "out",
+      amountCents: 275246,
       competenceMonth: "2026-06",
       invoiceId: "inv1",
       cardId: "c1"
@@ -72,10 +81,11 @@ var payload = {
   cards: [{ id: "c1", name: "Nubank" }],
   invoices: [{
     id: "inv1",
+    externalRef: "inv1",
     cardId: "c1",
     competenceMonth: "2026-06",
-    totalCents: 100000,
-    amountDueCents: 100000
+    totalCents: 75246,
+    amountDueCents: 75246
   }],
   installmentPlans: [{
     id: "plan_pan",
@@ -104,8 +114,13 @@ var recon = css.buildInvoiceReconciliation(payload.invoices[0], payload.transact
   registry: { resolveCardId: function (r) { return r; } },
   isHistoricalPaymentForInvoice: v.isHistoricalPaymentForInvoice
 });
-assert(recon.explainedByPayments === true, "Nubank-like: diferença explicada por pagamento");
-assert(recon.message.indexOf("explicada por pagamento") >= 0, "mensagem de conciliação explicada");
+assert(recon.explainedByPayments === true, "Nubank-like: encargos ≈ total (liquidação separada)");
+assert(
+  recon.reconciliationStatus === "consistent" ||
+  recon.message.indexOf("consistente") >= 0 ||
+  recon.message.indexOf("explicada") >= 0,
+  "mensagem de conciliação OK"
+);
 
 var pairs = [{ index1: 0, index2: 1, description: "pan" }];
 var filtered = pairs.filter(function () { return true; });

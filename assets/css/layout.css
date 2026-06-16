@@ -43,14 +43,20 @@
 /* ── Main ── */
 .app-main {
   grid-area: main;
-  padding: 2rem 1.5rem;
+  padding: clamp(1.25rem, 2.5vw, 2rem) clamp(1rem, 2.5vw, 1.5rem);
   overflow-x: hidden;
+  min-width: 0;
 }
 
 .app-main__inner {
   max-width: var(--content-max);
   margin: 0 auto;
   width: 100%;
+  min-width: 0;
+}
+
+.app-main__inner:has(.page--import) {
+  max-width: var(--importer-max);
 }
 
 /* ── Brand ── */
@@ -213,8 +219,31 @@
   display: none;
 }
 
-/* ── Responsivo ── */
-@media (max-width: 900px) {
+/* ── Responsivo — Fase 0.3.7 ── */
+
+/* Notebook / tablet horizontal (1024–1279) */
+@media (max-width: 1279px) and (min-width: 768px) {
+  :root {
+    --sidebar-width: var(--sidebar-width-compact);
+  }
+
+  .brand__title {
+    font-size: 0.875rem;
+  }
+
+  .nav-list__link {
+    font-size: 0.8125rem;
+    padding: 0.5625rem 0.75rem;
+    min-height: var(--touch-target);
+  }
+
+  .app-header {
+    padding: 0 1.25rem;
+  }
+}
+
+/* Tablet / mobile grande — drawer (<768) */
+@media (max-width: 767px) {
   .app-shell {
     grid-template-columns: 1fr;
     grid-template-rows: var(--header-height) 1fr;
@@ -230,7 +259,7 @@
     z-index: 100;
     transform: translateX(-100%);
     transition: transform var(--transition);
-    width: var(--sidebar-width);
+    width: min(var(--sidebar-width), 88vw);
     box-shadow: var(--shadow-lg);
   }
 
@@ -256,20 +285,35 @@
 
   .menu-toggle {
     display: flex;
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
   }
 
   .brand {
     padding-top: 0.5rem;
   }
+
+  .header-meta {
+    max-width: 40%;
+  }
+
+  .header-badge {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 @media (max-width: 480px) {
-  .app-main {
-    padding: 1.25rem 1rem;
-  }
-
   .header-title {
     font-size: 1rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .app-main {
+    padding: 1rem 0.75rem;
   }
 
   .header-badge {

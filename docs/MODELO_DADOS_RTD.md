@@ -61,7 +61,7 @@ users/
         accountId: string|null
         isActive: boolean
 
-    cardSnapshots/                   # Fase 0.3.6 / RTDB Fase 1
+    cardSnapshots/                   # Fase 0.3.6-E: também em payload.cardSnapshots[]
       {snapshotId}/
         cardExternalRef: string
         snapshotMonth: YYYY-MM
@@ -69,8 +69,10 @@ users/
         limitCents: number
         usedCents: number
         availableCents: number
-        source: string
+        source: string              # ex.: import_json
         confidence: high|medium|low
+
+    # Prioridade na UI: payload.cardSnapshots → overlay local → ausente
 
     # Entidade enriquecida (somente UI — Fase 0.3.6-C)
     cardSummaryView/
@@ -86,11 +88,20 @@ users/
         totalCents: number
         status: open|closed|paid
 
-    # Conciliação local (Fase 0.3.6-C — não persiste)
+    # Conciliação local (Fase 0.3.6-E — não persiste)
     invoiceReconciliationView/
-      invoiceTotalCents, linkedPurchasesCents, linkedFeesCents
-      linkedRefundsCents, creditBalanceCents, reconciliationDeltaCents
+      invoiceTotalCents, invoiceChargesCents
+      invoicePaymentsCreditsCents, settlementPaymentsCents
+      creditBalanceCents, reconciliationDeltaCents
+      reconciliationStatus: consistent|explained_by_payment|partial|credit_balance|requires_review
       confidence: high|partial|low|n/a
+
+    # Contadores do relatório de importação (Fase 0.3.6-E)
+    importReportCounters/
+      blockingConfirmCount, suggestionCount
+      rawTransactionReviewCount, effectiveTransactionReviewCount
+      invoiceStubCount, blockingSimilarityCount, informationalSimilarityCount
+      personalRuleAppliedCount, badRawHashCount
 
     transactions/
       {txId}/

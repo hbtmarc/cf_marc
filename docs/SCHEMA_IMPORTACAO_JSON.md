@@ -75,11 +75,11 @@ Rastreabilidade da origem **sem dados sensíveis**.
 | `accountId` | string? | Conta de débito vinculada |
 | `externalRef` | string? | Referência estável para snapshot/fatura |
 
-> **Fase 0.3.6:** Posição de limite (usado/disponível) pertence a `cardSnapshots`, não à fatura. Overlay local: `card-snapshots.local.js` (gitignored).
+> **Fase 0.3.6-E:** Posição de limite (usado/disponível) pertence a `cardSnapshots[]` no JSON (prioritário) ou overlay local (`card-snapshots.local.js`, gitignored). `cards[]` é cadastro estrutural — sem snapshot, a UI exibe “snapshot ausente”.
 
 ---
 
-## `cardSnapshots[]` (conceitual — Fase 0.3.6 / RTDB Fase 1)
+## `cardSnapshots[]` (Fase 0.3.6-E — no payload ou RTDB Fase 1)
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
@@ -103,7 +103,7 @@ Após merge JSON + overlay local, cada cartão expõe:
 | `usedCents` | Utilizado no snapshot |
 | `availableCents` | Disponível no snapshot |
 | `usagePercent` | Percentual usado |
-| `snapshotSource` | `import_json`, `snapshot_local`, `limit_override_local` |
+| `snapshotSource` | `import_json`, `snapshot_local`, `limit_override_local`, `missing` |
 | `snapshotMonth` | Mês do snapshot aplicado |
 | `snapshotDate` | Data do snapshot (se existir) |
 | `snapshotConsistent` | `true` se `usedCents + availableCents ≈ limitCents` |
@@ -112,9 +112,22 @@ Após merge JSON + overlay local, cada cartão expõe:
 
 ---
 
-## Conciliação de faturas (Fase 0.3.6-C)
+## Conciliação de faturas (Fase 0.3.6-E)
 
 Função local: `buildInvoiceReconciliation(invoice, transactions, context)`.
+
+Conceitos separados:
+
+| Campo | Descrição |
+|-------|-----------|
+| `invoiceChargesCents` | Compras + tarifas + ajustes − estornos |
+| `invoicePaymentsCreditsCents` | Pagamentos/créditos/abatimentos no demonstrativo + saldo credor da fatura |
+| `settlementPaymentsCents` | Pagamentos bancários de liquidação (`credit_card_payment`, não históricos) |
+| `creditBalanceCents` | Saldo credor para próxima fatura — **nunca receita** |
+| `reconciliationStatus` | `consistent`, `explained_by_payment`, `partial`, `credit_balance`, `requires_review` |
+| `hasReconciliationGap` (UI) | `true` só se diferença > 5¢ **e** sem explicação por pagamento/crédito/parcialidade/stub |
+
+Pagamentos cuja descrição cita outro mês (ex.: “abril/2026”) são excluídos da fatura atual via `isHistoricalPaymentForInvoice`.
 
 Transações **incluídas** quando:
 
@@ -137,7 +150,8 @@ Campos de saída:
 | `linkedPurchasesCents` | Compras vinculadas |
 | `linkedFeesCents` | Tarifas |
 | `linkedRefundsCents` | Estornos |
-| `linkedPaymentsCents` | Pagamentos (informativo, fora da soma de compras) |
+| `linkedPaymentsCents` | Pagamentos/créditos no demonstrativo (informativo) |
+| `settlementPaymentsCents` | Liquidação bancária vinculada |
 | `creditBalanceCents` | Saldo credor da fatura (não é receita) |
 | `reconciliationDeltaCents` | Diferença quando confiança alta |
 | `confidence` | `high`, `partial`, `low`, `n/a` |
@@ -266,14 +280,22 @@ Bloco pós-importação para revisão humana.
 
 ## Validação implementada
 
-Arquivo: `src/schemas/import.schema.js`
+| Camada | Arquivo | Escopo |
+|--------|---------|--------|
+| Schema | `src/schemas/import.schema.js` | Estrutura mínima, transações, source |
+| Contrato | `src/schemas/import.contract.js` | Invariantes Gerador JSON ↔ Importador |
+| CLI | `scripts/validate-import-contract.js` | Regressão local sem vazar payload |
+
+Documento normativo: [CONTRATO_IMPORTACAO_CFM_V1.md](./CONTRATO_IMPORTACAO_CFM_V1.md)
+
+Regras do schema:
 
 - `schemaVersion` exato (`cfm.import.v1`)
 - `source.institution` e `source.documentType` obrigatórios
 - Cada transação: `competenceMonth`, `amountCents` positivo, `flow` válido, `description`, `type` canônico
 - Rastreabilidade: aviso quando ausentes `externalRef` e hash/fingerprint
 - `source.rawHash` e `tx.rawHash`: apenas `sha256:<64 hex>`; impressões legíveis → `source.canonicalFingerprint`
-- Validação completa de FKs e unicidade — Fase 1+
+- Validação completa de FKs — `import.contract.js` + `validators.validateBrokenReferences`
 
 ---
 
