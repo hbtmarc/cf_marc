@@ -36,7 +36,9 @@ window.CFM = window.CFM || {};
       "    </article>" +
       "  </div>" +
       '  <div class="empty-state">' +
-      '    <div class="empty-state__icon" aria-hidden="true">📊</div>' +
+      '    <div class="empty-state__icon" aria-hidden="true">' +
+      CFM.icon("chart", { className: "cfm-icon cfm-icon--xl" }) +
+      '</div>' +
       '    <h3 class="empty-state__title">Seu dashboard está pronto para receber dados</h3>' +
       '    <p class="empty-state__text">Importe um JSON no formato cfm.import.v1 ou conecte sua conta quando a autenticação estiver disponível.</p>' +
       '    <div class="empty-state__actions">' +

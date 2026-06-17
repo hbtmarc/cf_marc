@@ -81,6 +81,23 @@ O design do produto é inspirado em fintechs modernas: fundo off-white suave, ca
 
 ---
 
+## Ícones (Phosphor)
+
+**Padrão obrigatório:** [Phosphor Icons](https://github.com/phosphor-icons/core) — peso **regular**, via utilitário centralizado.
+
+| Regra | Detalhe |
+|-------|---------|
+| API | `CFM.icon("check-circle")` ou alias semântico `CFM.icon("success")` |
+| HTML estático | `data-cfm-icon="dashboard"` + `CFM.hydrateIcons()` no bootstrap |
+| Novos ícones | Copiar SVG de `assets/icons/phosphor/regular/` e registrar path em `src/utils/phosphor-icons.js` |
+| Proibido | Emojis como ícone de UI, SVGs inline ad hoc, Feather/Lucide/Material |
+
+**Aliases comuns:** `success`, `error`, `warning`, `info`, `pending`, `file`, `card`, `chart`, `calendar`, `import`, `dashboard`, `history`, `brand`, `spinner`, `positive`, `link`.
+
+**Classes de tamanho:** `cfm-icon--sm`, `--md`, `--lg`, `--xl`, `--hero`; semântica: `--success`, `--warning`, `--danger`, `--info`; animação: `--spin`.
+
+---
+
 ## Layout
 
 ```

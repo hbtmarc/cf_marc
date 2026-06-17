@@ -699,4 +699,43 @@ Lista de verificação manual por fase.
 
 ---
 
+## Fase 0.3.11 — Semântica multi-cartões / Porto v1.1 (`#/importar`)
+
+**Fixture:** `node scripts/test-phase-porto-v1-1.js` → **ALL PASS**  
+**JSON manual (local):** `cfm_import_v1_porto_pdf_prints_v1_1.json`
+
+### Badge
+- [ ] `Fase 0.3.11 · Semântica multi-cartões`
+
+### Resumo Porto
+- [ ] Arquivo validado · 0 pendências · 74 lançamentos · 1 cartão · 2 faturas · 22 parcelas · 1 recorrência
+
+### Cartões Porto
+- [ ] Porto Bank Visa Gold · final 2128
+- [ ] Limite R$ 16.200,00 · usado R$ 14.541,31 · disponível R$ 1.658,69 · 90%
+- [ ] Snapshot consistente
+
+### Faturas Porto
+- [ ] **Junho paga/conciliada:** R$ 0,00 · encargos R$ 2.672,10
+- [ ] Créditos internos R$ 1.771,41 — **não** “Liquidação bancária”
+- [ ] Liquidação externa/BB R$ 2.672,10
+- [ ] **Julho aberta/provisória:** R$ 3.815,14 · créditos R$ 2.794,33
+- [ ] Detalhe: pagamento R$ 2.672,10 · estornos R$ 122,23
+- [ ] Referência BB em detalhe técnico (se existir)
+
+### Lançamentos Porto
+- [ ] `credit_card_payment` + `flow: in` → **Crédito na fatura** (entrada)
+- [ ] Não contar como compra/despesa do cartão
+
+### Recorrências Porto
+- [ ] Identidade Protegida: **Candidata** + **Atenção** — não **Ativa**
+- [ ] Não bloqueia importação
+
+### Regressão
+- [ ] `node scripts/test-phase-nubank-v2.js` → ALL PASS
+- [ ] `node scripts/test-phase-036d/e/f.js` → ALL PASS
+- [ ] BB e Nubank sem regressão visual
+
+---
+
 Atualizar tabela de critérios em `STATUS_DO_PROJETO.md` ao concluir cada fase.

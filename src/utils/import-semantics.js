@@ -159,18 +159,42 @@ window.CFM = window.CFM || {};
     };
   }
 
+  function isInvoiceInternalCreditTransaction(tx) {
+    if (!tx) return false;
+    if (tx.type === "credit_card_payment" && tx.flow === "in") return true;
+    if (tx.flow === "in" && tx.invoiceBalanceEffect === "decreases_amount_due") return true;
+    if (tx.type === "credit_card_payment" &&
+        tx.invoiceBalanceEffect === "decreases_amount_due" &&
+        tx.cashFlowTreatment !== "invoice_settlement") {
+      return true;
+    }
+    return false;
+  }
+
+  function isExternalInvoiceSettlementTransaction(tx) {
+    if (!tx) return false;
+    if (isInvoiceInternalCreditTransaction(tx) && tx.cashFlowTreatment !== "invoice_settlement") {
+      return false;
+    }
+    if (tx.cashFlowTreatment === "invoice_settlement") return true;
+    if (tx.type === "credit_card_payment" && tx.flow === "out") return true;
+    if (tx.expenseImpact === "none_when_purchases_are_counted" && tx.flow === "out") return true;
+    if (tx.affectsInvoiceBalance === true && tx.flow === "out" &&
+        tx.type !== "credit_card_purchase") {
+      return true;
+    }
+    return false;
+  }
+
   function isInvoiceSettlementTransaction(tx) {
     if (!tx) return false;
-    if (tx.type === "credit_card_payment") return true;
-    if (tx.cashFlowTreatment === "invoice_settlement") return true;
-    if (tx.expenseImpact === "none_when_purchases_are_counted") return true;
-    if (tx.affectsInvoiceBalance === true && tx.type !== "credit_card_purchase") return true;
-    return false;
+    return isInvoiceInternalCreditTransaction(tx) ||
+      isExternalInvoiceSettlementTransaction(tx);
   }
 
   function isInvoiceSettlementForInvoice(tx, invRefKeys) {
     if (!tx) return false;
-    if (isInvoiceSettlementTransaction(tx)) return true;
+    if (isExternalInvoiceSettlementTransaction(tx)) return true;
     if (invRefKeys && invRefKeys.length) {
       var settles = tx.settlesInvoiceExternalRef || tx.settlesInvoiceId || "";
       if (settles && invRefKeys.indexOf(String(settles)) >= 0) return true;
@@ -179,11 +203,260 @@ window.CFM = window.CFM || {};
   }
 
   function getTransactionDisplayType(tx) {
-    if (!isInvoiceSettlementTransaction(tx)) return null;
-    var label = tx.type === "credit_card_payment"
-      ? "Pagamento de fatura"
-      : "Liquidação de fatura";
-    return { label: label, cls: "type-badge--settlement", isSettlement: true };
+    if (isInvoiceInternalCreditTransaction(tx)) {
+      return {
+        label: "Crédito na fatura",
+        cls: "type-badge--invoice-credit",
+        isSettlement: false,
+        isInvoiceCredit: true
+      };
+    }
+    if (isExternalInvoiceSettlementTransaction(tx)) {
+      var label = tx.type === "credit_card_payment"
+        ? "Pagamento de fatura"
+        : "Liquidação de fatura";
+      return { label: label, cls: "type-badge--settlement", isSettlement: true };
+    }
+    return null;
+  }
+
+  function getInvoicePaymentBreakdown(invoice) {
+    return (invoice && invoice.paymentBreakdown) || {};
+  }
+
+  function pickInvoiceCents(primary, fallback) {
+    if (primary != null) return primary;
+    if (fallback != null) return fallback;
+    return 0;
+  }
+
+  function getInvoiceDisplayAmounts(invoice, recon) {
+    var pb = getInvoicePaymentBreakdown(invoice);
+    var charges = pickInvoiceCents(
+      invoice && invoice.invoiceChargesCents,
+      recon && recon.invoiceChargesCents
+    );
+    var internalCredits = pickInvoiceCents(
+      invoice && invoice.invoicePaymentsCreditsCents,
+      pickInvoiceCents(pb.invoiceStatementCreditsCents, recon && recon.invoicePaymentsCreditsCents)
+    );
+    var externalSettlement = pickInvoiceCents(
+      invoice && invoice.settlementPaymentsCents,
+      pickInvoiceCents(pb.externalSettlementPaymentsCents, recon && recon.settlementPaymentsCents)
+    );
+    var amountDue = pickInvoiceCents(
+      invoice && invoice.amountDueCents,
+      pickInvoiceCents(invoice && invoice.statementAmountDueCents, recon && recon.invoiceTotalCents)
+    );
+    return {
+      amountDueCents: amountDue,
+      chargesCents: charges,
+      internalCreditsCents: internalCredits,
+      externalSettlementCents: externalSettlement,
+      previousBalanceCents: pickInvoiceCents(invoice && invoice.previousBalanceCents, 0),
+      statementAmountDueCents: pickInvoiceCents(
+        invoice && invoice.statementAmountDueCents,
+        amountDue
+      ),
+      paymentOnInvoiceCents: pickInvoiceCents(pb.invoiceStatementPaymentCreditsCents, 0),
+      refundCreditsCents: pickInvoiceCents(pb.refundCreditsCents, 0)
+    };
+  }
+
+  function hasInternalInvoiceCredits(invoice) {
+    if (!invoice) return false;
+    var pb = getInvoicePaymentBreakdown(invoice);
+    var amounts = getInvoiceDisplayAmounts(invoice, null);
+    return amounts.internalCreditsCents > 0 ||
+      amounts.paymentOnInvoiceCents > 0 ||
+      pb.invoiceStatementCreditsCents > 0 ||
+      pb.invoiceStatementPaymentCreditsCents > 0;
+  }
+
+  function hasExternalSettlement(invoice) {
+    if (!invoice) return false;
+    return getInvoiceDisplayAmounts(invoice, null).externalSettlementCents > 0;
+  }
+
+  function getInvoiceCreditLabel(invoice) {
+    if (!invoice) return "Créditos/Pagamentos na fatura";
+    if (invoice.status === "paid" || invoice.reconciliationStatus === "settled") {
+      return "Créditos internos da fatura";
+    }
+    return "Créditos/Pagamentos na fatura";
+  }
+
+  function getInvoiceSettlementLabel(invoice) {
+    if (!hasExternalSettlement(invoice)) return "";
+    return "Liquidação externa/BB";
+  }
+
+  function getInvoicePaymentBreakdownRows(invoice, formatFn) {
+    var pb = getInvoicePaymentBreakdown(invoice);
+    var fmt = formatFn || function (c) { return String(c); };
+    var rows = [];
+
+    if (pb.invoiceStatementPaymentCreditsCents > 0) {
+      rows.push({
+        label: "Pagamento lançado na fatura",
+        cents: pb.invoiceStatementPaymentCreditsCents,
+        fmt: fmt(pb.invoiceStatementPaymentCreditsCents)
+      });
+    }
+    if (pb.refundCreditsCents > 0) {
+      rows.push({
+        label: "Estornos/créditos",
+        cents: pb.refundCreditsCents,
+        fmt: fmt(pb.refundCreditsCents)
+      });
+    }
+    if (pb.invoiceStatementCreditsCents > 0 &&
+        !pb.invoiceStatementPaymentCreditsCents) {
+      rows.push({
+        label: "Créditos internos da fatura",
+        cents: pb.invoiceStatementCreditsCents,
+        fmt: fmt(pb.invoiceStatementCreditsCents)
+      });
+    }
+    return rows;
+  }
+
+  function isRecurringRuleCandidate(rule) {
+    if (!rule) return false;
+    if (rule.candidate === true) return true;
+    if (rule.status === "candidate") return true;
+    if (rule.recurrenceKind === "candidate") return true;
+    if (String(rule.externalRef || "").indexOf("_candidate") >= 0) return true;
+    return false;
+  }
+
+  /**
+   * Recorrência confirmada pelo usuário no JSON (não deve gerar observação candidata).
+   */
+  function isRecurringRuleUserConfirmed(rule) {
+    if (!rule || isRecurringRuleCandidate(rule)) return false;
+    if (rule.status !== "active") return false;
+    if (rule.active === false) return false;
+    if (rule.userConfirmed !== true) return false;
+    if (rule.candidate === true) return false;
+    return true;
+  }
+
+  function isRecurringRuleActive(rule) {
+    if (!rule || isRecurringRuleCandidate(rule)) return false;
+    if (isRecurringRuleUserConfirmed(rule)) return true;
+    if (rule.status === "active" && rule.active !== false) return true;
+    if (rule.status === "inactive" || rule.status === "candidate") return false;
+    return rule.isActive !== false;
+  }
+
+  function getRecurringRuleDisplayState(rule) {
+    if (isRecurringRuleCandidate(rule)) return "candidate";
+    if (isRecurringRuleActive(rule)) return "active";
+    return "inactive";
+  }
+
+  function getRecurringRuleBadges(rule) {
+    var state = getRecurringRuleDisplayState(rule);
+    if (state === "candidate") {
+      return [
+        { label: "Candidata", cls: "status-chip--open", kind: "state" },
+        { label: "Atenção", cls: "confidence-badge--warning", kind: "attention" }
+      ];
+    }
+    if (state === "active") {
+      return [{ label: "Ativa", cls: "status-chip--paid", kind: "state" }];
+    }
+    return [{ label: "Inativa", cls: "status-chip--other", kind: "state" }];
+  }
+
+  function getRecurringRuleImportImpact(rule) {
+    return {
+      blocksImport: false,
+      isConfirmed: isRecurringRuleUserConfirmed(rule) || isRecurringRuleActive(rule),
+      isCandidate: isRecurringRuleCandidate(rule),
+      showNonBlockingNote: isRecurringRuleCandidate(rule)
+    };
+  }
+
+  function getTransactionRecurrenceRuleRef(tx) {
+    if (!tx) return "";
+    return String(
+      tx.recurrenceRuleExternalRef ||
+      tx.recurringRuleExternalRef ||
+      tx.recurrenceRuleId ||
+      ""
+    ).trim();
+  }
+
+  function buildRecurringRuleLookup(recurringRules) {
+    var byRef = {};
+    var confirmedByMerchantAmount = [];
+
+    (recurringRules || []).forEach(function (rule) {
+      if (!rule) return;
+      var ref = String(rule.externalRef || rule.id || "").trim();
+      if (ref) byRef[ref] = rule;
+      if (rule.id && String(rule.id).trim() && !byRef[rule.id]) {
+        byRef[rule.id] = rule;
+      }
+      if (!isRecurringRuleUserConfirmed(rule)) return;
+      var amount = rule.expectedAmountCents != null
+        ? rule.expectedAmountCents
+        : rule.amountCents;
+      if (amount == null) return;
+      var merchant = normalizeMerchantBase(
+        rule.description || rule.sourcePattern || rule.merchantPattern || ""
+      );
+      if (!merchant) return;
+      confirmedByMerchantAmount.push({
+        merchant: merchant,
+        amountCents: amount,
+        rule: rule
+      });
+    });
+
+    return { byRef: byRef, confirmedByMerchantAmount: confirmedByMerchantAmount };
+  }
+
+  function matchesConfirmedRecurringMerchantAmount(tx, lookup) {
+    if (!tx || !lookup || !lookup.confirmedByMerchantAmount) return false;
+    var amount = tx.amountCents;
+    if (amount == null) return false;
+    var merchant = normalizeMerchantBase(tx.description || tx.merchantName || "");
+    if (!merchant) return false;
+
+    for (var i = 0; i < lookup.confirmedByMerchantAmount.length; i++) {
+      var entry = lookup.confirmedByMerchantAmount[i];
+      if (!amountsEquivalent(entry.amountCents, amount)) continue;
+      if (merchant === entry.merchant) return true;
+      if (descriptionsSimilarBase(merchant, entry.merchant)) return true;
+    }
+    return false;
+  }
+
+  function isTransactionRecurrenceConfirmed(tx, lookup) {
+    if (!tx) return false;
+    if (tx.userConfirmedRecurring === true) return true;
+    if (tx.recurrenceStatus === "confirmed_active") return true;
+
+    var ref = getTransactionRecurrenceRuleRef(tx);
+    if (ref && lookup && lookup.byRef && lookup.byRef[ref]) {
+      if (isRecurringRuleUserConfirmed(lookup.byRef[ref])) return true;
+    }
+
+    return matchesConfirmedRecurringMerchantAmount(tx, lookup);
+  }
+
+  function shouldSuppressRecurringCandidatePair(pair, transactions, lookup) {
+    if (!pair || !transactions) return false;
+    var indices = [pair.index1, pair.index2, pair.indexA, pair.indexB];
+    for (var i = 0; i < indices.length; i++) {
+      var idx = indices[i];
+      if (idx == null) continue;
+      if (isTransactionRecurrenceConfirmed(transactions[idx], lookup)) return true;
+    }
+    return false;
   }
 
   /**
@@ -701,14 +974,14 @@ window.CFM = window.CFM || {};
     if (blocking > 0) {
       return {
         noticeClass: "notice--warning",
-        icon: "⚠️",
+        icon: "warning",
         text: "Existem pendências que bloqueiam a importação.",
         counts: counts
       };
     }
     return {
       noticeClass: "notice--info",
-      icon: "ℹ️",
+      icon: "info",
       text: "Nenhum bloqueio encontrado. " + attention +
         " item(ns) merece(m) atenção e " + informational + " são informativos.",
       counts: counts
@@ -739,7 +1012,24 @@ window.CFM = window.CFM || {};
     resolveInvoiceReconciliationSemantics: resolveInvoiceReconciliationSemantics,
     getInvoiceToleranceInformativeLabel: getInvoiceToleranceInformativeLabel,
     isInvoiceSettlementTransaction:      isInvoiceSettlementTransaction,
+    isInvoiceInternalCreditTransaction:  isInvoiceInternalCreditTransaction,
+    isExternalInvoiceSettlementTransaction: isExternalInvoiceSettlementTransaction,
     isInvoiceSettlementForInvoice:       isInvoiceSettlementForInvoice,
+    getInvoiceDisplayAmounts:            getInvoiceDisplayAmounts,
+    getInvoiceCreditLabel:               getInvoiceCreditLabel,
+    getInvoiceSettlementLabel:           getInvoiceSettlementLabel,
+    getInvoicePaymentBreakdownRows:      getInvoicePaymentBreakdownRows,
+    hasExternalSettlement:               hasExternalSettlement,
+    hasInternalInvoiceCredits:           hasInternalInvoiceCredits,
+    getRecurringRuleDisplayState:        getRecurringRuleDisplayState,
+    isRecurringRuleCandidate:            isRecurringRuleCandidate,
+    isRecurringRuleActive:               isRecurringRuleActive,
+    getRecurringRuleBadges:              getRecurringRuleBadges,
+    getRecurringRuleImportImpact:        getRecurringRuleImportImpact,
+    isRecurringRuleUserConfirmed:        isRecurringRuleUserConfirmed,
+    buildRecurringRuleLookup:            buildRecurringRuleLookup,
+    isTransactionRecurrenceConfirmed:    isTransactionRecurrenceConfirmed,
+    shouldSuppressRecurringCandidatePair: shouldSuppressRecurringCandidatePair,
     getTransactionDisplayType:           getTransactionDisplayType,
     isCategoryOutros:                    isCategoryOutros,
     isOutrosCategoryReview:              isOutrosCategoryReview,

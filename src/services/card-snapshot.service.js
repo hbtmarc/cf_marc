@@ -603,6 +603,14 @@ window.CFM = window.CFM || {};
 
       if (!txMatchesInvoiceRef(tx, invRefKeys)) return;
 
+      var semLocal = CFM.importSemantics || {};
+      if (semLocal.isInvoiceInternalCreditTransaction &&
+          semLocal.isInvoiceInternalCreditTransaction(tx)) {
+        if (!sameMonth) return;
+        statementPaymentLinked.push({ tx: tx, index: index, kind: "payment" });
+        return;
+      }
+
       if (isSettlementTx(tx, invRefKeys)) {
         if (isHistoricalPayment(tx, invMonth)) return;
         settlementLinked.push({ tx: tx, index: index });
@@ -652,6 +660,23 @@ window.CFM = window.CFM || {};
 
     var invoiceChargesCents = purchases + fees + adjustments - refunds;
     var invoicePaymentsCreditsCents = statementPayments + statementCredits;
+
+    if (invoice.invoiceChargesCents != null) {
+      invoiceChargesCents = invoice.invoiceChargesCents;
+    }
+    if (invoice.invoicePaymentsCreditsCents != null) {
+      invoicePaymentsCreditsCents = invoice.invoicePaymentsCreditsCents;
+    } else if (invoice.paymentBreakdown &&
+        invoice.paymentBreakdown.invoiceStatementCreditsCents != null) {
+      invoicePaymentsCreditsCents = invoice.paymentBreakdown.invoiceStatementCreditsCents;
+    }
+    if (invoice.settlementPaymentsCents != null) {
+      settlementPayments = invoice.settlementPaymentsCents;
+    } else if (invoice.paymentBreakdown &&
+        invoice.paymentBreakdown.externalSettlementPaymentsCents != null) {
+      settlementPayments = invoice.paymentBreakdown.externalSettlementPaymentsCents;
+    }
+
     var statementNetCents = previousBalance + invoiceChargesCents - invoicePaymentsCreditsCents;
     var chargesVsTotalDelta = invoiceTotal - invoiceChargesCents;
     var reconciliationDeltaCents = invoiceTotal - statementNetCents;

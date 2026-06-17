@@ -23,6 +23,12 @@ window.CFM = window.CFM || {};
 
   var FLOW_LABELS = { "in": "Entrada", "out": "Saída", "neutral": "Neutro" };
 
+  function ic(name, cls) {
+    return CFM.icon(name, {
+      className: "cfm-icon" + (cls ? " " + cls : " cfm-icon--inline")
+    });
+  }
+
   var INV_STATUS_LABELS = {
     open:    "Aberta",
     closed:  "Fechada",
@@ -32,10 +38,10 @@ window.CFM = window.CFM || {};
   };
 
   var OVERALL_STATUS = {
-    ready:        { icon: "✅", label: "Arquivo validado",             mod: "ready"        },
-    has_pending:  { icon: "📋", label: "Precisa revisar",                mod: "has-pending"  },
-    has_blockers: { icon: "❌", label: "Precisa revisar",                mod: "has-blockers" },
-    empty:        { icon: "📭", label: "Arquivo sem dados relevantes", mod: "empty"        }
+    ready:        { icon: "success",  label: "Arquivo validado",             mod: "ready"        },
+    has_pending:  { icon: "pending",  label: "Precisa revisar",                mod: "has-pending"  },
+    has_blockers: { icon: "error",    label: "Precisa revisar",                mod: "has-blockers" },
+    empty:        { icon: "empty",    label: "Arquivo sem dados relevantes", mod: "empty"        }
   };
 
   var SIMILARITY_SECTIONS = [
@@ -58,9 +64,9 @@ window.CFM = window.CFM || {};
   };
 
   var REVIEW_PRIORITY_META = {
-    critical:  { cls: "review-priority--critical",  icon: "🚨" },
-    important: { cls: "review-priority--important", icon: "⚠️" },
-    low:       { cls: "review-priority--low",       icon: "💡" }
+    critical:  { cls: "review-priority--critical",  icon: "critical" },
+    important: { cls: "review-priority--important", icon: "warning" },
+    low:       { cls: "review-priority--low",       icon: "suggestion" }
   };
 
   var TABS = [
@@ -100,6 +106,9 @@ window.CFM = window.CFM || {};
 
   function typeBadge(type, tx) {
     var sem = CFM.importSemantics;
+    if (tx && tx.isInvoiceInternalCredit) {
+      return '<span class="type-badge type-badge--invoice-credit">Crédito na fatura</span>';
+    }
     if (tx && sem && sem.getTransactionDisplayType) {
       var display = sem.getTransactionDisplayType(tx);
       if (display) {
@@ -308,7 +317,7 @@ window.CFM = window.CFM || {};
     if ((c.ruleClassified || 0) > 0 || report.personalRulesLoaded) {
       rulesNotice =
         '<div class="notice notice--success" role="note">' +
-        '  <span>✅</span>' +
+        '  <span>' + ic("success", "cfm-icon--success") + '</span>' +
         '  <span>Regras pessoais aplicadas localmente (' + (c.ruleClassified || 0) +
         " classificações). Revisão JSON: " + (c.rawReviewCount || 0) +
         " → efetiva: " + (c.effectiveReviewCount || 0) +
@@ -412,7 +421,7 @@ window.CFM = window.CFM || {};
       '<section class="summary-hero import-status-banner import-status-banner--' + si.mod + '">' +
       '  <div class="summary-hero__main">' +
       '    <p class="summary-hero__eyebrow">Posso importar com segurança?</p>' +
-      '    <p class="summary-hero__title"><span aria-hidden="true">' + si.icon + '</span> ' + esc(si.label) + "</p>" +
+      '    <p class="summary-hero__title">' + ic(si.icon, "cfm-icon--hero") + " " + esc(si.label) + "</p>" +
       '    <p class="summary-hero__text">' + esc(heroMsg) + "</p>" +
       srcBrief +
       "  </div></section>" +
@@ -564,7 +573,10 @@ window.CFM = window.CFM || {};
         '<p class="invoice-amount invoice-amount--reference">Referência de vínculo</p>' +
         '<p class="invoice-stub-note">Referência criada para manter vínculo com transações. Não é uma fatura consolidada.</p>';
     } else {
-      amountHtml = '<p class="invoice-amount">' + esc(inv.amountDueFmt || inv.totalFmt) + "</p>";
+      var mainAmount = (inv.invoiceDisplay && inv.invoiceDisplay.amountDueFmt)
+        ? inv.invoiceDisplay.amountDueFmt
+        : (inv.amountDueFmt || inv.totalFmt);
+      amountHtml = '<p class="invoice-amount">' + esc(mainAmount) + "</p>";
     }
 
     var creditHtml = "";
@@ -572,22 +584,42 @@ window.CFM = window.CFM || {};
       var msg = inv.creditBehavior === "applies_to_next_invoice"
         ? "Saldo positivo de " + inv.creditBalanceFmt + " será abatido da próxima fatura."
         : "Saldo credor de " + inv.creditBalanceFmt + " (não é receita).";
-      creditHtml = '<div class="credit-balance">💚 ' + esc(msg) + "</div>";
+      creditHtml = '<div class="credit-balance">' + ic("positive", "cfm-icon--success") + " " + esc(msg) + "</div>";
     }
 
     var reconHtml = "";
     var stmtHtml = "";
-    if (!inv.isReference && inv.invoiceChargesFmt) {
+    if (!inv.isReference && (inv.invoiceChargesFmt || (inv.invoiceDisplay && inv.invoiceDisplay.chargesFmt))) {
+      var disp = inv.invoiceDisplay || {};
+      var creditLabel = inv.creditLabel || "Créditos/Pagamentos na fatura";
+      var settlementLabel = inv.settlementLabelDisplay || "Liquidação externa/BB";
       stmtHtml =
         '<div class="invoice-statement-summary">' +
-        '<span>Encargos: <strong>' + esc(inv.invoiceChargesFmt) + "</strong></span>" +
-        (inv.invoicePaymentsCreditsFmt && inv.invoicePaymentsCreditsCents
-          ? '<span>Pagamentos/créditos: <strong>' + esc(inv.invoicePaymentsCreditsFmt) + "</strong></span>"
-          : "") +
-        (inv.settlementPaymentsFmt && inv.settlementPaymentsCents
-          ? '<span>Liquidação bancária: <strong>' + esc(inv.settlementPaymentsFmt) + "</strong></span>"
-          : "") +
-        "</div>";
+        '<span>Encargos/despesas: <strong>' +
+          esc(disp.chargesFmt || inv.invoiceChargesFmt) + "</strong></span>";
+      if (disp.internalCreditsCents > 0) {
+        stmtHtml += '<span>' + esc(creditLabel) + ': <strong>' +
+          esc(disp.internalCreditsFmt || inv.invoicePaymentsCreditsFmt) + "</strong></span>";
+      }
+      if (disp.externalSettlementCents > 0) {
+        stmtHtml += '<span>' + esc(settlementLabel) + ': <strong>' +
+          esc(disp.externalSettlementFmt || inv.settlementPaymentsFmt) + "</strong></span>";
+      }
+      stmtHtml += "</div>";
+
+      if (inv.paymentBreakdownRows && inv.paymentBreakdownRows.length) {
+        stmtHtml +=
+          '<details class="invoice-breakdown-details">' +
+          '<summary class="invoice-breakdown-details__summary">Detalhes de créditos</summary>' +
+          '<ul class="invoice-breakdown-list">' +
+          inv.paymentBreakdownRows.map(function (row) {
+            return '<li>' + esc(row.label) + ": <strong>" + esc(row.fmt) + "</strong></li>";
+          }).join("") +
+          "</ul></details>";
+      }
+      if (inv.externalSettlementReference) {
+        stmtHtml += '<p class="invoice-stub-note">Referência BB para conciliação futura.</p>';
+      }
     }
 
     var ui = inv.reconciliationUi;
@@ -596,8 +628,8 @@ window.CFM = window.CFM || {};
         : ui.cssClass === "gap" ? "reconciliation-gap"
         : ui.cssClass === "partial" ? "reconciliation-partial"
         : "reconciliation-info";
-      var uiIcon = ui.severity === "success" ? "✅"
-        : ui.severity === "warning" ? "⚠️" : "ℹ️";
+      var uiIcon = ui.severity === "success" ? ic("success", "cfm-icon--success")
+        : ui.severity === "warning" ? ic("warning", "cfm-icon--warning") : ic("info", "cfm-icon--info");
       reconHtml =
         '<div class="' + uiCls + '">' + uiIcon + " <strong>" + esc(ui.label) + "</strong> — " +
         esc(ui.message) + "</div>";
@@ -607,30 +639,30 @@ window.CFM = window.CFM || {};
           esc(inv.reconciliationDiffFmt) + " (dentro da tolerância).</p>";
       }
     } else if (!inv.isReference && inv.reconciliationPartial) {
-      reconHtml = '<div class="reconciliation-partial">ℹ️ ' +
+      reconHtml = '<div class="reconciliation-partial">' + ic("info", "cfm-icon--info") + " " +
         esc(inv.reconciliationMessage || "Conciliação parcial — nem todas as transações da fatura estão presentes no JSON.") +
         "</div>";
     } else if (!inv.isReference && inv.hasCredit) {
-      reconHtml = '<div class="reconciliation-ok">💚 ' +
+      reconHtml = '<div class="reconciliation-ok">' + ic("positive", "cfm-icon--success") + " " +
         esc(inv.reconciliationMessage || "Saldo credor — não entra na conciliação de compras.") +
         "</div>";
     } else if (!inv.isReference && inv.explainedByPayments && inv.reconciliationMessage) {
-      reconHtml = '<div class="reconciliation-ok">✅ ' + esc(inv.reconciliationMessage) + "</div>";
+      reconHtml = '<div class="reconciliation-ok">' + ic("success", "cfm-icon--success") + " " + esc(inv.reconciliationMessage) + "</div>";
     } else if (!inv.isReference && inv.hasReconciliationGap && inv.reconciliationStatus === "requires_review") {
       var diffLabel = inv.reconciliationDiff > 0 ? "fatura maior que encargos vinculados" : "encargos vinculados maiores que fatura";
-      reconHtml = '<div class="reconciliation-gap">⚖️ Diferença de ' +
+      reconHtml = '<div class="reconciliation-gap">' + ic("balance") + " Diferença de " +
         esc(inv.reconciliationDiffFmt) + " (" + esc(diffLabel) + ")</div>";
     } else if (!inv.isReference && inv.reconciliationStatus === "consistent" && inv.reconciliationMessage) {
-      reconHtml = '<div class="reconciliation-ok">✅ ' + esc(inv.reconciliationMessage) +
+      reconHtml = '<div class="reconciliation-ok">' + ic("success", "cfm-icon--success") + " " + esc(inv.reconciliationMessage) +
         (inv.linkedTransactionCount ? " (" + inv.linkedTransactionCount + " transação(ões))" : "") +
         "</div>";
     } else if (!inv.isReference && inv.linkedTransactionCount > 0 && inv.reconciliationMessage) {
-      reconHtml = '<div class="reconciliation-ok">✅ ' + esc(inv.reconciliationMessage) +
+      reconHtml = '<div class="reconciliation-ok">' + ic("success", "cfm-icon--success") + " " + esc(inv.reconciliationMessage) +
         " (" + inv.linkedTransactionCount + " transação(ões))</div>";
     } else if (!inv.isReference && inv.linkedTransactionCount > 0) {
-      reconHtml = '<div class="reconciliation-ok">✅ ' + inv.linkedTransactionCount + " transação(ões) vinculada(s)</div>";
+      reconHtml = '<div class="reconciliation-ok">' + ic("success", "cfm-icon--success") + " " + inv.linkedTransactionCount + " transação(ões) vinculada(s)</div>";
     } else if (inv.isReference && inv.linkedTransactionCount > 0) {
-      reconHtml = '<div class="reconciliation-ok">🔗 ' + inv.linkedTransactionCount + " transação(ões) vinculada(s)</div>";
+      reconHtml = '<div class="reconciliation-ok">' + ic("link") + " " + inv.linkedTransactionCount + " transação(ões) vinculada(s)</div>";
     }
 
     if (!inv.isReference && !ui && inv.reconciliationStatus && inv.reconciliationStatus !== "n/a") {
@@ -696,7 +728,7 @@ window.CFM = window.CFM || {};
 
     var stubNotice = (groups.reference && groups.reference.length)
       ? '<div class="notice notice--info" role="note" style="margin-bottom:1rem">' +
-        '  <span>ℹ️</span>' +
+        '  <span>' + ic("info", "cfm-icon--info") + '</span>' +
         '  <span>Algumas entradas são referências de vínculo — não representam faturas consolidadas.</span>' +
         "</div>"
       : "";
@@ -776,7 +808,8 @@ window.CFM = window.CFM || {};
       var cls = "tx-item";
       if (tx.isInvalid)           cls += " tx-item--invalid";
       if (tx.needsEffectiveReview) cls += " tx-item--review";
-      if (tx.isInvoiceSettlement || tx.isCreditCardPayment) cls += " tx-item--settlement";
+      if (tx.isInvoiceInternalCredit) cls += " tx-item--invoice-credit";
+      else if (tx.isInvoiceSettlement || tx.isCreditCardPayment) cls += " tx-item--settlement";
 
       var via = tx.cardName || tx.accountName || "";
 
@@ -788,7 +821,10 @@ window.CFM = window.CFM || {};
         "  </div>" +
         '  <div class="tx-item__tags">' +
         flowBadge(tx.flow) + typeBadge(tx.type, tx) +
-        (tx.needsEffectiveReview ? '<span class="tx-item__review-flag" title="' + esc(tx.reviewReason) + '">⚠</span>' : "") +
+        (tx.needsEffectiveReview
+          ? '<span class="tx-item__review-flag" title="' + esc(tx.reviewReason) + '">' +
+            ic("warning", "cfm-icon--sm cfm-icon--warning") + "</span>"
+          : "") +
         "  </div>" +
         '  <div class="tx-item__meta">' +
         '    <span class="tx-item__date">' + esc(tx.date || tx.competenceMonth) + "</span>" +
@@ -857,7 +893,7 @@ window.CFM = window.CFM || {};
       return (
         '<div class="review-empty-state">' +
         '  <div class="notice notice--success" role="status">' +
-        '    <span>✅</span>' +
+        '    <span>' + ic("success", "cfm-icon--success") + '</span>' +
         '    <span><strong>Tudo certo para importar.</strong> Nenhuma pendência obrigatória.' +
         (autoN > 0 ? " " + autoN + " itens foram classificados automaticamente." : "") +
         "    </span></div></div>"
@@ -881,11 +917,11 @@ window.CFM = window.CFM || {};
       return (
         '<div class="review-empty-state">' +
         '  <div class="notice notice--success" role="status">' +
-        '    <span>✅</span>' +
+        '    <span>' + ic("success", "cfm-icon--success") + '</span>' +
         '    <span><strong>Nenhuma pendência obrigatória.</strong> As sugestões abaixo são opcionais e não bloqueiam a importação.</span>' +
         "  </div></div>" +
         '<section class="review-group review-group--suggestions ' + meta.cls + '">' +
-        '  <h4 class="review-group__title">' + meta.icon + " Sugestões opcionais" +
+        '  <h4 class="review-group__title">' + ic(meta.icon) + " Sugestões opcionais" +
         '    <span class="review-group__count">' + suggestionGroup.items.length + "</span></h4>" +
         '  <ul class="review-list">' + itemsHtml + "</ul></section>"
       );
@@ -893,7 +929,7 @@ window.CFM = window.CFM || {};
 
     return (
       '<div class="notice notice--info" role="note" style="margin-bottom:1rem">' +
-      '  <span>ℹ️</span>' +
+      '  <span>' + ic("info", "cfm-icon--info") + '</span>' +
       '  <span>Itens abaixo exigem sua atenção antes de importar. Sugestões opcionais aparecem ao final e não bloqueiam.</span>' +
       "</div>" +
       confirmGroups.filter(function (g) { return g.items.length > 0; }).map(function (group) {
@@ -923,7 +959,7 @@ window.CFM = window.CFM || {};
 
         return (
           '<section class="review-group ' + meta.cls + '">' +
-          '  <h4 class="review-group__title">' + meta.icon + " " + esc(group.label) +
+          '  <h4 class="review-group__title">' + ic(meta.icon) + " " + esc(group.label) +
           '    <span class="review-group__count">' + group.items.length + "</span></h4>" +
           '  <ul class="review-list">' + itemsHtml + "</ul>" +
           "</section>"
@@ -946,7 +982,7 @@ window.CFM = window.CFM || {};
           }).join("");
           return (
             '<section class="review-group review-group--suggestions ' + meta.cls + '">' +
-            '  <h4 class="review-group__title">' + meta.icon + " Sugestões opcionais" +
+            '  <h4 class="review-group__title">' + ic(meta.icon) + " Sugestões opcionais" +
             '    <span class="review-group__count">' + suggestionGroup.items.length + "</span></h4>" +
             '  <ul class="review-list">' + itemsHtml + "</ul></section>"
           );
@@ -972,7 +1008,7 @@ window.CFM = window.CFM || {};
       ? sem.buildObservationBanner(blocking, attention, infoCount)
       : {
           noticeClass: blocking > 0 ? "notice--warning" : "notice--info",
-          icon: blocking > 0 ? "⚠️" : "ℹ️",
+          icon: blocking > 0 ? "warning" : "info",
           text: blocking > 0
             ? "Existem pendências que bloqueiam a importação."
             : "Nenhum bloqueio encontrado. " + attention +
@@ -1060,7 +1096,7 @@ window.CFM = window.CFM || {};
 
     return (
       '<div class="notice ' + banner.noticeClass + ' similarity-notice" role="note">' +
-      '  <span>' + banner.icon + '</span>' +
+      '  <span>' + ic(banner.icon, banner.noticeClass === "notice--warning" ? "cfm-icon--warning" : "cfm-icon--info") + '</span>' +
       '  <span><strong>' + esc(banner.text) + '</strong> ' + esc(banner.counts) + ".</span>" +
       "</div>" +
       sectionsHtml + attentionHtml + infoHtml
@@ -1082,19 +1118,17 @@ window.CFM = window.CFM || {};
       engine_suggested: "Sugerida pelo motor"
     };
 
-    var RECURRENCE_KIND = {
-      imported:       "Importada",
-      personal_rule:  "Regra pessoal",
-      candidate:      "Candidata"
-    };
-
     var rows = rules.map(function (rule) {
       var freqLabel = rule.frequency === "monthly" ? "Mensal" :
                       rule.frequency === "weekly"  ? "Semanal" :
                       rule.frequency === "yearly"  ? "Anual" : rule.frequency || "—";
-      var activeChip = rule.isActive
-        ? '<span class="status-chip status-chip--paid">Ativa</span>'
-        : '<span class="status-chip status-chip--other">Inativa</span>';
+      var sem = CFM.importSemantics || {};
+      var badges = rule.recurringBadges && rule.recurringBadges.length
+        ? rule.recurringBadges
+        : (sem.getRecurringRuleBadges ? sem.getRecurringRuleBadges(rule) : []);
+      var stateBadges = badges.map(function (badge) {
+        return ' <span class="' + esc(badge.cls) + '">' + esc(badge.label) + "</span>";
+      }).join("");
       var sourceLabels = rule.sourceLabels && rule.sourceLabels.length
         ? rule.sourceLabels
         : (rule.source
@@ -1103,19 +1137,17 @@ window.CFM = window.CFM || {};
       var sourceChips = sourceLabels.map(function (lbl) {
         return ' <span class="status-chip status-chip--open">' + esc(lbl) + "</span>";
       }).join("");
-      var kindLabel = rule.recurrenceKind === "merged"
-        ? "Reconhecida"
-        : (RECURRENCE_KIND[rule.recurrenceKind] || "");
+      var impact = rule.recurringImpact || (sem.getRecurringRuleImportImpact
+        ? sem.getRecurringRuleImportImpact(rule) : {});
+      var nonBlocking = impact.showNonBlockingNote
+        ? ' <span class="similarity-item__hint">Não bloqueia a importação</span>'
+        : "";
 
       return (
-        '<li class="recurring-item recurring-item--' + esc(rule.recurrenceKind || "imported") + '">' +
+        '<li class="recurring-item recurring-item--' + esc(rule.recurringDisplay || rule.recurrenceKind || "imported") + '">' +
         '  <div class="recurring-item__header">' +
         '    <span class="recurring-item__desc">' + esc(rule.description) + "</span>" +
-        '    ' + flowBadge(rule.flow) + " " + activeChip +
-        sourceChips +
-        (kindLabel && rule.recurrenceKind !== "merged"
-          ? ' <span class="status-chip status-chip--other">' + esc(kindLabel) + "</span>"
-          : "") +
+        '    ' + flowBadge(rule.flow) + stateBadges + sourceChips + nonBlocking +
         "  </div>" +
         '  <div class="recurring-item__meta">' +
         '<span>' + esc(rule.amountFmt) + '</span>' +
@@ -1206,7 +1238,7 @@ window.CFM = window.CFM || {};
       if (found.length === 0) {
         return (
           '<div class="privacy-check privacy-check--ok">' +
-          '  <span aria-hidden="true">✅</span>' +
+          '  <span aria-hidden="true">' + ic("success", "cfm-icon--success") + '</span>' +
           '  <span>Nenhum ' + esc(chk.label) + "</span>" +
           "</div>"
         );
@@ -1214,7 +1246,7 @@ window.CFM = window.CFM || {};
       var items = found.map(function (a) {
         return (
           '<li class="issue-item issue-item--' + (a.severity === "high" ? "error" : "warning") + '">' +
-          '  <span>' + (a.severity === "high" ? "🚨" : "⚠️") + "</span> " +
+          '  <span>' + (a.severity === "high" ? ic("critical", "cfm-icon--danger") : ic("warning", "cfm-icon--warning")) + "</span> " +
           '<strong>' + esc(a.label) + "</strong> em " +
           "<code>" + esc(a.context) + "</code>" +
           "</li>"
@@ -1238,7 +1270,7 @@ window.CFM = window.CFM || {};
   function buildUploadZone() {
     return (
       '<div class="upload-zone" id="upload-zone" role="region" aria-label="Área de importação de arquivo JSON">' +
-      '  <div class="upload-zone__icon" aria-hidden="true">📄</div>' +
+      '  <div class="upload-zone__icon" aria-hidden="true">' + ic("file", "cfm-icon--xl") + '</div>' +
       '  <p class="upload-zone__title">Arraste seu arquivo JSON aqui ou selecione no dispositivo.</p>' +
       '  <p class="upload-zone__hint">Formato aceito: exportação Controle Financeiro Mensal (.json)</p>' +
       '  <div class="upload-zone__actions">' +
@@ -1255,7 +1287,7 @@ window.CFM = window.CFM || {};
   function buildLoadingState() {
     return (
       '<div class="import-state import-state--loading" role="status" aria-live="polite">' +
-      '  <span class="import-state__spinner" aria-hidden="true">⏳</span>' +
+      '  <span class="import-state__spinner" aria-hidden="true">' + ic("spinner", "cfm-icon--md cfm-icon--spin") + '</span>' +
       "  <span>Lendo, validando e analisando arquivo…</span>" +
       "</div>"
     );
@@ -1268,7 +1300,7 @@ window.CFM = window.CFM || {};
     return (
       '<div class="import-state import-state--error" role="alert">' +
       '  <div class="import-state__header">' +
-      '    <span class="import-state__icon" aria-hidden="true">❌</span>' +
+      '    <span class="import-state__icon" aria-hidden="true">' + ic("error", "cfm-icon--lg cfm-icon--danger") + '</span>' +
       '    <div><p class="import-state__title">Arquivo não aceito</p>' +
       '    <p class="import-state__meta">' + esc(report.fileName || "") + " · " + esc(report.fileSizeFormatted || "") + "</p></div>" +
       "  </div>" +
@@ -1618,7 +1650,7 @@ window.CFM = window.CFM || {};
       '    <p class="page-header__desc">Envie seu arquivo JSON para validar lançamentos, cartões e faturas antes de confirmar a importação.</p>' +
       "  </header>" +
       '  <div class="notice notice--warning" role="note">' +
-      '    <span aria-hidden="true">⚠</span>' +
+      '    <span aria-hidden="true">' + ic("warning", "cfm-icon--warning") + '</span>' +
       '    <span>Validação local — nada é gravado nesta fase.</span>' +
       "  </div>" +
       '  <div id="import-content">' + buildUploadZone() + "</div>" +

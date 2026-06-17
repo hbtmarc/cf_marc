@@ -330,8 +330,14 @@ window.CFM = window.CFM || {};
         sourceInstitution: rule.sourceInstitution || "",
         source:      "imported_json",
         sourceLabel: "Importada do JSON",
-        recurrenceKind: "imported",
-        isActive:    rule.isActive !== false
+        recurrenceKind: rule.status === "candidate" || rule.candidate === true
+          ? "candidate" : "imported",
+        status:      rule.status || "",
+        active:      rule.active,
+        userConfirmed: rule.userConfirmed,
+        candidate:   rule.candidate,
+        isActive:    rule.status === "candidate" || rule.candidate === true
+          ? false : rule.isActive !== false
       });
     });
 

@@ -46,7 +46,9 @@ window.CFM = window.CFM || {};
       "    </table>" +
       "  </div>" +
       '  <div class="empty-state">' +
-      '    <div class="empty-state__icon" aria-hidden="true">📅</div>' +
+      '    <div class="empty-state__icon" aria-hidden="true">' +
+      CFM.icon("calendar", { className: "cfm-icon cfm-icon--xl" }) +
+      '</div>' +
       '    <h3 class="empty-state__title">Histórico vazio</h3>' +
       '    <p class="empty-state__text">Após importar ou registrar lançamentos, o histórico mensal será preenchido automaticamente.</p>' +
       "  </div>" +

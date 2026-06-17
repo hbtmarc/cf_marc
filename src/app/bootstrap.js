@@ -81,6 +81,7 @@ window.CFM = window.CFM || {};
   }
 
   function init() {
+    if (CFM.hydrateIcons) CFM.hydrateIcons(document);
     registerRoutes();
     setupNavigation();
     setupSidebar();

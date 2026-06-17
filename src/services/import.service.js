@@ -603,14 +603,22 @@ window.CFM = window.CFM || {};
     return similarityReport;
   }
 
-  function filterResolvedRecurringCandidates(candidates, ruleApplications, transactions) {
+  function filterResolvedRecurringCandidates(candidates, ruleApplications, transactions, recurringRules) {
     if (!candidates || !candidates.length) return [];
+    var sem = CFM.importSemantics || {};
+    var lookup = sem.buildRecurringRuleLookup
+      ? sem.buildRecurringRuleLookup(recurringRules)
+      : { byRef: {}, confirmedByMerchantAmount: [] };
     var byIndex = {};
     (ruleApplications || []).forEach(function (app) {
       byIndex[app.transactionIndex] = app;
     });
 
     return candidates.filter(function (pair) {
+      if (sem.shouldSuppressRecurringCandidatePair &&
+          sem.shouldSuppressRecurringCandidatePair(pair, transactions, lookup)) {
+        return false;
+      }
       var indices = [pair.indexA, pair.indexB, pair.index1, pair.index2];
       for (var i = 0; i < indices.length; i++) {
         var idx = indices[i];
@@ -619,6 +627,10 @@ window.CFM = window.CFM || {};
         if (app && app.matched && (app.isRecurring || app.isFinancing)) return false;
         var tx = transactions[idx];
         if (!tx) continue;
+        if (sem.isTransactionRecurrenceConfirmed &&
+            sem.isTransactionRecurrenceConfirmed(tx, lookup)) {
+          return false;
+        }
         var desc = String(tx.description || "").toLowerCase();
         if (/bmi\s*servi/i.test(desc)) return false;
         if (/protev/i.test(desc)) return false;
@@ -783,7 +795,8 @@ window.CFM = window.CFM || {};
     var filteredRecurringRaw = filterResolvedRecurringCandidates(
       similarityReport.recurringCandidates || [],
       ruleApplications,
-      transactions
+      transactions,
+      recurringRules
     );
     similarityReport.recurringCandidates = filteredRecurringRaw;
     if (simGroups.recurring_candidate) {
@@ -858,11 +871,22 @@ window.CFM = window.CFM || {};
 
     recognizedRecurrences.forEach(function (r) {
       if (r.source !== "imported_json") return;
-      var orig = recurringRules.filter(function (x) { return x && x.id === r.id; })[0];
+      var orig = recurringRules.filter(function (x) {
+        return x && (x.id === r.id || x.externalRef === r.externalRef || x.id === r.externalRef);
+      })[0];
       if (!orig) return;
       r.accountName = (accountMap[orig.accountId] || {}).name || "";
       r.cardName    = (cardMap[orig.cardId] || {}).name || "";
       r.dayOfMonth  = orig.dayOfMonth || null;
+      if (orig.status) r.status = orig.status;
+      if (orig.externalRef) r.externalRef = orig.externalRef;
+      if (orig.active != null) r.active = orig.active;
+      if (orig.userConfirmed != null) r.userConfirmed = orig.userConfirmed;
+      if (orig.candidate != null) r.candidate = orig.candidate;
+      if (orig.status === "candidate") {
+        r.recurrenceKind = "candidate";
+        r.isActive = false;
+      }
       if (orig.expectedAmountCents) r.expectedAmountCents = orig.expectedAmountCents;
       else if (orig.amountCents) r.expectedAmountCents = orig.amountCents;
     });
@@ -974,9 +998,15 @@ window.CFM = window.CFM || {};
         reviewReason:     (tx.review && tx.review.reason) || "",
         isInvalid:        !!invalidIndexes[i],
         isCreditCardPayment: tx.type === "credit_card_payment",
-        isInvoiceSettlement: CFM.importSemantics && CFM.importSemantics.isInvoiceSettlementTransaction
-          ? CFM.importSemantics.isInvoiceSettlementTransaction(tx)
-          : tx.type === "credit_card_payment",
+        isInvoiceInternalCredit: CFM.importSemantics &&
+          CFM.importSemantics.isInvoiceInternalCreditTransaction
+          ? CFM.importSemantics.isInvoiceInternalCreditTransaction(tx) : false,
+        isInvoiceSettlement: CFM.importSemantics &&
+          CFM.importSemantics.isExternalInvoiceSettlementTransaction
+          ? CFM.importSemantics.isExternalInvoiceSettlementTransaction(tx)
+          : (CFM.importSemantics && CFM.importSemantics.isInvoiceSettlementTransaction
+            ? CFM.importSemantics.isInvoiceSettlementTransaction(tx)
+            : tx.type === "credit_card_payment"),
         settlementLabel:  "Liquidação de fatura",
         cashFlowTreatment: tx.cashFlowTreatment || "",
         expenseImpact:    tx.expenseImpact || "",
@@ -1072,6 +1102,10 @@ window.CFM = window.CFM || {};
         ofxDebitReconciliationDifferenceCents: inv.ofxDebitReconciliationDifferenceCents,
         pdfSummaryConfirmed: inv.pdfSummaryConfirmed === true,
         csvTransactionsConfirmed: inv.csvTransactionsConfirmed === true,
+        paymentBreakdown: inv.paymentBreakdown || null,
+        statementAmountDueCents: inv.statementAmountDueCents,
+        externalSettlementReference: inv.externalSettlementReference || "",
+        previousBalanceCents: inv.previousBalanceCents || 0,
         linkedTransactionCount: linkedCount,
         linkedPurchasesCents: recon ? recon.linkedPurchasesCents : 0,
         linkedPurchasesFmt: fcents(recon ? recon.linkedPurchasesCents : 0),
@@ -1108,6 +1142,24 @@ window.CFM = window.CFM || {};
 
       if (CFM.importSemantics && CFM.importSemantics.getInvoiceReconciliationLabel) {
         enrichedInv.reconciliationUi = CFM.importSemantics.getInvoiceReconciliationLabel(enrichedInv);
+      }
+
+      if (CFM.importSemantics && CFM.importSemantics.getInvoiceDisplayAmounts) {
+        var displayAmounts = CFM.importSemantics.getInvoiceDisplayAmounts(enrichedInv, recon);
+        enrichedInv.invoiceDisplay = Object.assign({}, displayAmounts, {
+          amountDueFmt: fcents(displayAmounts.amountDueCents),
+          chargesFmt: fcents(displayAmounts.chargesCents),
+          internalCreditsFmt: fcents(displayAmounts.internalCreditsCents),
+          externalSettlementFmt: fcents(displayAmounts.externalSettlementCents),
+          previousBalanceFmt: fcents(displayAmounts.previousBalanceCents),
+          statementAmountDueFmt: fcents(displayAmounts.statementAmountDueCents)
+        });
+        enrichedInv.creditLabel = CFM.importSemantics.getInvoiceCreditLabel(enrichedInv);
+        enrichedInv.settlementLabelDisplay = CFM.importSemantics.getInvoiceSettlementLabel(enrichedInv);
+        enrichedInv.paymentBreakdownRows = CFM.importSemantics.getInvoicePaymentBreakdownRows
+          ? CFM.importSemantics.getInvoicePaymentBreakdownRows(enrichedInv, fcents)
+          : [];
+        enrichedInv.amountDueFmt = enrichedInv.invoiceDisplay.amountDueFmt;
       }
 
       return enrichedInv;
@@ -1172,8 +1224,10 @@ window.CFM = window.CFM || {};
     /* ── allRecurringRules (JSON + reconhecidas) ── */
     var allRecurringRules = recognizedRecurrences.map(function (rule) {
       if (!rule) return null;
-      return {
+      var semRule = CFM.importSemantics || {};
+      var mapped = {
         id:           rule.id  || "",
+        externalRef:  rule.externalRef || rule.id || "",
         description:  String(rule.description || "").substring(0, 80),
         amountFmt:    rule.expectedAmountCents ? fcents(rule.expectedAmountCents) :
                       (rule.amountCents ? fcents(rule.amountCents) : "—"),
@@ -1188,15 +1242,30 @@ window.CFM = window.CFM || {};
         sourceLabels:   rule.sourceLabels || (rule.sourceLabel ? [rule.sourceLabel] : []),
         sources:        rule.sources || (rule.source ? [rule.source] : []),
         dayOfMonth:   rule.dayOfMonth || null,
-        isActive:     rule.isActive !== false,
+        status:       rule.status || "",
+        active:         rule.active,
+        userConfirmed:  rule.userConfirmed,
+        candidate:      rule.candidate,
         accountName:  rule.accountName || "",
         cardName:     rule.cardName    || "",
         source:       rule.source      || "imported_json",
         sourceLabel:  rule.sourceLabel || "Importada do JSON",
         ruleId:       rule.ruleId      || "",
-        recurrenceKind: rule.recurrenceKind || (rule.source === "engine_suggested" ? "candidate" : "imported"),
+        recurrenceKind: rule.recurrenceKind ||
+          (rule.status === "candidate" ? "candidate" :
+            (rule.source === "engine_suggested" ? "candidate" : "imported")),
         confidence:   rule.confidence  || ""
       };
+      mapped.isActive = semRule.isRecurringRuleActive
+        ? semRule.isRecurringRuleActive(mapped)
+        : (mapped.status !== "candidate" && rule.isActive !== false);
+      mapped.recurringDisplay = semRule.getRecurringRuleDisplayState
+        ? semRule.getRecurringRuleDisplayState(mapped) : "";
+      mapped.recurringBadges = semRule.getRecurringRuleBadges
+        ? semRule.getRecurringRuleBadges(mapped) : [];
+      mapped.recurringImpact = semRule.getRecurringRuleImportImpact
+        ? semRule.getRecurringRuleImportImpact(mapped) : {};
+      return mapped;
     }).filter(Boolean);
 
     var recurringImportedCount = allRecurringRules.filter(function (r) {
@@ -1211,6 +1280,9 @@ window.CFM = window.CFM || {};
     }).length;
     var recurringCandidatesCount = allRecurringRules.filter(function (r) {
       return r.recurrenceKind === "candidate" ||
+        r.status === "candidate" ||
+        (CFM.importSemantics && CFM.importSemantics.isRecurringRuleCandidate &&
+          CFM.importSemantics.isRecurringRuleCandidate(r)) ||
         (r.sources && r.sources.indexOf("engine_suggested") >= 0);
     }).length;
     var recurringTotalCount = allRecurringRules.length;

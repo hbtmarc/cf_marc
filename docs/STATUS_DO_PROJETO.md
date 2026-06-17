@@ -2,7 +2,7 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 16 de junho de 2026  
-**Fase atual:** Fase 0.3.10 — Interpretação Nubank v2
+**Fase atual:** Fase 0.3.11 — Semântica multi-cartões
 
 ---
 
@@ -945,8 +945,44 @@ Fase fechada após correção da contagem real de bloqueantes, recorrências can
 | Parcelas | Heurística nome+valor+meses+indício parcela → informativo recolhido |
 | Categorias | Estabelecimentos conhecidos saem de “Categoria a revisar” |
 
-### Próximos passos
+### Próximos passos (0.3.10)
 
 1. Validar manualmente `cfm_import_v1_nubank_pdf_csv_ofx_jun_jul_v2.json` (arquivo local).
 2. Revalidar `cfm_import_v1_bb_final_sem_pendencias.json` antes de release.
-3. **Bloqueio explícito:** Firebase Auth + RTDB só após contrato PASS no arquivo de produção.
+
+---
+
+## Fase 0.3.11 — Semântica multi-cartões (Porto v1.1)
+
+**Data:** 16/06/2026 | **Estado:** ✅ Concluída
+
+**Objetivo:** Corrigir interpretação visual/semântica para JSON Porto v1.1 (créditos internos vs liquidação externa, pagamentos `flow: in`, recorrência candidata), mantendo regressão BB/Nubank.
+
+### Helpers centralizados (`import-semantics.js`)
+
+| Helper | Papel |
+|--------|-------|
+| `getInvoiceDisplayAmounts` | Valor principal, encargos, créditos internos, liquidação externa |
+| `getInvoiceCreditLabel` / `getInvoiceSettlementLabel` | Rótulos corretos na aba Faturas |
+| `getInvoicePaymentBreakdownRows` | Detalhe pagamento/estornos (julho) |
+| `isInvoiceInternalCreditTransaction` | Pagamento Porto `flow: in` |
+| `isExternalInvoiceSettlementTransaction` | Liquidação Nubank/externa `flow: out` |
+| `getRecurringRuleBadges` | Candidata ≠ Ativa |
+
+### Critérios de aceite — Fase 0.3.11
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | Badge `Fase 0.3.11 · Semântica multi-cartões` | ✅ |
+| 2 | Porto junho: créditos internos ≠ liquidação bancária | ✅ |
+| 3 | Porto julho: aberta/provisória; breakdown créditos | ✅ |
+| 4 | `credit_card_payment flow:in` → Crédito na fatura | ✅ |
+| 5 | Recorrência `status:candidate` → Candidata/Atenção | ✅ |
+| 6 | `test-phase-porto-v1-1.js` + Nubank + BB ALL PASS | ✅ |
+
+**Teste:** `node scripts/test-phase-porto-v1-1.js` · JSON manual: `cfm_import_v1_porto_pdf_prints_v1_1.json` (local)
+
+### Próximos passos
+
+1. Validar manualmente `cfm_import_v1_porto_pdf_prints_v1_1.json`.
+2. **Bloqueio explícito:** Firebase Auth + RTDB só após contrato PASS no arquivo de produção.

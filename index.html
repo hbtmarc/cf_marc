@@ -14,7 +14,7 @@
   <div class="app-shell">
     <aside class="app-sidebar" id="app-sidebar" aria-label="Menu principal">
       <div class="brand">
-        <div class="brand__icon" aria-hidden="true">CF</div>
+        <div class="brand__icon" data-cfm-icon="brand" data-cfm-icon-size="20" aria-hidden="true"></div>
         <div class="brand__text">
           <span class="brand__title">Controle Financeiro</span>
           <span class="brand__subtitle">Mensal</span>
@@ -24,34 +24,25 @@
         <ul class="nav-list">
           <li>
             <a href="#/dashboard" class="nav-list__link is-active" data-route="/dashboard">
-              <svg class="nav-list__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-                <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-              </svg>
+              <span class="nav-list__icon" data-cfm-icon="dashboard" data-cfm-icon-size="20"></span>
               Dashboard
             </a>
           </li>
           <li>
             <a href="#/importar" class="nav-list__link" data-route="/importar">
-              <svg class="nav-list__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 19h16"/>
-              </svg>
+              <span class="nav-list__icon" data-cfm-icon="import" data-cfm-icon-size="20"></span>
               Importar
             </a>
           </li>
           <li>
             <a href="#/cartoes" class="nav-list__link" data-route="/cartoes">
-              <svg class="nav-list__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>
-              </svg>
+              <span class="nav-list__icon" data-cfm-icon="card" data-cfm-icon-size="20"></span>
               Cartões
             </a>
           </li>
           <li>
             <a href="#/historico" class="nav-list__link" data-route="/historico">
-              <svg class="nav-list__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
-              </svg>
+              <span class="nav-list__icon" data-cfm-icon="history" data-cfm-icon-size="20"></span>
               Histórico
             </a>
           </li>
@@ -69,7 +60,7 @@
         <h1 class="header-title" id="header-title">Dashboard</h1>
       </div>
       <div class="header-meta">
-        <span class="header-badge">Fase 0.3.10 · Interpretação Nubank v2</span>
+        <span class="header-badge">Fase 0.3.11 · Semântica multi-cartões</span>
       </div>
     </header>
 
@@ -82,6 +73,7 @@
 
   <!-- Ordem obrigatória: dependências antes do bootstrap -->
   <script src="src/app/config.example.js"></script>
+  <script src="src/utils/phosphor-icons.js"></script>
   <script src="src/store/app.store.js"></script>
   <script src="src/utils/formatters.js"></script>
   <script src="src/utils/validators.js"></script>
