@@ -390,6 +390,7 @@ window.CFM = window.CFM || {};
         lastFourDisplay: lastFour ? ("···" + lastFour) : "",
         lastFourMissing: !lastFour,
         issuer:          card.issuer || card.institution || "",
+        cardAliases:     Array.isArray(card.cardAliases) ? card.cardAliases.slice() : [],
         closingDay:      card.closingDay || null,
         dueDay:          card.dueDay || null,
         isActive:        card.isActive !== false
@@ -410,6 +411,11 @@ window.CFM = window.CFM || {};
       var txPurchases = (transactions || []).filter(function (tx) {
         if (!tx) return false;
         if (!entityBelongsToCard(tx, card, reg)) return false;
+        if (CFM.importSemantics && CFM.importSemantics.isInvoiceSettlementTransaction &&
+            CFM.importSemantics.isInvoiceSettlementTransaction(tx)) {
+          return false;
+        }
+        if (tx.type === "credit_card_payment") return false;
         return tx.type === "credit_card_purchase" || tx.type === "expense" ||
           (tx.cardId || tx.cardExternalRef);
       });
@@ -494,15 +500,22 @@ window.CFM = window.CFM || {};
   }
 
   function isSettlementTx(tx, invRefKeys) {
+    var sem = CFM.importSemantics;
+    if (sem && sem.isInvoiceSettlementForInvoice) {
+      return sem.isInvoiceSettlementForInvoice(tx, invRefKeys);
+    }
     if (!tx) return false;
     if (tx.type === "credit_card_payment") return true;
+    if (tx.cashFlowTreatment === "invoice_settlement") return true;
+    if (tx.expenseImpact === "none_when_purchases_are_counted") return true;
+    if (tx.affectsInvoiceBalance === true && tx.type !== "credit_card_purchase") return true;
     var settles = tx.settlesInvoiceExternalRef || tx.settlesInvoiceId || "";
-    if (settles && invRefKeys.indexOf(String(settles)) >= 0) return true;
+    if (settles && invRefKeys && invRefKeys.indexOf(String(settles)) >= 0) return true;
     return false;
   }
 
   /**
-   * Conciliação de fatura — encargos vs total; liquidação bancária exibida à parte.
+   * Conciliação de fatura — agrega lançamentos; semântica em import-semantics.js.
    */
   function buildInvoiceReconciliation(invoice, transactions, context) {
     var ctx = context || {};
@@ -643,55 +656,39 @@ window.CFM = window.CFM || {};
     var chargesVsTotalDelta = invoiceTotal - invoiceChargesCents;
     var reconciliationDeltaCents = invoiceTotal - statementNetCents;
 
-    var isPartial = chargeLinked.length === 0 ||
-      sameCardSameMonthWithoutRef > 0 ||
-      invRefKeys.length === 0;
-
-    var confidence = "high";
-    if (chargeLinked.length === 0 && settlementLinked.length === 0 &&
-        statementPaymentLinked.length === 0) {
-      confidence = "low";
-    } else if (isPartial) {
-      confidence = "partial";
-    }
-
-    var explainedByPayments =
+    var explainedByPaymentsInitial =
       Math.abs(reconciliationDeltaCents) <= RECON_TOLERANCE ||
       Math.abs(chargesVsTotalDelta) <= RECON_TOLERANCE ||
       Math.abs(invoiceChargesCents - invoicePaymentsCreditsCents - invoiceTotal) <= RECON_TOLERANCE;
 
-    var reconciliationStatus = "requires_review";
+    var sem = CFM.importSemantics || {};
+    var semantics = sem.resolveInvoiceReconciliationSemantics
+      ? sem.resolveInvoiceReconciliationSemantics(invoice, {
+          chargeLinkedCount: chargeLinked.length,
+          settlementLinkedCount: settlementLinked.length,
+          statementPaymentLinkedCount: statementPaymentLinked.length,
+          chargesVsTotalDelta: chargesVsTotalDelta,
+          reconciliationDeltaCents: reconciliationDeltaCents,
+          hasCredit: hasCredit,
+          sameCardSameMonthWithoutRef: sameCardSameMonthWithoutRef,
+          invRefKeysCount: invRefKeys.length,
+          explainedByPaymentsInitial: explainedByPaymentsInitial
+        })
+      : {
+          isPartial: chargeLinked.length === 0,
+          reconciliationStatus: "requires_review",
+          message: "",
+          explainedByPayments: explainedByPaymentsInitial,
+          reconciliationDeltaCents: reconciliationDeltaCents,
+          confidence: "high"
+        };
 
-    if (hasCredit) {
-      reconciliationDeltaCents = 0;
-      explainedByPayments = true;
-      reconciliationStatus = "credit_balance";
-    } else if (Math.abs(chargesVsTotalDelta) <= RECON_TOLERANCE) {
-      reconciliationDeltaCents = 0;
-      explainedByPayments = true;
-      reconciliationStatus = isPartial ? "partial" : "consistent";
-    } else if (explainedByPayments) {
-      reconciliationDeltaCents = 0;
-      reconciliationStatus = "explained_by_payment";
-    } else if (isPartial) {
-      reconciliationStatus = "partial";
-    }
-
-    var message = "";
-    if (hasCredit) {
-      message = "Saldo credor — não entra na conciliação de compras.";
-    } else if (reconciliationStatus === "consistent") {
-      message = "Conciliação consistente.";
-    } else if (reconciliationStatus === "explained_by_payment") {
-      message = "Conciliação explicada por pagamento/crédito.";
-    } else if (reconciliationStatus === "partial") {
-      message = "Conciliação parcial — nem todas as transações da fatura estão presentes no JSON.";
-      if (Math.abs(chargesVsTotalDelta) <= RECON_TOLERANCE) {
-        reconciliationDeltaCents = 0;
-      }
-    } else if (reconciliationStatus === "requires_review") {
-      message = "Conciliação requer revisão.";
-    }
+    var isPartial = semantics.isPartial;
+    var reconciliationStatus = semantics.reconciliationStatus;
+    var message = semantics.message;
+    var explainedByPayments = semantics.explainedByPayments;
+    reconciliationDeltaCents = semantics.reconciliationDeltaCents;
+    var confidence = semantics.confidence;
 
     var statementSummary = {
       previousBalanceCents: previousBalance,

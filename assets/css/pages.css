@@ -398,6 +398,11 @@
 .type-badge--credit  { background: var(--color-success-soft); color: var(--color-success); }
 .type-badge--debit   { background: var(--color-danger-soft);  color: var(--color-danger); }
 .type-badge--payment { background: var(--color-primary-soft); color: var(--color-primary); }
+.type-badge--settlement {
+  background: var(--color-surface-soft);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
 .type-badge--purchase { background: var(--color-warning-soft); color: var(--color-warning); }
 .type-badge--other   { background: var(--color-surface-soft); color: var(--color-text-subtle); border: 1px solid var(--color-border); }
 
@@ -442,7 +447,8 @@
 .tx-item__badges { flex-shrink: 0; }
 .tx-item__via    { font-size: 0.75rem; color: var(--color-text-subtle); }
 .tx-item__review-flag { font-size: 0.875rem; color: var(--color-warning); cursor: help; }
-.tx-item--payment { border-left: 3px solid var(--color-primary); }
+.tx-item--settlement { border-left: 3px solid var(--color-border-strong, var(--color-border)); }
+.tx-item--payment { border-left: 3px solid var(--color-border-strong, var(--color-border)); }
 
 @media (min-width: 1024px) {
   .tx-item {
@@ -630,6 +636,64 @@
 .confidence-badge--medium { background: var(--color-warning-soft); color: var(--color-warning); }
 .confidence-badge--low    { background: var(--color-surface-soft); color: var(--color-text-muted); border: 1px solid var(--color-border); }
 .confidence-badge--none   { background: var(--color-success-soft); color: var(--color-success); }
+.confidence-badge--info   { background: var(--color-surface-muted, #eef2f7); color: var(--color-text-muted); }
+.confidence-badge--warning { background: var(--color-warning-soft); color: var(--color-warning); }
+.confidence-badge--danger { background: var(--color-danger-soft); color: var(--color-danger); }
+.confidence-badge--candidate {
+  background: var(--color-surface-soft);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+}
+.similarity-item__hint {
+  display: inline-block;
+  margin-left: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--color-text-subtle);
+  font-weight: 400;
+}
+.similarity-section--attention {
+  border-left: 3px solid var(--color-warning-soft, var(--color-border));
+  padding-left: 0.75rem;
+}
+
+.similarity-item--info {
+  border-left: 3px solid var(--color-border);
+}
+
+.reconciliation-info {
+  margin-top: 0.75rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted, #f4f6f9);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.invoice-recon-tolerance {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.card-alias-details {
+  margin-top: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.card-alias-details__summary {
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  list-style: none;
+}
+
+.card-alias-details__summary::-webkit-details-marker { display: none; }
+
+.card-alias-details__text {
+  margin-top: 0.375rem;
+  color: var(--color-text-subtle);
+}
 
 .review-priority--critical .review-group__count { background: var(--color-danger-soft); color: var(--color-danger); }
 .review-priority--important .review-group__count { background: var(--color-warning-soft); color: var(--color-warning); }
@@ -677,6 +741,21 @@
 .limit-bar__fill--warning { background: var(--color-warning); }
 .limit-bar__fill--danger { background: var(--color-danger); }
 .similarity-section--info { opacity: 0.95; }
+.similarity-details {
+  margin: 0.75rem 0 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-surface-soft);
+}
+.similarity-details__summary {
+  cursor: pointer;
+  padding: 0.65rem 0.85rem;
+  font-weight: 600;
+  list-style: none;
+}
+.similarity-details__summary::-webkit-details-marker { display: none; }
+.similarity-details__body { padding: 0 0.85rem 0.85rem; }
+.similarity-details__body .similarity-list { margin: 0; }
 
 /* ── Entity list (recurring / installments) ── */
 .entity-list { display: flex; flex-direction: column; gap: 0.375rem; }

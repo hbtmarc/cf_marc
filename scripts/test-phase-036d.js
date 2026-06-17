@@ -15,6 +15,7 @@ function load(relativePath) {
 
 global.CFM = global.CFM || {};
 load("src/utils/validators.js");
+load("src/utils/import-semantics.js");
 load("src/services/classification-rules.service.js");
 load("src/services/card-snapshot.service.js");
 

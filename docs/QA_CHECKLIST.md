@@ -639,4 +639,64 @@ Lista de verificação manual por fase.
 
 ---
 
+## Fase 0.3.10 — Interpretação Nubank v2 (`#/importar`)
+
+**Fixture automatizada:** `node scripts/test-phase-nubank-v2.js` → **ALL PASS**  
+**JSON manual (local, fora do Git):** `cfm_import_v1_nubank_pdf_csv_ofx_jun_jul_v2.json`
+
+### Resumo
+- [ ] Badge do app: `Fase 0.3.10 · Interpretação Nubank v2`
+- [ ] Arquivo validado · 0 pendências
+- [ ] 97 lançamentos · 1 cartão · 2 faturas · 23 parcelas · 10 recorrências (JSON Nubank v2)
+
+### Cartões
+- [ ] Nubank: limite R$ 12.450,00 · usado R$ 10.813,00 · disponível R$ 1.637,00
+- [ ] **Snapshot consistente** (não “Snapshot ausente”)
+- [ ] Sem “final não informado” no card principal
+- [ ] Aliases do PDF em detalhes recolhíveis (não no título)
+
+### Faturas
+- [ ] Junho: **Conciliada** / Paga — sem “Conciliação parcial”
+- [ ] Julho: **Aberta / provisória**
+- [ ] Diferença de centavos (ex.: R$ 0,06) como **Diferença informativa**
+
+### Lançamentos
+- [ ] Pagamento recebido R$ 2.000,00 → badge **Pagamento de fatura** / liquidação neutra
+- [ ] Pagamento R$ 752,46 (se listado) → liquidação, não compra
+- [ ] Liquidações não entram em totais de compras do cartão
+
+### Observações
+- [ ] Banner: **Nenhum bloqueio encontrado** · `0 bloqueantes · N atenções · M informativos`
+- [ ] Não aparece “Existem pendências que bloqueiam a importação” com Resumo em 0 pendências
+- [ ] Não aparece contagem falsa tipo “5 bloqueantes”
+- [ ] Recorrências candidatas: badge **Atenção** + **Candidata** · não bloqueia importação
+- [ ] Parcelas relacionadas em `<details>` · badge **Informativo**
+- [ ] Sem badge **ALTA** residual
+
+### Regressão BB
+- [ ] `cfm_import_v1_bb_final_sem_pendencias.json` sem regressão
+- [ ] `node scripts/test-phase-036d.js` → ALL PASS
+- [ ] `node scripts/test-phase-036e.js` → ALL PASS
+- [ ] `node scripts/test-phase-036f.js` → ALL PASS
+
+### UX / técnico
+- [ ] UI Fase 0.3.8 preservada; responsivo desktop/tablet/mobile
+- [ ] Sem scroll horizontal; console limpo
+- [ ] Nenhuma persistência; nenhum dado real versionado
+
+### Classificação Nubank (regras locais)
+- [ ] F1TV → Assinaturas / Streaming
+- [ ] T360graus → Lazer / Turismo
+- [ ] Ellisimports → Tecnologia / Apple
+- [ ] Epidemic Sound → Audiovisual / Áudio
+- [ ] LL Comunidade → Tecnologia / Aplicativos
+- [ ] Nenhum dos acima aparece em “Categoria a revisar”
+
+### Parcelas relacionadas
+- [ ] Mesmo nome/valor/meses diferentes + indício parcela = relacionamento válido
+- [ ] Não bloqueante · não atenção · informativo recolhido
+- [ ] Mensagem: “Parcelas vinculadas a plano consistente — não indicam erro.”
+
+---
+
 Atualizar tabela de critérios em `STATUS_DO_PROJETO.md` ao concluir cada fase.

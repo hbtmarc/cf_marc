@@ -39,11 +39,17 @@ window.CFM = window.CFM || {};
   };
 
   var SIMILARITY_SECTIONS = [
-    { key: "exactDuplicates",     title: "Duplicatas exatas",              informational: false },
-    { key: "probableDuplicates",  title: "Duplicatas prováveis",           informational: false },
-    { key: "installmentRelated",  title: "Parcelas relacionadas",          informational: false },
-    { key: "recurringCandidates", title: "Recorrências candidatas",        informational: false },
-    { key: "similarTransfers",    title: "Transferências semelhantes",     informational: false }
+    { key: "exactDuplicates",     title: "Duplicatas exatas",              tier: "blocking" },
+    { key: "probableDuplicates",  title: "Duplicatas prováveis",           tier: "blocking" },
+    { key: "installmentRelated",  title: "Parcelas relacionadas",          tier: "blocking" },
+    { key: "similarTransfers",    title: "Transferências semelhantes",     tier: "blocking" }
+  ];
+
+  var ATTENTION_SIMILARITY_SECTIONS = [
+    { key: "recurringCandidates", title: "Recorrências candidatas",        tier: "attention" },
+    { key: "probableDuplicates",  title: "Duplicatas prováveis",           tier: "attention" },
+    { key: "similarTransfers",    title: "Transferências semelhantes",     tier: "attention" },
+    { key: "installmentRelated",  title: "Parcelas relacionadas",          tier: "attention" }
   ];
 
   var INFORMATIONAL_SIMILARITY = {
@@ -92,15 +98,26 @@ window.CFM = window.CFM || {};
     return '<span class="flow-badge flow-badge--neutral">⇄ neutro</span>';
   }
 
-  function typeBadge(type) {
+  function typeBadge(type, tx) {
+    var sem = CFM.importSemantics;
+    if (tx && sem && sem.getTransactionDisplayType) {
+      var display = sem.getTransactionDisplayType(tx);
+      if (display) {
+        return '<span class="type-badge ' + esc(display.cls || "type-badge--settlement") + '">' +
+          esc(display.label) + "</span>";
+      }
+    }
+    if (tx && tx.isInvoiceSettlement) {
+      return '<span class="type-badge type-badge--settlement">' +
+        esc(tx.settlementLabel || "Liquidação de fatura") + "</span>";
+    }
     var label = TX_TYPE_LABELS[type] || esc(type);
-    var cls   = type === "credit_card_payment"  ? "type-badge--payment"  :
-                type === "credit_card_purchase" ? "type-badge--purchase" :
+    var cls   = type === "credit_card_purchase" ? "type-badge--purchase" :
                 type === "income"               ? "type-badge--credit"   :
                 type === "expense"              ? "type-badge--debit"    :
                 type === "refund"               ? "type-badge--credit"   :
                 type === "fee"                  ? "type-badge--debit"    : "type-badge--other";
-    return '<span class="type-badge ' + cls + '">' + esc(label) + '</span>';
+    return '<span class="type-badge ' + cls + '">' + esc(label) + "</span>";
   }
 
   function statusChip(status) {
@@ -127,18 +144,60 @@ window.CFM = window.CFM || {};
     return '<span class="confidence-badge confidence-badge--' + esc(confidence || "none") + '">' + esc(label) + "</span>";
   }
 
+  function observationSeverityBadge(pair) {
+    if (pair.informational || pair.severity === "info" || pair.tier === "informational") {
+      return '<span class="confidence-badge confidence-badge--info">Informativo</span>';
+    }
+    if (pair.tier === "attention" ||
+        pair.classification === "recurring_candidate" ||
+        pair.severity === "warning" ||
+        pair.classification === "probable_duplicate" ||
+        pair.classification === "installment_related") {
+      return '<span class="confidence-badge confidence-badge--warning">Atenção</span>';
+    }
+    if (pair.classification === "exact_duplicate" || pair.tier === "blocking") {
+      return '<span class="confidence-badge confidence-badge--danger">Bloqueante</span>';
+    }
+    if (pair.confidence === "high" || pair.confidence === "medium" || pair.confidence === "low") {
+      return '<span class="confidence-badge confidence-badge--warning">Atenção</span>';
+    }
+    return '<span class="confidence-badge confidence-badge--info">Informativo</span>';
+  }
+
+  function observationExtraBadges(pair) {
+    var html = "";
+    if (pair.classification === "recurring_candidate" || pair.tier === "attention") {
+      html += ' <span class="confidence-badge confidence-badge--candidate">Candidata</span>';
+    }
+    if (pair.tier === "attention" || pair.classification === "recurring_candidate") {
+      html += ' <span class="similarity-item__hint">Não bloqueia a importação</span>';
+    }
+    return html;
+  }
+
+  function filterObservationsByTier(list, tier) {
+    return (list || []).filter(function (pair) {
+      if (pair.tier) return pair.tier === tier;
+      if (tier === "blocking") return pair.blocking === true;
+      if (tier === "attention") return pair.attention === true;
+      return pair.informational === true || pair.severity === "info";
+    });
+  }
+
   function similarityPairRow(pair, groupLabel) {
-    var title = pair.classificationLabel || groupLabel || "Semelhança encontrada";
+    var title = pair.classificationLabel || groupLabel || "Observação";
     if (pair.classification === "exact_duplicate") title = "Duplicata exata";
     else if (pair.classification === "probable_duplicate") title = "Duplicata provável";
-    else if (pair.classification !== "exact_duplicate" && pair.classification !== "probable_duplicate") {
-      title = pair.classificationLabel || "Semelhança encontrada";
+    else if (pair.classification === "category_review") title = "Categoria a revisar";
+    else if (pair.classification === "installment_related" && pair.informational) {
+      title = "Parcelas relacionadas";
     }
     return (
-      '<li class="similarity-item">' +
+      '<li class="similarity-item' + (pair.informational ? " similarity-item--info" : "") + '">' +
       '  <div class="similarity-item__header">' +
       '    <strong>' + esc(title) + "</strong> " +
-      confidenceBadge(pair.confidence) +
+      observationSeverityBadge(pair) +
+      observationExtraBadges(pair) +
       "  </div>" +
       '  <p class="similarity-item__desc">' +
       '"' + esc(pair.description1) + '" · ' + esc(pair.amountFmt || "") +
@@ -398,7 +457,6 @@ window.CFM = window.CFM || {};
   function formatCardLastFour(card) {
     if (card.lastFourDisplay) return ' <span class="invoice-card__last4">' + esc(card.lastFourDisplay) + "</span>";
     if (card.lastFour) return ' <span class="invoice-card__last4">···' + esc(card.lastFour) + "</span>";
-    if (card.lastFourMissing) return ' <span class="card-last4-missing">(final não informado)</span>';
     return "";
   }
 
@@ -424,13 +482,28 @@ window.CFM = window.CFM || {};
       var pct = card.usedPercent != null ? card.usedPercent : 0;
       var barCls = pct >= 90 ? "limit-bar__fill--danger" : pct >= 70 ? "limit-bar__fill--warning" : "limit-bar__fill--ok";
       var consistencyHtml = "";
-      if (card.snapshotConsistencyMessage) {
+      if (card.snapshotConsistencyMessage || card.hasSnapshot) {
         var cCls = card.snapshotConsistent === true
           ? "snapshot-status snapshot-status--ok"
           : card.snapshotConsistent === false
             ? "snapshot-status snapshot-status--warn"
             : "snapshot-status";
-        consistencyHtml = '<p class="' + cCls + '">' + esc(card.snapshotConsistencyMessage) + "</p>";
+        var cMsg = card.snapshotConsistent === true
+          ? "Snapshot consistente"
+          : (card.snapshotConsistencyMessage || "");
+        if (cMsg) consistencyHtml = '<p class="' + cCls + '">' + esc(cMsg) + "</p>";
+      }
+
+      var aliasesHtml = "";
+      var sem = CFM.importSemantics;
+      if (sem && sem.formatCardAliasesNote) {
+        var aliasNote = sem.formatCardAliasesNote(card);
+        if (aliasNote) {
+          aliasesHtml =
+            '<details class="card-alias-details">' +
+            '<summary class="card-alias-details__summary">Detalhes do cartão</summary>' +
+            '<p class="card-alias-details__text">' + esc(aliasNote) + "</p></details>";
+        }
       }
 
       return (
@@ -467,6 +540,7 @@ window.CFM = window.CFM || {};
               ? "<span>Parcelas futuras: " + esc(card.futureInstallmentTotalFmt) + "/mês</span>" : "") +
             "  </div>"
           : "") +
+        aliasesHtml +
         "</li>"
       );
     });
@@ -516,15 +590,23 @@ window.CFM = window.CFM || {};
         "</div>";
     }
 
-    var reconStatusLabel = {
-      consistent: "Consistente",
-      explained_by_payment: "Explicada por pagamento/crédito",
-      partial: "Parcial",
-      credit_balance: "Saldo credor",
-      requires_review: "Requer revisão"
-    };
-
-    if (!inv.isReference && inv.reconciliationPartial) {
+    var ui = inv.reconciliationUi;
+    if (!inv.isReference && ui) {
+      var uiCls = ui.cssClass === "ok" ? "reconciliation-ok"
+        : ui.cssClass === "gap" ? "reconciliation-gap"
+        : ui.cssClass === "partial" ? "reconciliation-partial"
+        : "reconciliation-info";
+      var uiIcon = ui.severity === "success" ? "✅"
+        : ui.severity === "warning" ? "⚠️" : "ℹ️";
+      reconHtml =
+        '<div class="' + uiCls + '">' + uiIcon + " <strong>" + esc(ui.label) + "</strong> — " +
+        esc(ui.message) + "</div>";
+      if (inv.isWithinReconciliationTolerance && inv.reconciliationDiffFmt &&
+          inv.reconciliationDiff && Math.abs(inv.reconciliationDiff) > 0) {
+        reconHtml += '<p class="invoice-recon-tolerance">Diferença informativa: ' +
+          esc(inv.reconciliationDiffFmt) + " (dentro da tolerância).</p>";
+      }
+    } else if (!inv.isReference && inv.reconciliationPartial) {
       reconHtml = '<div class="reconciliation-partial">ℹ️ ' +
         esc(inv.reconciliationMessage || "Conciliação parcial — nem todas as transações da fatura estão presentes no JSON.") +
         "</div>";
@@ -551,7 +633,16 @@ window.CFM = window.CFM || {};
       reconHtml = '<div class="reconciliation-ok">🔗 ' + inv.linkedTransactionCount + " transação(ões) vinculada(s)</div>";
     }
 
-    if (!inv.isReference && inv.reconciliationStatus && inv.reconciliationStatus !== "n/a") {
+    if (!inv.isReference && !ui && inv.reconciliationStatus && inv.reconciliationStatus !== "n/a") {
+      var reconStatusLabel = {
+        consistent: "Consistente",
+        explained_by_payment: "Explicada por pagamento/crédito",
+        partial: "Parcial",
+        credit_balance: "Saldo credor",
+        requires_review: "Requer revisão",
+        settled: "Conciliada",
+        provisional: "Aberta / provisória"
+      };
       var statusText = reconStatusLabel[inv.reconciliationStatus] || inv.reconciliationStatus;
       reconHtml += '<p class="invoice-recon-status invoice-recon-status--' +
         esc(inv.reconciliationStatus) + '">Status: <strong>' + esc(statusText) + "</strong></p>";
@@ -685,7 +776,7 @@ window.CFM = window.CFM || {};
       var cls = "tx-item";
       if (tx.isInvalid)           cls += " tx-item--invalid";
       if (tx.needsEffectiveReview) cls += " tx-item--review";
-      if (tx.isCreditCardPayment) cls += " tx-item--payment";
+      if (tx.isInvoiceSettlement || tx.isCreditCardPayment) cls += " tx-item--settlement";
 
       var via = tx.cardName || tx.accountName || "";
 
@@ -696,7 +787,7 @@ window.CFM = window.CFM || {};
         '    <span class="tx-item__amount">' + esc(tx.amountFmt) + "</span>" +
         "  </div>" +
         '  <div class="tx-item__tags">' +
-        flowBadge(tx.flow) + typeBadge(tx.type) +
+        flowBadge(tx.flow) + typeBadge(tx.type, tx) +
         (tx.needsEffectiveReview ? '<span class="tx-item__review-flag" title="' + esc(tx.reviewReason) + '">⚠</span>' : "") +
         "  </div>" +
         '  <div class="tx-item__meta">' +
@@ -869,52 +960,110 @@ window.CFM = window.CFM || {};
    * ════════════════════════════════════════════════ */
 
   function buildSimilaritiesTab(report) {
-    var blocking = (report.counters && report.counters.blockingSimilarityCount) || 0;
-    var infoCount = (report.counters && report.counters.informationalSimilarityCount) || 0;
+    var c = report.counters || {};
+    var blocking = c.blockingSimilarityCount || 0;
+    var attention = c.attentionSimilarityCount || 0;
+    var infoCount = c.informationalSimilarityCount || 0;
     var repeated = report.repeatedPurchases || [];
+    var infoInstallments = report.informationalInstallments || [];
+    var categoryHints = report.categoryReviewHints || [];
+    var sem = CFM.importSemantics || {};
+    var banner = sem.buildObservationBanner
+      ? sem.buildObservationBanner(blocking, attention, infoCount)
+      : {
+          noticeClass: blocking > 0 ? "notice--warning" : "notice--info",
+          icon: blocking > 0 ? "⚠️" : "ℹ️",
+          text: blocking > 0
+            ? "Existem pendências que bloqueiam a importação."
+            : "Nenhum bloqueio encontrado. " + attention +
+              " item(ns) merece(m) atenção e " + infoCount + " são informativos.",
+          counts: blocking + " bloqueantes · " + attention + " atenções · " + infoCount + " informativos"
+        };
 
-    if (!blocking && !infoCount && repeated.length === 0) {
+    if (!blocking && !attention && !infoCount && repeated.length === 0 &&
+        infoInstallments.length === 0 && categoryHints.length === 0) {
       return emptyPanel("Nenhuma observação relevante neste arquivo.");
     }
 
     var sectionsHtml = SIMILARITY_SECTIONS.map(function (sec) {
-      var list = report[sec.key] || [];
+      var list = filterObservationsByTier(report[sec.key] || [], "blocking");
       if (list.length === 0) return "";
       var rows = list.map(function (pair) { return similarityPairRow(pair, sec.title); }).join("");
       return (
-        '<section class="report-section similarity-section">' +
+        '<section class="report-section similarity-section similarity-section--blocking">' +
         '  <h4 class="report-section__title">' + esc(sec.title) +
         '    <span class="similarity-section__count">' + list.length + "</span></h4>" +
         '  <ul class="similarity-list">' + rows + "</ul></section>"
       );
     }).join("");
 
-    var infoHtml = "";
-    if (repeated.length > 0) {
-      infoHtml =
-        '<section class="report-section similarity-section similarity-section--info">' +
-        '  <h4 class="report-section__title">Compras repetidas' +
-        '    <span class="similarity-section__count">' + repeated.length + "</span></h4>" +
-        '  <p class="similarity-intro">Transações legítimas em dias diferentes — não indicam erro.</p>' +
+    var attentionHtml = ATTENTION_SIMILARITY_SECTIONS.map(function (sec) {
+      var list = filterObservationsByTier(report[sec.key] || [], "attention");
+      if (list.length === 0) return "";
+      var rows = list.map(function (pair) { return similarityPairRow(pair, sec.title); }).join("");
+      return (
+        '<section class="report-section similarity-section similarity-section--attention">' +
+        '  <h4 class="report-section__title">' + esc(sec.title) +
+        '    <span class="similarity-section__count">' + list.length + "</span></h4>" +
+        '  <p class="similarity-intro">Sugestões do motor — revise se quiser, mas não bloqueiam a importação.</p>' +
+        '  <ul class="similarity-list">' + rows + "</ul></section>"
+      );
+    }).join("");
+
+    function buildInfoSection(title, list, intro, collapsed) {
+      if (!list.length) return "";
+      var body =
+        (intro ? '<p class="similarity-intro">' + esc(intro) + "</p>" : "") +
         '  <ul class="similarity-list">' +
-        repeated.map(function (pair) { return similarityPairRow(pair, INFORMATIONAL_SIMILARITY.title); }).join("") +
-        "</ul></section>";
+        list.map(function (pair) { return similarityPairRow(pair, title); }).join("") +
+        "</ul>";
+      if (collapsed) {
+        return (
+          '<details class="similarity-details similarity-details--info">' +
+          '  <summary class="similarity-details__summary">' + esc(title) +
+          '    <span class="similarity-section__count">' + list.length + "</span></summary>" +
+          '  <div class="similarity-details__body">' + body + "</div></details>"
+        );
+      }
+      return (
+        '<section class="report-section similarity-section similarity-section--info">' +
+        '  <h4 class="report-section__title">' + esc(title) +
+        '    <span class="similarity-section__count">' + list.length + "</span></h4>" +
+        body +
+        "</section>"
+      );
     }
 
-    if (!sectionsHtml && !infoHtml) {
+    var infoHtml =
+      buildInfoSection(
+        "Parcelas relacionadas",
+        infoInstallments,
+        "Parcelas vinculadas a plano consistente — não indicam erro.",
+        true
+      ) +
+      buildInfoSection(
+        "Categorias a revisar",
+        categoryHints,
+        "Categoria genérica — ajuste apenas se quiser refinar.",
+        true
+      ) +
+      buildInfoSection(
+        "Compras repetidas",
+        repeated,
+        "Transações legítimas em dias diferentes — não indicam erro.",
+        false
+      );
+
+    if (!sectionsHtml && !attentionHtml && !infoHtml) {
       return emptyPanel("Nenhuma observação relevante neste arquivo.");
     }
 
     return (
-      '<div class="notice notice--info similarity-notice" role="note">' +
-      '  <span>ℹ️</span>' +
-      '  <span><strong>Essas observações não bloqueiam a importação.</strong> ' +
-      (blocking > 0
-        ? blocking + " bloqueante(s) · "
-        : "0 bloqueantes · ") +
-      infoCount + " informativa(s).</span>" +
+      '<div class="notice ' + banner.noticeClass + ' similarity-notice" role="note">' +
+      '  <span>' + banner.icon + '</span>' +
+      '  <span><strong>' + esc(banner.text) + '</strong> ' + esc(banner.counts) + ".</span>" +
       "</div>" +
-      sectionsHtml + infoHtml
+      sectionsHtml + attentionHtml + infoHtml
     );
   }
 

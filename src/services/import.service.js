@@ -147,6 +147,9 @@ window.CFM = window.CFM || {};
         tx.flow && tx.amountCents && tx.competenceMonth &&
         /categoria/i.test(item.reason || "") &&
         !/pix|pessoa|ambígu|transferência/i.test(item.reason || "")) {
+      var sem = CFM.importSemantics;
+      if (sem && sem.isOutrosCategoryReview && sem.isOutrosCategoryReview(item, tx)) return false;
+      if (sem && sem.isCategoryOutros && sem.isCategoryOutros(tx)) return false;
       return false;
     }
 
@@ -536,24 +539,67 @@ window.CFM = window.CFM || {};
     });
   }
 
-  function rebuildSimilarityCounts(similarityReport, groups) {
-    var g = groups || similarityReport.groups || {};
-    var blocking =
-      (g.exact_duplicate || []).length +
-      (g.probable_duplicate || []).length +
-      (g.installment_related || []).length +
-      (g.recurring_candidate || []).length +
-      (g.similar_transfer || []).length;
-    var informational = (g.repeated_purchase || []).length;
-    similarityReport.blockingSimilarityCount = blocking;
-    similarityReport.informationalCount = informational;
-    similarityReport.classifiedCount =
-      (g.installment_related || []).length +
-      (g.recurring_candidate || []).length +
-      (g.similar_transfer || []).length;
-    similarityReport.similaritiesTotal = blocking + informational;
-    similarityReport.duplicateOnlyCount =
-      (g.exact_duplicate || []).length + (g.probable_duplicate || []).length;
+  function partitionInformationalSimilarities(similarityReport, transactions, installmentPlans) {
+    var sem = CFM.importSemantics || {};
+    var isConsistent = sem.isInstallmentRelatedPairConsistent ||
+      sem.isInstallmentSimilarityInformational || function () { return false; };
+    var annotate = sem.annotateObservation || function (p) { return p; };
+    var blockingInstallment = [];
+    var informationalInstallment = [];
+
+    (similarityReport.installmentRelated || []).forEach(function (pair) {
+      var copy = Object.assign({}, pair, { classification: "installment_related" });
+      if (isConsistent(copy, transactions, installmentPlans)) {
+        copy.informational = true;
+        copy.blocking = false;
+        copy.severity = "info";
+        copy.classificationLabel = "Parcelas relacionadas";
+        copy.description2 = "Parcelas vinculadas a plano consistente — não indicam erro.";
+        informationalInstallment.push(annotate(copy, transactions, installmentPlans));
+      } else {
+        blockingInstallment.push(annotate(copy, transactions, installmentPlans));
+      }
+    });
+
+    similarityReport.installmentRelated = blockingInstallment;
+    similarityReport.informationalInstallments = informationalInstallment;
+    return similarityReport;
+  }
+
+  function annotateSimilarityLists(similarityReport, transactions, installmentPlans) {
+    var sem = CFM.importSemantics || {};
+    var annotate = sem.annotateObservation || function (p) { return p; };
+
+    function mapList(list, classification) {
+      return (list || []).map(function (pair) {
+        return annotate(
+          Object.assign({}, pair, { classification: pair.classification || classification }),
+          transactions,
+          installmentPlans
+        );
+      });
+    }
+
+    similarityReport.exactDuplicates = mapList(similarityReport.exactDuplicates, "exact_duplicate");
+    similarityReport.probableDuplicates = mapList(similarityReport.probableDuplicates, "probable_duplicate");
+    similarityReport.installmentRelated = mapList(similarityReport.installmentRelated, "installment_related");
+    similarityReport.recurringCandidates = mapList(similarityReport.recurringCandidates, "recurring_candidate");
+    similarityReport.similarTransfers = mapList(similarityReport.similarTransfers, "similar_transfer");
+    similarityReport.repeatedPurchases = mapList(similarityReport.repeatedPurchases, "repeated_purchase");
+    similarityReport.informationalInstallments = mapList(
+      similarityReport.informationalInstallments, "installment_related");
+    similarityReport.categoryReviewHints = mapList(
+      similarityReport.categoryReviewHints, "category_review");
+    return similarityReport;
+  }
+
+  function rebuildSimilarityCounts(similarityReport, groups, transactions, installmentPlans) {
+    var sem = CFM.importSemantics || {};
+    if (sem.rebuildObservationCounts) {
+      return sem.rebuildObservationCounts(
+        similarityReport, groups, transactions, installmentPlans
+      );
+    }
     return similarityReport;
   }
 
@@ -756,12 +802,49 @@ window.CFM = window.CFM || {};
       similarityReport.installmentRelated, transactions, installmentPlans, ruleApplications, val);
     similarityReport.similarTransfers = filterFinancingSimilarities(
       similarityReport.similarTransfers, transactions, installmentPlans, ruleApplications, val);
-    rebuildSimilarityCounts(similarityReport, simGroups);
+    partitionInformationalSimilarities(similarityReport, transactions, installmentPlans);
+
+    var mcr = CFM.merchantClassificationRules || {};
+    var merchantClassification = mcr.applyToTransactions
+      ? mcr.applyToTransactions(transactions)
+      : { byIndex: {}, applied: [], appliedCount: 0 };
+
+    var categoryReviewHints = [];
+    if (CFM.importSemantics && CFM.importSemantics.isCategoryOutros) {
+      transactions.forEach(function (tx, idx) {
+        if (!tx || !CFM.importSemantics.isCategoryOutros(tx)) return;
+        if (tx.review && tx.review.required) return;
+        if (merchantClassification.byIndex && merchantClassification.byIndex[idx]) return;
+        categoryReviewHints.push({
+          index1: idx,
+          index2: idx,
+          description1: String(tx.description || "").substring(0, 80),
+          description2: "Categoria genérica — revise se quiser refinar",
+          amountCents: tx.amountCents || 0,
+          informational: true,
+          blocking: false,
+          severity: "info",
+          classification: "category_review",
+          classificationLabel: "Categoria a revisar",
+          confidence: "low"
+        });
+      });
+    }
+    similarityReport.categoryReviewHints = categoryReviewHints;
+
+    if (simGroups.installment_related) {
+      simGroups.installment_related = similarityReport.installmentRelated || [];
+    }
+    annotateSimilarityLists(similarityReport, transactions, installmentPlans);
+    rebuildSimilarityCounts(similarityReport, simGroups, transactions, installmentPlans);
 
     var exactDuplicates     = formatSimilarityPairs(similarityReport.exactDuplicates, fcents);
     var probableDuplicates  = formatSimilarityPairs(similarityReport.probableDuplicates, fcents);
     var installmentRelated  = formatSimilarityPairs(similarityReport.installmentRelated, fcents);
-    var recurringCandidates = formatSimilarityPairs(filteredRecurringRaw, fcents);
+    var informationalInstallments = formatSimilarityPairs(
+      similarityReport.informationalInstallments || [], fcents);
+    var categoryReviewHintsFmt = formatSimilarityPairs(categoryReviewHints, fcents);
+    var recurringCandidates = formatSimilarityPairs(similarityReport.recurringCandidates, fcents);
     var repeatedPurchases   = formatSimilarityPairs(
       filterFinancingSimilarities(similarityReport.repeatedPurchases, transactions, installmentPlans, ruleApplications, val),
       fcents);
@@ -810,7 +893,8 @@ window.CFM = window.CFM || {};
     var reviewReducedByRules = Math.max(0, originalReviewTxCount - effectiveReviewTxCount);
     var badRawHashCount = val.countBadRawHashes ? val.countBadRawHashes(payload) : 0;
     var blockingSimilarityCount = similarityReport.blockingSimilarityCount || 0;
-    var informationalSimilarityCount = similarityReport.informationalCount || 0;
+    var attentionSimilarityCount = similarityReport.attentionSimilarityCount || 0;
+    var informationalSimilarityCount = similarityReport.informationalSimilarityCount || 0;
 
     /* ── Privacidade ── */
     var privacyAlerts = val.scanForSensitiveData
@@ -850,6 +934,9 @@ window.CFM = window.CFM || {};
       var card    = cardMap[resolvedCardId] || cardMap[rawCardRef] || {};
       var account = accountMap[tx.accountId] || {};
       var ruleApp = ruleAppByIndex[i] || null;
+      var mch = merchantClassification.byIndex && merchantClassification.byIndex[i]
+        ? merchantClassification.byIndex[i]
+        : null;
       var hasOriginalReview = !!(tx.review && tx.review.required);
       var needsEffectiveReview = !!effectiveReviewTxSet[i];
       return {
@@ -887,6 +974,23 @@ window.CFM = window.CFM || {};
         reviewReason:     (tx.review && tx.review.reason) || "",
         isInvalid:        !!invalidIndexes[i],
         isCreditCardPayment: tx.type === "credit_card_payment",
+        isInvoiceSettlement: CFM.importSemantics && CFM.importSemantics.isInvoiceSettlementTransaction
+          ? CFM.importSemantics.isInvoiceSettlementTransaction(tx)
+          : tx.type === "credit_card_payment",
+        settlementLabel:  "Liquidação de fatura",
+        cashFlowTreatment: tx.cashFlowTreatment || "",
+        expenseImpact:    tx.expenseImpact || "",
+        categoryLabel:    mch ? mch.categoryLabel : (tx.categoryLabel || tx.category || ""),
+        subcategoryLabel: mch ? mch.subcategoryLabel : "",
+        merchantDisplayName: mch ? mch.merchantDisplayName : "",
+        merchantClassification: mch ? {
+          ruleId: mch.ruleId,
+          source: mch.source,
+          confidence: mch.confidence,
+          reviewRequired: mch.reviewRequired === true
+        } : null,
+        isCategoryOutros: mch ? false : (CFM.importSemantics && CFM.importSemantics.isCategoryOutros
+          ? CFM.importSemantics.isCategoryOutros(tx) : false),
         isInvoiceInstallment: val.isInvoiceInstallmentTx ? val.isInvoiceInstallmentTx(tx) : false
       };
     }).filter(Boolean);
@@ -915,13 +1019,21 @@ window.CFM = window.CFM || {};
       var isPartial   = recon ? recon.isPartial : false;
       var confidence  = recon ? recon.confidence : "n/a";
       var hasRealGap = !isReference && !hasCredit &&
-                        recon && recon.reconciliationStatus === "requires_review";
+                        recon && recon.reconciliationStatus === "requires_review" &&
+                        !(CFM.importSemantics &&
+                          CFM.importSemantics.shouldSuppressPartialReconciliation &&
+                          CFM.importSemantics.shouldSuppressPartialReconciliation(Object.assign({}, inv, {
+                            reconciliationPartial: isPartial,
+                            explainedByPayments: recon ? recon.explainedByPayments : false,
+                            hasReconciliationGap: true,
+                            reconciliationDeltaCents: diffCents
+                          })));
 
       var cardLastFour = css.formatLastFourDisplay
         ? css.formatLastFourDisplay(card.lastFour || card.last4)
         : (card.lastFour || "");
 
-      return {
+      var enrichedInv = {
         index:              i,
         id:                 inv.id   || "",
         externalRef:        inv.externalRef || inv.invoiceExternalRef || inv.id || "",
@@ -934,6 +1046,8 @@ window.CFM = window.CFM || {};
         competenceMonth:    inv.competenceMonth || "",
         competenceFmt:      fmonth(inv.competenceMonth || ""),
         status:             inv.status  || "",
+        sourceStatus:       inv.sourceStatus || "",
+        replaceWhenClosed:  inv.replaceWhenClosed === true,
         dueDate:            inv.dueDate || "",
         dueDateFmt:         fdate(inv.dueDate || ""),
         closingDate:        inv.closingDate || "",
@@ -947,11 +1061,17 @@ window.CFM = window.CFM || {};
         referenceOnly:      isReference,
         isReference:        isReference,
         hasPendingReview:   !!(inv.review && inv.review.required),
+        review:             inv.review || null,
         hasCredit:          hasCredit,
         isCreditNotIncome:  hasCredit,
         creditBalanceCents: inv.creditBalanceCents || 0,
         creditBalanceFmt:   fcents(inv.creditBalanceCents || 0),
         creditBehavior:     inv.creditBehavior || "",
+        isWithinReconciliationTolerance: inv.isWithinReconciliationTolerance === true,
+        reconciliationToleranceCents: inv.reconciliationToleranceCents,
+        ofxDebitReconciliationDifferenceCents: inv.ofxDebitReconciliationDifferenceCents,
+        pdfSummaryConfirmed: inv.pdfSummaryConfirmed === true,
+        csvTransactionsConfirmed: inv.csvTransactionsConfirmed === true,
         linkedTransactionCount: linkedCount,
         linkedPurchasesCents: recon ? recon.linkedPurchasesCents : 0,
         linkedPurchasesFmt: fcents(recon ? recon.linkedPurchasesCents : 0),
@@ -967,7 +1087,7 @@ window.CFM = window.CFM || {};
         settlementPaymentsCents: recon ? recon.settlementPaymentsCents : 0,
         settlementPaymentsFmt: fcents(recon ? recon.settlementPaymentsCents : 0),
         invoicePaymentsFmt: fcents(recon ? recon.invoicePaymentsCents : 0),
-        reconciliationStatus: recon ? recon.reconciliationStatus : "n/a",
+        reconciliationStatus: recon ? recon.reconciliationStatus : (inv.reconciliationStatus || "n/a"),
         statementSummary: recon ? recon.statementSummary : null,
         explainedByPayments: recon ? recon.explainedByPayments : false,
         linkedPaymentCount: recon ? recon.linkedPaymentCount : 0,
@@ -979,6 +1099,18 @@ window.CFM = window.CFM || {};
         reconciliationMessage: recon ? recon.message : "",
         hasReconciliationGap: hasRealGap
       };
+
+      if (CFM.importSemantics && CFM.importSemantics.shouldSuppressPartialReconciliation &&
+          CFM.importSemantics.shouldSuppressPartialReconciliation(enrichedInv)) {
+        enrichedInv.reconciliationPartial = false;
+        enrichedInv.hasReconciliationGap = false;
+      }
+
+      if (CFM.importSemantics && CFM.importSemantics.getInvoiceReconciliationLabel) {
+        enrichedInv.reconciliationUi = CFM.importSemantics.getInvoiceReconciliationLabel(enrichedInv);
+      }
+
+      return enrichedInv;
     }).filter(Boolean);
 
     /* ── allInstallmentPlans ── */
@@ -1209,6 +1341,7 @@ window.CFM = window.CFM || {};
         probableDuplicates:probableDuplicates.length,
         classifiedSimilarities: similarityReport.classifiedCount || 0,
         blockingSimilarityCount: blockingSimilarityCount,
+        attentionSimilarityCount: attentionSimilarityCount,
         informationalSimilarityCount: informationalSimilarityCount,
         informationalSimilarities: informationalSimilarityCount,
         similaritiesTotal: similarityReport.similaritiesTotal || 0,
@@ -1263,10 +1396,13 @@ window.CFM = window.CFM || {};
       exactDuplicates:    exactDuplicates,
       probableDuplicates: probableDuplicates,
       installmentRelated: installmentRelated,
+      informationalInstallments: informationalInstallments,
+      categoryReviewHints: categoryReviewHintsFmt,
       recurringCandidates:recurringCandidates,
       repeatedPurchases:  repeatedPurchases,
       similarTransfers:   similarTransfers,
       similarityReport:   similarityReport,
+      merchantClassification: merchantClassification,
       privacyAlerts:      privacyAlerts,
       overallStatus:      overallStatus,
 

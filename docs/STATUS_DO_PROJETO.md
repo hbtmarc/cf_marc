@@ -1,8 +1,8 @@
 # Status do Projeto
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
-**Última atualização:** 15 de junho de 2026  
-**Fase atual:** Fase 0.3.6-B — Correção de vínculo cartões, snapshots, faturas e transações
+**Última atualização:** 16 de junho de 2026  
+**Fase atual:** Fase 0.3.10 — Interpretação Nubank v2
 
 ---
 
@@ -892,4 +892,61 @@ A aba Cartões exibia `Usado: —` / `Disponível: —` quando o snapshot local 
 
 1. Rodar `validate-import-contract.js` no JSON canônico local antes de cada release do Gerador JSON.
 2. Corrigir divergências listadas em **CORREÇÕES NECESSÁRIAS NO GERADOR JSON**.
+3. **Bloqueio explícito:** Firebase Auth + RTDB só após contrato PASS no arquivo de produção.
+
+---
+
+## Fase 0.3.10 — Interpretação Nubank v2
+
+**Data:** 16/06/2026 | **Estado:** ✅ Concluída
+
+**Objetivo:** Refinar governança visual e semântica do importador para JSON Nubank v2 (PDF+CSV+OFX), sem alterar schema, gerador, Firebase ou persistência. Compatível com JSON BB aprovado.
+
+### Arquivos principais
+
+| Arquivo | Papel |
+|---------|-------|
+| `src/utils/import-semantics.js` | Regras centralizadas: fatura, reconciliação, tolerância, liquidação, parcelas, categorias |
+| `src/utils/merchant-classification-rules.js` | Dicionário local de estabelecimentos (F1TV, T360graus, etc.) |
+| `src/services/card-snapshot.service.js` | Agregação numérica; consome helpers sem regras próprias de fatura |
+| `src/pages/importer.page.js` | UI: badges de liquidação, observações recolhíveis, contadores corretos |
+| `scripts/test-phase-nubank-v2.js` | Regressão automatizada Nubank v2 + strings de UI |
+| `docs/QA_CHECKLIST.md` | Checklist manual Fase 0.3.10 |
+
+### Correções entregues
+
+| Área | Resultado |
+|------|-----------|
+| Faturas | Junho **Conciliada**; Julho **Aberta/provisória**; centavos informativos |
+| Observações | `0 bloqueantes · N informativas`; parcelas em `<details>` |
+| Lançamentos | Liquidação com badge neutro; não soma em compras do cartão |
+| Cartões | Snapshot Nubank limite/usado/disponível; aliases recolhíveis |
+| Categorias | `Outros` → sugestão informativa, nunca bloqueio |
+
+### Critérios de aceite — Fase 0.3.10
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | Badge `Fase 0.3.10 · Interpretação Nubank v2` | ✅ |
+| 2 | Semântica centralizada em `import-semantics.js` | ✅ |
+| 3 | `test-phase-nubank-v2.js` ALL PASS | ✅ |
+| 4 | Regressão BB (`036d/e/f`) ALL PASS | ✅ |
+| 5 | UI 0.3.8 preservada; sem persistência/Firebase | ✅ |
+| 6 | Observações: 0 bloqueantes; recorrências = atenção | ✅ |
+| 7 | Card Nubank sem “final não informado” no título | ✅ |
+
+### Fechamento 0.3.10
+
+Fase fechada após correção da contagem real de bloqueantes, recorrências candidatas como atenção (não bloqueio), observações informativas recolhidas, card Nubank limpo, **regras locais de classificação por estabelecimento** (`merchant-classification-rules.js`) e **parcelas relacionadas consistentes sem revisão manual**.
+
+| Refinamento | Detalhe |
+|-------------|---------|
+| Merchant rules | F1TV, T360graus, Ellisimports, Epidemic Sound, LL Comunidade |
+| Parcelas | Heurística nome+valor+meses+indício parcela → informativo recolhido |
+| Categorias | Estabelecimentos conhecidos saem de “Categoria a revisar” |
+
+### Próximos passos
+
+1. Validar manualmente `cfm_import_v1_nubank_pdf_csv_ofx_jun_jul_v2.json` (arquivo local).
+2. Revalidar `cfm_import_v1_bb_final_sem_pendencias.json` antes de release.
 3. **Bloqueio explícito:** Firebase Auth + RTDB só após contrato PASS no arquivo de produção.
