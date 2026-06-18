@@ -2,7 +2,7 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 17 de junho de 2026  
-**Fase atual:** Fase 0.3.20 — Formatação monetária e datas (validação visual final da Fase 0.3)
+**Fase atual:** Fase 0.5.4 — Importação idempotente real e bloqueio de entidades legadas
 
 ---
 
@@ -1247,3 +1247,188 @@ Nenhum popup nativo do navegador em código de produção. Toda confirmação us
 ### Testes
 
 `node scripts/test-phase-0.3.20.js` + regressão completa 0.3.x
+
+---
+
+## Fase 0.4.0 — Base de conciliação cruzada inteligente
+
+**Data:** 17/06/2026 | **Estado:** ✅ Base implementada — UI e decisões definitivas na 0.4.1+
+
+**Objetivo:** Criar camada isolada e testável de conciliação cruzada **em memória**, sem alterar schema JSON, contadores da 0.3 ou comportamento final de importação.
+
+### Módulo
+
+`src/utils/import-reconciliation.js` → `CFM.importReconciliation`
+
+| Helper | Função |
+|--------|--------|
+| `normalizeReconciliationText` | Normalização de descrições para matching |
+| `getMoneyToleranceCents` | Tolerância (delega `import-semantics`) |
+| `isInvoicePaymentTransaction` | Pagamento/liquidação de fatura |
+| `isCreditOrRefundTransaction` | Crédito interno, reembolso, saldo |
+| `isLikelyInvoiceSettlement` | Settlement provável para fatura |
+| `buildInvoiceSettlementCandidates` | Candidatos ranqueados com `reasonCodes` |
+| `scoreInvoiceSettlementCandidate` | Score 0–100 explicável |
+| `getInvoiceReconciliationStatus` | Status + mensagem + `blocking: false` |
+| `buildReconciliationReport` | Relatório em memória (`report.reconciliationReport`) |
+
+### Status internos
+
+`matched` · `partial` · `open_provisional` · `credit_balance` · `reference_only` · `unmatched` · `needs_review`
+
+### O que ainda NÃO foi implementado (próximas subfases)
+
+- UI de conciliação no importador
+- Marcação definitiva de vínculos
+- Conciliação cruzada automática entre contas/cartões sem ref explícita
+- Persistência Firebase
+
+### Testes
+
+`node scripts/test-phase-0.4.0.js` + regressão completa 0.3.x
+
+---
+
+## Fase 0.5.0 — Confirmação de importação e persistência local
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada
+
+**Objetivo:** Tornar o importador utilizável — ao confirmar, salvar dados aprovados em `localStorage` para uso nas próximas telas, **sem Firebase, IndexedDB ou UI de conciliação 0.4**.
+
+### Módulos
+
+| Arquivo | Função |
+|---------|--------|
+| `src/utils/import-persistence.js` | `buildBatchSignature`, `buildImportBatchPayload` (filtra ignoradas, normaliza entidades) |
+| `src/services/local-store.service.js` | `loadAppData`, `saveImportBatch`, `replaceImportBatch`, `getActiveFinancialData` |
+| `src/pages/importer.page.js` | Habilita confirmar, modal de duplicidade, feedback de sucesso |
+| `src/pages/dashboard.page.js` | Contadores básicos do lote ativo (leitura simples) |
+
+### Regras de produto
+
+- Confirmar só com arquivo válido e **sem pendências bloqueantes**
+- Transações ignoradas na revisão **não** entram como lançamentos ativos
+- Duplicidade por assinatura (`fileName` + `rawHash` + `generatedAt` + período + `importBatchId`) → modal interno **Cancelar / Substituir importação**
+- **Limpar importação** limpa apenas a prévia em análise; não apaga dados confirmados
+- Nenhum `alert` / `confirm` / `prompt` nativo
+
+### Modelo local (`cfm:v1:appData`)
+
+`importBatches`, `cards`, `invoices`, `transactions`, `installmentPlans`, `recurringRules` — versão `cfm.local.v1`.
+
+### Testes
+
+`node scripts/test-phase-0.5.0.js` + regressão completa 0.4.0 e 0.3.x
+
+---
+
+## Fase 0.5.1 — Consumo dos dados importados nas páginas principais
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada
+
+**Objetivo:** Corrigir integração entre `localStorage` e Dashboard, Cartões e Histórico — fonte única `localStoreService` + read model.
+
+### Módulos
+
+| Arquivo | Função |
+|---------|--------|
+| `src/services/local-store.service.js` | `getActiveFinancialData()` com `hasData`, `activeBatch`, `batches` e arrays normalizados |
+| `src/services/financial-read-model.service.js` | Agregações: `enrichCards`, `buildMonthlyHistory`, `getFinancialReadModel` |
+| `src/pages/dashboard.page.js` | Totais do mês (entradas/saídas/saldo), contadores reais |
+| `src/pages/cards.page.js` | Lista cartões importados com limite/uso/disponível |
+| `src/pages/history.page.js` | Meses por competência com totais (pagamentos de fatura excluídos) |
+
+### Testes
+
+`node scripts/test-phase-0.5.1.js` + regressão 0.5.0 e suite completa
+
+---
+
+## Fase 0.5.2 — Reimportação inteligente e importação incremental
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada
+
+**Objetivo:** Evitar duplicidade na reimportação — detectar arquivo/lançamentos já salvos, importar somente ocorrências novas.
+
+### Módulos
+
+| Arquivo | Função |
+|---------|--------|
+| `src/utils/import-diff.js` | `analyzeImportDiff`, identidade de transações, `buildIncrementalDisplayReport` |
+| `src/services/local-store.service.js` | `saveIncrementalImport`, merge seguro, dados consolidados |
+| `src/utils/import-persistence.js` | `buildIncrementalImportPayload` |
+| `src/pages/importer.page.js` | Modal “Arquivo já importado”, banner incremental, confirmação parcial |
+| `src/components/app-confirm.js` | Modo `acknowledgeOnly` (botão “Entendi”) |
+
+### Regras
+
+- Mesmo arquivo ou mesmas transações → modal interno, nada salvo
+- Lançamentos novos → modo incremental (UI filtrada + merge no store)
+- Mesma identidade com valor alterado → `changed_existing` (informativo, sem sobrescrever)
+- Pagamentos de fatura e entidades relacionadas mescladas sem duplicar
+
+### Testes
+
+`node scripts/test-phase-0.5.2.js` + regressão completa
+
+---
+
+## Fase 0.5.3 — Identidade semântica e bloqueio de importação legada
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada
+
+**Objetivo:** Impedir duplicidade real ao importar JSON antigo ou parcialmente equivalente depois de um consolidado mais novo — deduplicação resiliente entre versões do gerador.
+
+### Módulos
+
+| Arquivo | Função |
+|---------|--------|
+| `src/utils/import-diff.js` | `parseLegacyRawHash`, `normalizeTransactionMerchant`, `normalizeCardIdentity`, `buildSemanticTransactionKey`, `compareTransactionIdentity`, `classifyImportCompatibility` |
+| `src/utils/import-persistence.js` | Incremental salva apenas `safeNewTransactions` |
+| `src/services/local-store.service.js` | Bloqueia `legacy_overlap` / `unsafe_legacy_import`; merge incremental seguro |
+| `src/pages/importer.page.js` | Modal “Arquivo antigo já contemplado”, banner X novos / Y existentes / Z possíveis duplicidades, detalhes técnicos colapsados |
+
+### Regras
+
+- `rawHash` legível (`sha256:Banco do Brasil|…`) nunca tratado como hash criptográfico — usado como fingerprint semântico
+- Equivalência de cartões antigos vs novos (BB ourocard 0000≈0040, Nubank multi≈credit, Porto 2128)
+- `already_imported` por ref forte, hash real, fingerprint ou chave semântica
+- `possible_duplicate` e `changed_existing` **não** importados automaticamente
+- Arquivo legado sobreposto sem lançamentos seguros → modal “Arquivo antigo já contemplado”
+- Confirmar incremental persiste somente `safeNewTransactions`
+
+### Testes
+
+`node scripts/test-phase-0.5.3.js` + regressão completa
+
+---
+
+## Fase 0.5.4 — Importação idempotente real e bloqueio de entidades legadas
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada
+
+**Objetivo:** Impedir contaminação da base ao importar JSON antigo/sobreposto — deduplicação semântica de cartões, faturas, parcelas e recorrências; bloqueio de autosave em overlap legado.
+
+### Módulos
+
+| Arquivo | Função |
+|---------|--------|
+| `src/utils/import-diff.js` | Identidade semântica de entidades, `buildEntityResolution`, `legacy_overlap_blocked`, `requires_review`, `unsafe_legacy_candidate` |
+| `src/utils/import-persistence.js` | Remapeamento de IDs equivalentes; `externalRef` persistido; incremental sem duplicar entidades |
+| `src/services/local-store.service.js` | Bloqueio de save em overlap/revisão; merge incremental seguro |
+| `src/services/financial-read-model.service.js` | Deduplicação defensiva de cartões por chave semântica |
+| `src/pages/importer.page.js` | Banner bloqueado vs incremental seguro; confirmação desabilitada; revisão `changed_existing` |
+
+### Regras
+
+- JSON legado (`cfm_import_v1_cardsnapshots.json`) após consolidado → `legacy_overlap_blocked`, confirmação desabilitada, base intacta
+- Incremental seguro só quando `safeIncremental` e sem conflitos pendentes
+- `possible_duplicate`, `changed_existing` e `unsafe_legacy_candidate` nunca salvos automaticamente
+- Cartões/faturas/planos/recorrências equivalentes remapeados, não duplicados
+- Fingerprint legível (`sha256:Instituição|…`) distinguido de hash SHA-256 real
+
+### Testes
+
+`node scripts/test-phase-0.5.4.js` + regressão completa (usa fixtures locais se JSON real não estiver presente)
+
+---

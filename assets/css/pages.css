@@ -1,5 +1,20 @@
 /* Estilos específicos por página */
 
+.page-header__meta {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+.import-incremental-banner {
+  margin-bottom: 1rem;
+}
+
+.import-incremental-banner strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
 /* ── Dashboard ── */
 .page--dashboard .card-grid {
   margin-bottom: 1.5rem;

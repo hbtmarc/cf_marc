@@ -1428,6 +1428,17 @@ window.CFM = window.CFM || {};
       return inv && !inv.isReference && !inv.isStub && !inv.referenceOnly;
     }).length;
 
+    var reconciliationReport = null;
+    if (CFM.importReconciliation && CFM.importReconciliation.buildReconciliationReport) {
+      reconciliationReport = CFM.importReconciliation.buildReconciliationReport({
+        invoices: invoices,
+        transactions: transactions,
+        enrichedTransactions: allTransactions,
+        reconContext: reconContext,
+        registry: cardRegistry
+      });
+    }
+
     /* ── allCards (legado — espelha summaries) ── */
     var allCards = cardSummaries.map(function (card) {
       return {
@@ -1454,7 +1465,10 @@ window.CFM = window.CFM || {};
         documentType: context.documentType,
         label:        src.label        || "",
         periodStart:  src.periodStart  || "",
-        periodEnd:    src.periodEnd    || ""
+        periodEnd:    src.periodEnd    || "",
+        rawHash:      src.rawHash || payload.rawHash || "",
+        canonicalFingerprint: src.canonicalFingerprint || payload.canonicalFingerprint || "",
+        generatedAt:  src.generatedAt  || payload.generatedAt || ""
       },
 
       /* contadores */
@@ -1558,6 +1572,9 @@ window.CFM = window.CFM || {};
       merchantClassification: merchantClassification,
       privacyAlerts:      privacyAlerts,
       overallStatus:      overallStatus,
+
+      /* Fase 0.4 — conciliação cruzada (memória, não persistida) */
+      reconciliationReport: reconciliationReport,
 
       /* compatibilidade com 0.3 */
       txDisplay:  allTransactions.slice(0, 50),

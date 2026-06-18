@@ -170,6 +170,14 @@ window.CFM = window.CFM || {};
     return val.replace(".", ",") + "\u00a0" + units[i];
   }
 
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
   CFM.formatters = {
     formatCurrencyFromCents: formatCurrencyFromCents,
     formatCurrencyBRL: formatCurrencyBRL,
@@ -179,6 +187,7 @@ window.CFM = window.CFM || {};
     formatDisplayDate: formatDisplayDate,
     formatMonth: formatMonth,
     formatCompetenceBR: formatCompetenceBR,
-    formatFileSize: formatFileSize
+    formatFileSize: formatFileSize,
+    escapeHtml: escapeHtml
   };
 })(window.CFM);

@@ -600,6 +600,74 @@ window.CFM = window.CFM || {};
         "</ul></section>";
     }
 
+    var changedHtml = "";
+    var diffInfo = report.importDiff || importDiffResult || {};
+    var changedItems = diffInfo.changedExisting ||
+      report.changedExistingTransactions ||
+      [];
+    var possibleItems = diffInfo.possibleDuplicates ||
+      report.possibleDuplicateTransactions ||
+      [];
+    var importedItems = diffInfo.alreadyImportedTransactions ||
+      report.alreadyImportedTransactionsPreview ||
+      [];
+
+    var unsafeItems = diffInfo.unsafeLegacyCandidates || report.unsafeLegacyCandidates || [];
+    var equivalentItems = diffInfo.equivalentEntities || report.equivalentEntitiesPreview || [];
+
+    function renderCompatList(title, items, mapper) {
+      if (!items.length) return "";
+      return (
+        '<section class="tech-ref-panel">' +
+        '  <h4 class="report-section__title">' + esc(title) + " (" + items.length + ")</h4>" +
+        '  <ul class="entity-list">' +
+        items.slice(0, 8).map(mapper).join("") +
+        (items.length > 8 ? '<li class="entity-list__item">… e mais ' + (items.length - 8) + "</li>" : "") +
+        "</ul></section>"
+      );
+    }
+
+    changedHtml =
+      renderCompatList("Transações alteradas detectadas", changedItems, function (item) {
+        var tx = item.transaction || item;
+        var stored = item.stored || {};
+        return '<li class="entity-list__item">' + esc(tx.description || "—") +
+          " · importado " + esc(displayMoney(null, tx.amountCents)) +
+          " · atual " + esc(displayMoney(null, stored.amountCents)) +
+          (item.reason ? " · " + esc(item.reason) : "") +
+          '<div class="import-compat-actions" role="group" aria-label="Decisão para lançamento alterado">' +
+          '<button type="button" class="btn btn--ghost btn--xs" data-changed-decision="keep_current" data-changed-ref="' +
+          esc(tx.stableRef || tx.id || "") + '">Manter atual</button>' +
+          '<button type="button" class="btn btn--ghost btn--xs" data-changed-decision="use_imported" data-changed-ref="' +
+          esc(tx.stableRef || tx.id || "") + '">Usar importado</button>' +
+          '<button type="button" class="btn btn--ghost btn--xs" data-changed-decision="keep_both" data-changed-ref="' +
+          esc(tx.stableRef || tx.id || "") + '">Manter ambos</button>' +
+          "</div></li>";
+      }) +
+      renderCompatList("Possíveis duplicidades (não importadas)", possibleItems, function (item) {
+        var tx = item.transaction || item;
+        return '<li class="entity-list__item">' + esc(tx.description || "—") +
+          " · " + esc(displayMoney(null, tx.amountCents)) +
+          (item.reason ? " · " + esc(item.reason) : "") + "</li>";
+      }) +
+      renderCompatList("Candidatos inseguros (não importados)", unsafeItems, function (item) {
+        var tx = item.transaction || item;
+        return '<li class="entity-list__item">' + esc(tx.description || "—") +
+          " · " + esc(displayMoney(null, tx.amountCents)) +
+          (item.reason ? " · " + esc(item.reason) : "") + "</li>";
+      }) +
+      renderCompatList("Entidades equivalentes detectadas", equivalentItems, function (item) {
+        return '<li class="entity-list__item">' + esc(item.type || "entidade") +
+          " · " + esc(item.label || item.incomingId || "—") +
+          " ≈ " + esc(item.existingId || "—") + "</li>";
+      }) +
+      renderCompatList("Já importadas / sobreposição legada", importedItems, function (item) {
+        var tx = item.transaction || item;
+        return '<li class="entity-list__item">' + esc(tx.description || "—") +
+          " · " + esc(displayMoney(null, tx.amountCents)) +
+          (item.reason ? " · " + esc(item.reason) : "") + "</li>";
+      });
+
     return (
       '<details class="import-tech-details">' +
       '<summary class="import-tech-details__summary">Detalhes técnicos da validação</summary>' +
@@ -611,6 +679,7 @@ window.CFM = window.CFM || {};
       "</div>" +
       autoHtml +
       reimportHtml +
+      changedHtml +
       invoiceRefHtml +
       buildSchemaReferenceBlock() +
       buildPrivacyDeveloperNotes() +
@@ -2255,6 +2324,33 @@ window.CFM = window.CFM || {};
   }
 
   function buildReportHtml(report) {
+    var incrementalBanner = "";
+    var diffInfo = (report && report.importDiff) || importDiffResult || {};
+    if (report && report.legacyBlockedImport) {
+      incrementalBanner =
+        '<div class="import-incremental-banner notice notice--warning" role="status">' +
+        "<strong>Arquivo antigo ou sobreposto detectado</strong>" +
+        "<span>Revise antes de importar. Nenhum lançamento será salvo automaticamente.</span>" +
+        "<span>" + esc(String(diffInfo.alreadyImportedTransactions.length || 0)) +
+        " existente(s), " + esc(String(diffInfo.possibleDuplicates.length || 0)) +
+        " possível(is) duplicidade(s), " + esc(String(diffInfo.unsafeLegacyCandidates.length || 0)) +
+        " candidato(s) inseguro(s).</span></div>";
+    } else if (report && report.incrementalImport && diffInfo) {
+      var safeCount = (diffInfo.safeNewTransactions || diffInfo.newTransactions || []).length;
+      var alreadyCount = (diffInfo.alreadyImportedTransactions || []).length;
+      var possibleCount = (diffInfo.possibleDuplicates || []).length;
+      var bannerTitle = report.safeIncremental ? "Importação incremental segura" : "Importação incremental";
+      incrementalBanner =
+        '<div class="import-incremental-banner notice notice--info" role="status">' +
+        "<strong>" + esc(bannerTitle) + "</strong>" +
+        "<span>Encontramos " + esc(String(safeCount)) + " lançamento(s) novo(s)." +
+        (alreadyCount > 0 || possibleCount > 0
+          ? " " + esc(String(alreadyCount)) + " lançamento(s) já existem e " +
+            esc(String(possibleCount)) + " possível(is) duplicidade(s) não serão importadas automaticamente."
+          : "") +
+        "</span></div>";
+    }
+
     var fileMeta = [
       report.source && report.source.institution ? esc(report.source.institution) : "",
       esc(report.fileSizeFormatted || "")
@@ -2310,6 +2406,7 @@ window.CFM = window.CFM || {};
 
     return (
       '<div class="import-report-container">' +
+      incrementalBanner +
       fileInfo +
       '<div class="import-tabs-wrap">' +
       '  <div class="import-tabs-fade import-tabs-fade--left" aria-hidden="true"></div>' +
@@ -2322,15 +2419,84 @@ window.CFM = window.CFM || {};
     );
   }
 
-  function buildActions() {
+  function canConfirmImport(report) {
+    if (!report || report.state === "error") return false;
+    if (report.legacyBlockedImport) return false;
+    if (importDiffResult && importDiffResult.blockedSave) return false;
+    if (report.overallStatus === "has_blockers") return false;
+    var obs = countActiveObservations(report);
+    if (obs.blocking > 0) return false;
+    var c = report.counters || {};
+    if ((c.blockingConfirmCount || 0) > 0) return false;
+    if (report.incrementalImport && importDiffResult &&
+        importDiffResult.status === "incremental" && importDiffResult.safeIncremental === false) {
+      return false;
+    }
+    return true;
+  }
+
+  function formatSaveCounts(counts) {
+    if (!counts) return "";
+    var parts = [];
+    if (counts.transactions != null) parts.push(counts.transactions + " lançamentos");
+    if (counts.cards != null) parts.push(counts.cards + " cartões");
+    if (counts.invoices != null) parts.push(counts.invoices + " faturas");
+    if (counts.installmentPlans != null) parts.push(counts.installmentPlans + " parcelas");
+    if (counts.recurringRules != null) parts.push(counts.recurringRules + " recorrências");
+    return parts.join(", ");
+  }
+
+  function buildActions(report, ui) {
+    ui = ui || {};
+    var canConfirm = canConfirmImport(report);
+    var saving = !!ui.saving;
+    var saved = !!ui.saved;
+    var confirmDisabled = !canConfirm || saving || saved;
+    var confirmTitle = "";
+    if (!report) {
+      confirmTitle = "Selecione um arquivo validado";
+    } else if (saved) {
+      confirmTitle = "Importação já salva nesta sessão";
+    } else if (!canConfirm) {
+      confirmTitle = "Resolva pendências bloqueantes antes de confirmar";
+    }
+
+    var confirmLabel = saving ? "Salvando…" : (saved ? "Importação salva" : "Confirmar importação");
+    var noteHtml = "";
+    if (saved && ui.savedCounts) {
+      var successTitle = ui.incremental
+        ? "Importação incremental concluída"
+        : "Importação concluída";
+      var successBody = ui.incremental && ui.addedCount != null
+        ? esc(String(ui.addedCount)) + " novo(s) lançamento(s) salvo(s)."
+        : "Salvos localmente: " + esc(formatSaveCounts(ui.savedCounts)) + ".";
+      noteHtml =
+        '<div class="import-save-success notice notice--success" role="status">' +
+        "<strong>" + successTitle + "</strong>" +
+        "<span>" + successBody + "</span>" +
+        "</div>";
+    } else if (ui.saveError) {
+      noteHtml = '<p class="import-actions__note import-actions__note--error">' + esc(ui.saveError) + "</p>";
+    } else if (report && canConfirm && report.incrementalImport && report.safeIncremental) {
+      noteHtml = '<p class="import-actions__note">Somente os lançamentos novos seguros serão mesclados ao armazenamento local.</p>';
+    } else if (report && report.legacyBlockedImport) {
+      noteHtml = '<p class="import-actions__note">Arquivo antigo ou sobreposto detectado. Revise antes de importar.</p>';
+    } else if (report && importDiffResult && importDiffResult.blockedSave) {
+      noteHtml = '<p class="import-actions__note">Confirmação desabilitada até revisar conflitos e sobreposições.</p>';
+    } else if (report && canConfirm) {
+      noteHtml = '<p class="import-actions__note">Os dados aprovados serão salvos no navegador (localStorage).</p>';
+    } else if (report) {
+      noteHtml = '<p class="import-actions__note">Resolva pendências bloqueantes para habilitar a confirmação.</p>';
+    }
+
     return (
       '<div class="import-actions import-actions-bar" role="group" aria-label="Ações da importação">' +
       '  <button type="button" class="btn btn--ghost" id="import-clear">Limpar importação</button>' +
-      '  <button type="button" class="btn btn--primary" disabled aria-disabled="true"' +
-      '          title="Confirmação será liberada após Firebase Auth + RTDB Rules">' +
-      "    Confirmar importação" +
-      "  </button>" +
-      '  <p class="import-actions__note">A confirmação final será liberada em uma fase futura. Nada é gravado agora.</p>' +
+      '  <button type="button" class="btn btn--primary" id="import-confirm"' +
+      (confirmDisabled ? ' disabled aria-disabled="true"' : "") +
+      (confirmTitle ? ' title="' + esc(confirmTitle) + '"' : "") +
+      ">" + confirmLabel + "</button>" +
+      noteHtml +
       "</div>"
     );
   }
@@ -2340,12 +2506,17 @@ window.CFM = window.CFM || {};
    * ════════════════════════════════════════════════ */
 
   var currentReport         = null;
+  var baseReport            = null;
+  var importDiffResult      = null;
   var renderedTabs          = {};
   var dismissedObservations = {};
   var txCompareFilter       = null;
   var installmentObservationFilter = null;
   var ignoredTransactions   = {};
+  var changedExistingDecisions = {};
   var observationContextOverrides = {};
+  var importerContainerRef  = null;
+  var importSaveUi          = { saved: false, saving: false, saveError: null, savedCounts: null };
 
   function dismissedStorageKey(report) {
     return "cfm-import-dismissed:" + (report && report.fileName ? report.fileName : "unknown");
@@ -2367,6 +2538,7 @@ window.CFM = window.CFM || {};
     try {
       sessionStorage.setItem(dismissedStorageKey(report), JSON.stringify(dismissedObservations));
     } catch (e) { /* ignore quota / private mode */ }
+    refreshImportActions();
   }
 
   function ignoredStorageKey(report) {
@@ -2389,6 +2561,146 @@ window.CFM = window.CFM || {};
     try {
       sessionStorage.setItem(ignoredStorageKey(report), JSON.stringify(ignoredTransactions));
     } catch (e) { /* ignore */ }
+    refreshImportActions();
+  }
+
+  function refreshImportActions() {
+    if (!importerContainerRef) return;
+    setActions(importerContainerRef, buildActions(currentReport, importSaveUi));
+    wireActions(importerContainerRef);
+  }
+
+  function getImportDecisions() {
+    return {
+      ignoredTransactions: ignoredTransactions,
+      dismissedObservations: dismissedObservations,
+      changedExistingDecisions: changedExistingDecisions
+    };
+  }
+
+  function applyImportSaveResult(container, result) {
+    if (result.ok) {
+      importSaveUi = {
+        saved: true,
+        saving: false,
+        saveError: null,
+        savedCounts: result.counts || null,
+        incremental: !!result.incremental,
+        addedCount: result.addedCounts && result.addedCounts.transactions != null
+          ? result.addedCounts.transactions
+          : null
+      };
+    } else if (result.noNewOccurrences) {
+      importSaveUi = {
+        saved: false,
+        saving: false,
+        saveError: null,
+        savedCounts: null
+      };
+      if (result.legacyOverlap) {
+        showLegacyOverlapModal(container);
+      } else {
+        showNoNewOccurrencesModal(container);
+      }
+    } else {
+      importSaveUi = {
+        saved: false,
+        saving: false,
+        saveError: result.error || "Não foi possível salvar a importação.",
+        savedCounts: null
+      };
+    }
+    refreshImportActions();
+  }
+
+  function showLegacyOverlapModal(container, options) {
+    options = options || {};
+    if (!CFM.openAppConfirm) {
+      if (options.resetAfter !== false) resetToIdle(container);
+      return;
+    }
+    CFM.openAppConfirm({
+      title: "Arquivo antigo já contemplado",
+      message: "Este arquivo parece uma versão anterior de dados já importados. Nenhum lançamento seguro para importar foi encontrado. Nada será duplicado.",
+      confirmLabel: "Entendi",
+      tone: "warning",
+      acknowledgeOnly: true
+    }).then(function () {
+      if (options.resetAfter !== false) resetToIdle(container);
+    });
+  }
+
+  function showNoNewOccurrencesModal(container, options) {
+    options = options || {};
+    if (!CFM.openAppConfirm) {
+      if (options.resetAfter !== false) resetToIdle(container);
+      return;
+    }
+    CFM.openAppConfirm({
+      title: "Arquivo já importado",
+      message: "Este arquivo não possui novos lançamentos. Nada será duplicado.",
+      confirmLabel: "Entendi",
+      tone: "neutral",
+      acknowledgeOnly: true
+    }).then(function () {
+      if (options.resetAfter !== false) resetToIdle(container);
+    });
+  }
+
+  function processImportDiff(report, container) {
+    if (!CFM.importDiff || !CFM.importDiff.analyzeImportDiff) {
+      return { handled: false, report: report };
+    }
+    var diff = CFM.importDiff.analyzeImportDiff(report, {
+      ignoredTransactions: ignoredTransactions
+    });
+    importDiffResult = diff;
+    baseReport = report;
+
+    if (diff.status === "no_new_occurrences") {
+      setContent(container, buildUploadZone());
+      wireUploadZone(container);
+      setActions(container, "");
+      showNoNewOccurrencesModal(container, { resetAfter: false });
+      return { handled: true };
+    }
+
+    if (diff.status === "legacy_overlap" || diff.status === "unsafe_legacy_import") {
+      setContent(container, buildUploadZone());
+      wireUploadZone(container);
+      setActions(container, "");
+      showLegacyOverlapModal(container, { resetAfter: false });
+      return { handled: true };
+    }
+
+    if (diff.status === "legacy_overlap_blocked" || diff.status === "requires_review") {
+      var blockedReport = CFM.importDiff.buildIncrementalDisplayReport
+        ? CFM.importDiff.buildIncrementalDisplayReport(report, diff)
+        : Object.assign({}, report, { legacyBlockedImport: true, importDiff: diff });
+      return { handled: false, report: blockedReport };
+    }
+
+    if (diff.status === "incremental" && CFM.importDiff.buildIncrementalDisplayReport) {
+      return {
+        handled: false,
+        report: CFM.importDiff.buildIncrementalDisplayReport(report, diff)
+      };
+    }
+
+    return { handled: false, report: report };
+  }
+
+  function performImportSave(container) {
+    if (!currentReport || !CFM.localStoreService) return;
+    if (!canConfirmImport(currentReport)) return;
+
+    importSaveUi = { saved: false, saving: true, saveError: null, savedCounts: null };
+    refreshImportActions();
+
+    var decisions = getImportDecisions();
+    var reportToSave = baseReport || currentReport;
+    var result = CFM.localStoreService.saveImportBatch(reportToSave, decisions);
+    applyImportSaveResult(container, result);
   }
 
   function updateSimilaritiesTabBadge(container, report) {
@@ -2487,12 +2799,15 @@ window.CFM = window.CFM || {};
 
   function resetToIdle(container) {
     currentReport = null;
+    baseReport = null;
+    importDiffResult = null;
     renderedTabs  = {};
     dismissedObservations = {};
     txCompareFilter = null;
     installmentObservationFilter = null;
     observationContextOverrides = {};
     ignoredTransactions = {};
+    importSaveUi = { saved: false, saving: false, saveError: null, savedCounts: null };
     var pageEl = container.querySelector(".page--import");
     if (pageEl) pageEl.classList.remove("has-report");
     setContent(container, buildUploadZone());
@@ -2561,7 +2876,7 @@ window.CFM = window.CFM || {};
       fileSizeFormatted: "",
       errors: errors
     }));
-    setActions(container, buildActions());
+    setActions(container, buildActions(null, importSaveUi));
     wireActions(container);
   }
 
@@ -2686,8 +3001,33 @@ window.CFM = window.CFM || {};
   }
 
   function wireActions(container) {
+    importerContainerRef = container;
     var clearBtn = container.querySelector("#import-clear");
-    if (clearBtn) clearBtn.addEventListener("click", function () { resetToIdle(container); });
+    if (clearBtn) {
+      clearBtn.addEventListener("click", function () { resetToIdle(container); });
+    }
+    var confirmBtn = container.querySelector("#import-confirm");
+    if (confirmBtn) {
+      confirmBtn.addEventListener("click", function () {
+        if (confirmBtn.disabled || importSaveUi.saving || importSaveUi.saved) return;
+        performImportSave(container);
+      });
+    }
+    container.querySelectorAll("[data-changed-decision]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var ref = btn.getAttribute("data-changed-ref");
+        var decision = btn.getAttribute("data-changed-decision");
+        if (!ref || !decision) return;
+        changedExistingDecisions[ref] = decision;
+        if (baseReport && CFM.importDiff && CFM.importDiff.analyzeImportDiff) {
+          importDiffResult = CFM.importDiff.analyzeImportDiff(baseReport, getImportDecisions());
+          if (currentReport) {
+            currentReport.importDiff = importDiffResult;
+          }
+        }
+        refreshImportActions();
+      });
+    });
   }
 
   function handleFileSelected(file, container) {
@@ -2697,7 +3037,7 @@ window.CFM = window.CFM || {};
 
     if (!CFM.importService || !CFM.importService.processFile) {
       setContent(container, buildErrorState({ fileName: file.name, fileSizeFormatted: "", errors: ["Serviço de importação não carregado."] }));
-      setActions(container, buildActions()); wireActions(container);
+      setActions(container, buildActions(null, importSaveUi)); wireActions(container);
       return;
     }
 
@@ -2708,6 +3048,9 @@ window.CFM = window.CFM || {};
         txCompareFilter = null;
         installmentObservationFilter = null;
         observationContextOverrides = {};
+        importSaveUi = { saved: false, saving: false, saveError: null, savedCounts: null };
+        baseReport = null;
+        importDiffResult = null;
         currentReport = report;
         renderedTabs  = {};
         renderedTabs["summary"] = true;
@@ -2716,12 +3059,17 @@ window.CFM = window.CFM || {};
           setContent(container, buildErrorState(report));
           container.querySelector(".page--import").classList.remove("has-report");
         } else {
-          setContent(container, buildReportHtml(report));
+          var diffOutcome = processImportDiff(report, container);
+          if (diffOutcome.handled) {
+            return;
+          }
+          currentReport = diffOutcome.report || report;
+          setContent(container, buildReportHtml(currentReport));
           var pageEl = container.querySelector(".page--import");
           if (pageEl) pageEl.classList.add("has-report");
           wireTabSystem(container);
         }
-        setActions(container, buildActions());
+        setActions(container, buildActions(currentReport, importSaveUi));
         wireActions(container);
       })
       .catch(function (err) {
@@ -2731,7 +3079,7 @@ window.CFM = window.CFM || {};
           fileSizeFormatted: fmtSize,
           errors: [err.message || "Erro ao processar o arquivo."]
         }));
-        setActions(container, buildActions());
+        setActions(container, buildActions(null, importSaveUi));
         wireActions(container);
       });
   }
@@ -2751,7 +3099,7 @@ window.CFM = window.CFM || {};
       '    <span class="import-local-notice__icon" aria-hidden="true">' + ic("shield-check", "cfm-icon--info") + "</span>" +
       '    <div class="import-local-notice__text">' +
       '      <strong>Validação local</strong>' +
-      "      <span>Nada é gravado nesta fase — explore o relatório com tranquilidade.</span>" +
+      "      <span>Revise o relatório e confirme para salvar os dados aprovados no navegador.</span>" +
       "    </div></div>" +
       '  <div id="import-content">' + buildUploadZone() + "</div>" +
       '  <div id="import-actions-wrap"></div>' +

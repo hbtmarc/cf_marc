@@ -1038,4 +1038,142 @@ Lista de verificação manual por fase.
 
 ---
 
+## Fase 0.4.0 — Base de conciliação cruzada
+
+### Badge
+- [ ] `Fase 0.4.0 · Base de conciliação`
+
+### Escopo (base técnica, sem UI)
+- [ ] `report.reconciliationReport` gerado em memória
+- [ ] Nenhuma alteração de schema JSON ou contadores 0.3
+- [ ] Nenhum popup nativo
+- [ ] Conciliações não marcadas como definitivas (`definitive: false`)
+
+### Casos validados (automático)
+- [ ] Fatura paga → `matched`
+- [ ] Diferença de centavos → informativa, `blocking: false`
+- [ ] Fatura aberta/provisória → `open_provisional`, sem bloqueio
+- [ ] Crédito interno Porto → não erro
+- [ ] Saldo MP → `credit_balance`
+- [ ] Pagamento histórico ≠ compra comum
+- [ ] Cada entrada com `reasonCodes` + `displayMessage`
+
+### Regressão
+- [ ] `node scripts/test-phase-0.4.0.js` → ALL PASS
+- [ ] Suite 0.3.x completa → ALL PASS
+
+---
+
+## Fase 0.5.0 — Confirmação de importação e persistência local
+
+### Badge
+- [ ] `Fase 0.5.0 · Confirmação de importação`
+
+### Escopo
+- [ ] Botão **Confirmar importação** habilitado só sem bloqueios
+- [ ] Persistência em `localStorage` (`cfm:v1:appData`, versão `cfm.local.v1`)
+- [ ] Transações ignoradas excluídas dos lançamentos ativos
+- [ ] Duplicidade → modal interno (Cancelar / Substituir importação)
+- [ ] Feedback **Importação concluída** com contadores
+- [ ] **Limpar importação** não apaga dados confirmados
+- [ ] Dashboard lê contadores básicos do lote ativo
+- [ ] Nenhum popup nativo
+
+### Regressão
+- [ ] `node scripts/test-phase-0.5.0.js` → ALL PASS
+- [ ] `node scripts/test-phase-0.4.0.js` → ALL PASS
+- [ ] Suite 0.3.x completa → ALL PASS
+
+---
+
+## Fase 0.5.1 — Consumo dos dados importados nas páginas
+
+### Badge
+- [ ] `Fase 0.5.1 · Dados importados nas páginas`
+
+### Escopo
+- [ ] Dashboard, Cartões e Histórico leem `localStoreService` / read model
+- [ ] `getActiveFinancialData()` retorna arrays + `activeBatch` + `batches` + `hasData`
+- [ ] Dashboard exibe totais do mês (não `R$ —` quando há dados)
+- [ ] Cartões lista cartões importados (não empty state falso)
+- [ ] Histórico agrega meses por competência (não empty state falso)
+- [ ] Pagamentos de fatura excluídos dos totais (sem dupla contagem)
+- [ ] Reload preserva dados
+- [ ] Nenhum popup nativo
+
+### Regressão
+- [ ] `node scripts/test-phase-0.5.1.js` → ALL PASS
+- [ ] `node scripts/test-phase-0.5.0.js` → ALL PASS
+- [ ] Suite completa → ALL PASS
+
+---
+
+## Fase 0.5.2 — Reimportação inteligente
+
+### Badge
+- [ ] `Fase 0.5.2 · Reimportação inteligente`
+
+### Escopo
+- [ ] Mesmo arquivo reimportado → modal “Arquivo já importado”, sem duplicidade
+- [ ] Mesmo conteúdo, nome diferente → modal, sem duplicidade
+- [ ] Lançamentos novos → modo incremental com banner e UI filtrada
+- [ ] Confirmação incremental mescla só novos lançamentos
+- [ ] `changed_existing` para mesma identidade com valor alterado
+- [ ] Entidades relacionadas mescladas, não duplicadas
+- [ ] Dashboard/Cartões/Histórico refletem conjunto consolidado
+- [ ] Nenhum popup nativo
+
+### Regressão
+- [ ] `node scripts/test-phase-0.5.2.js` → ALL PASS
+- [ ] Suite 0.5.x + 0.4.0 + 0.3.x → ALL PASS
+
+---
+
+## Fase 0.5.3 — Identidade semântica de importação
+
+### Badge
+- [ ] `Fase 0.5.3 · Identidade semântica de importação`
+
+### Escopo
+- [ ] Reimportar consolidado final → modal “Arquivo já importado”
+- [ ] Importar JSON legado (`cfm_import_v1_cardsnapshots.json`) após consolidado → sem massa de lançamentos novos
+- [ ] Status `legacy_overlap` / `unsafe_legacy_import` ou incremental só com lançamentos realmente seguros
+- [ ] Equivalência semântica entre versões (Apple, Spotify, GitHub, pagamento fatura Nubank, Banco Pan)
+- [ ] Compras repetidas reais (Kelly Lanchonete) não colapsadas quando data/valor diferem
+- [ ] `possible_duplicate` não importado automaticamente
+- [ ] `changed_existing` não sobrescreve dado salvo
+- [ ] Confirmar incremental salva apenas `safeNewTransactions`
+- [ ] Overlap legado sem novidades seguras → modal “Arquivo antigo já contemplado”
+- [ ] Banner incremental: X novos, Y já existem, Z possíveis duplicidades
+- [ ] Detalhes técnicos listam já existentes, possíveis duplicidades, alterados e motivo
+- [ ] Nenhum popup nativo
+
+### Regressão
+- [ ] `node scripts/test-phase-0.5.3.js` → ALL PASS
+- [ ] Suite 0.5.x + 0.4.0 + 0.3.x → ALL PASS
+
+---
+
+## Fase 0.5.4 — Importação idempotente real
+
+### Badge
+- [ ] `Fase 0.5.4 · Importação idempotente real`
+
+### Escopo
+- [ ] Importar `cfm_20260617_1949.json` → 245 txs, 8 faturas, 4 cartões, 24 recorrências, 60 parcelas
+- [ ] Importar `cfm_import_v1_cardsnapshots.json` depois → `legacy_overlap_blocked`, confirmação desabilitada
+- [ ] Base permanece intacta (sem cartões/faturas/recorrências duplicadas)
+- [ ] Incremental mensal seguro importa só novos lançamentos
+- [ ] `changed_existing` bloqueia autosave (`requires_review`) até decisão
+- [ ] Entidades equivalentes remapeadas, não append bruto
+- [ ] Banner “Arquivo antigo ou sobreposto detectado” para JSON legado
+- [ ] Banner “Importação incremental segura” para mensal válido
+- [ ] Nenhum popup nativo
+
+### Regressão
+- [ ] `node scripts/test-phase-0.5.4.js` → ALL PASS
+- [ ] Suite 0.5.x + 0.4.0 + 0.3.x → ALL PASS
+
+---
+
 Atualizar tabela de critérios em `STATUS_DO_PROJETO.md` ao concluir cada fase.

@@ -70,6 +70,7 @@ window.CFM = window.CFM || {};
       var message = options.message || "";
       var confirmLabel = options.confirmLabel || "Confirmar";
       var cancelLabel = options.cancelLabel || "Cancelar";
+      var acknowledgeOnly = !!options.acknowledgeOnly;
       var detailsHtml = options.details
         ? '<p class="app-confirm__details" id="app-confirm-details">' + escHtml(options.details) + "</p>"
         : "";
@@ -90,9 +91,11 @@ window.CFM = window.CFM || {};
         detailsHtml +
         "  </div>" +
         '  <div class="app-confirm__actions">' +
-        '    <button type="button" class="btn btn--ghost app-confirm__cancel"' +
-        ' data-app-confirm="cancel" aria-label="' + escHtml(cancelLabel) + '">' +
-        escHtml(cancelLabel) + "</button>" +
+        (acknowledgeOnly
+          ? ""
+          : '    <button type="button" class="btn btn--ghost app-confirm__cancel"' +
+            ' data-app-confirm="cancel" aria-label="' + escHtml(cancelLabel) + '">' +
+            escHtml(cancelLabel) + "</button>") +
         '    <button type="button" class="btn btn--primary app-confirm__confirm"' +
         ' data-app-confirm="confirm" aria-label="' + escHtml(confirmLabel) + '">' +
         escHtml(confirmLabel) + "</button>" +
@@ -107,7 +110,7 @@ window.CFM = window.CFM || {};
       var btnConfirm = overlay.querySelector('[data-app-confirm="confirm"]');
 
       function onCancel() {
-        resolvePromise(resolve, false);
+        resolvePromise(resolve, acknowledgeOnly);
       }
 
       function onConfirm() {
