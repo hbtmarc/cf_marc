@@ -1176,4 +1176,30 @@ Lista de verificação manual por fase.
 
 ---
 
+## Fase 0.6.0 — Dashboard financeiro operacional
+
+### Badge
+- [ ] `Fase 0.6.0 · Dashboard operacional`
+
+### Escopo
+- [ ] Após importar `cfm_20260617_1949.json`, Dashboard exibe KPIs coerentes do mês
+- [ ] Seletor de competência lista meses disponíveis; trocar mês recalcula todos os cards
+- [ ] Entradas, saídas, saldo, lançamentos, faturas abertas/pagas, recorrências, parcelas futuras
+- [ ] Seção **Próximos vencimentos** (faturas, recorrências, parcelas) ordenada por data
+- [ ] Seção **Cartões em atenção** (limite ≥70% ou fatura aberta na competência)
+- [ ] Seção **Maiores saídas do mês** agrupadas por descrição/categoria
+- [ ] Pagamentos de fatura excluídos das saídas (sem dupla contagem)
+- [ ] Valores BRL com duas casas; datas PT-BR
+- [ ] Estado vazio com CTA **Ir para importação** quando não houver dados
+- [ ] Atalhos **Ver cartões** / **Ver histórico**; Cartões e Histórico inalterados
+- [ ] Reimportar arquivo antigo continua bloqueado (0.5.4)
+- [ ] Nenhum popup nativo; layout responsivo sem scroll horizontal
+
+### Regressão
+- [ ] `node scripts/test-phase-0.6.0.js` → ALL PASS
+- [ ] `node scripts/test-phase-0.5.4.js` → ALL PASS
+- [ ] Suite 0.5.x + 0.4.0 + 0.3.x → ALL PASS
+
+---
+
 Atualizar tabela de critérios em `STATUS_DO_PROJETO.md` ao concluir cada fase.

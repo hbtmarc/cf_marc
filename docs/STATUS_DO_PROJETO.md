@@ -1,8 +1,35 @@
-# Status do Projeto
+# Status do Projeto — Controle Financeiro Mensal
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 17 de junho de 2026  
-**Fase atual:** Fase 0.5.4 — Importação idempotente real e bloqueio de entidades legadas
+**Fase concluída:** Fase 0.6.0 — Dashboard financeiro operacional  
+**Próxima fase:** A definir (CRUD manual / Firebase)
+
+---
+
+## Estado atual
+
+Fase **0.6.0** concluída: dashboard operacional mensal com seletor de competência, KPIs, vencimentos, cartões em atenção e maiores saídas — sobre importação idempotente e read model local.
+
+## Concluído
+
+- Importador JSON validado e polido visualmente
+- Modais internos do projeto (sem `alert`/`confirm`/`prompt`)
+- Persistência local de lote importado
+- Dashboard operacional mensal (KPIs, competência, alertas leves)
+- Cartões com dados reais
+- Histórico mensal com dados reais
+- Reimportação idempotente
+- Bloqueio de JSON antigo/sobreposto/inseguro
+- Proteção contra duplicidade de lançamentos, cartões, faturas, parcelas e recorrências
+
+## Decisão técnica
+
+A expansão de conciliação visual da **Fase 0.4** está **congelada** para evitar overengineering. Próximo foco: tornar o app útil como **controle financeiro mensal** (local, sem Firebase nesta etapa).
+
+## Próxima fase
+
+CRUD manual de lançamentos e/ou integração Firebase — fora do escopo da 0.6.
 
 ---
 
@@ -76,13 +103,9 @@
 
 ## Próximo marco recomendado
 
-**Fase 1 — Auth + RTDB mínimo**
+**Pós-Fase 0.6.0** — CRUD manual de lançamentos ou integração Firebase/Auth, após validação manual do dashboard operacional com JSON real.
 
-1. Integrar Firebase Auth (e-mail/senha ou provedor OAuth)
-2. Conectar RTDB com leitura/escrita em `/users/{uid}`
-3. Persistir importação validada após login
-4. Refinar `database.rules.json` com validações de schema
-5. Estados de loading/erro e logout
+*Firebase / Auth / RTDB permanecem fora do escopo até decisão explícita de produto.*
 
 ---
 
@@ -1430,5 +1453,31 @@ Nenhum popup nativo do navegador em código de produção. Toda confirmação us
 ### Testes
 
 `node scripts/test-phase-0.5.4.js` + regressão completa (usa fixtures locais se JSON real não estiver presente)
+
+---
+
+## Fase 0.6.0 — Dashboard financeiro operacional
+
+**Data:** 17 de junho de 2026 | **Estado:** ✅ Concluída
+
+**Objetivo:** Evoluir o Dashboard de resumo simples para visão mensal operacional sobre dados importados — sem alterar importador, schema JSON ou backend.
+
+**Entregue:**
+
+- Seletor de competência com meses disponíveis (`sessionStorage` + chips na UI)
+- KPIs mensais: entradas, saídas, saldo, lançamentos, faturas abertas/pagas, recorrências, parcelas futuras
+- Seções: Próximos vencimentos, Cartões em atenção, Maiores saídas do mês
+- Funções puras no read model: `aggregateMonthSummary`, `getUpcomingDueItems`, `getAttentionCards`, `getTopExpenseGroups`, `getAvailableCompetenceMonths`, `buildDashboardOperationalView`
+- Exclusão de pagamento de fatura nas saídas (sem dupla contagem)
+- Estado vazio com CTA para importação; atalhos Cartões/Histórico
+- CSS responsivo premium em `pages.css`
+
+**Fora de escopo (respeitado):** Firebase, RTDB, importador, conciliação visual 0.4, CRUD manual.
+
+**Depende de:** Fases 0.5.0–0.5.4.
+
+### Testes
+
+`node scripts/test-phase-0.6.0.js` + regressão completa (0.5.4, 0.5.x, 0.4.0, 0.3.x)
 
 ---

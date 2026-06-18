@@ -198,7 +198,253 @@ window.CFM = window.CFM || {};
     return out;
   }
 
-  function getFinancialReadModel() {
+  function normalizeExpenseGroupKey(tx) {
+    var label = String(tx.categoryLabel || tx.category || tx.description || "Outros").trim();
+    if (!label) label = "Outros";
+    return label.length > 48 ? label.slice(0, 48) : label;
+  }
+
+  function isInvoiceOpen(inv) {
+    if (!inv) return false;
+    var status = String(inv.status || "").toLowerCase();
+    if (/open|aberta|pending|due|unpaid|parcial|partial/.test(status)) return true;
+    if (/paid|paga|closed|fechada|settled|liquidada/.test(status)) return false;
+    return (inv.amountDueCents || 0) > 0;
+  }
+
+  function isInvoicePaid(inv) {
+    if (!inv) return false;
+    var status = String(inv.status || "").toLowerCase();
+    if (/paid|paga|closed|fechada|settled|liquidada/.test(status)) return true;
+    return !isInvoiceOpen(inv) && (inv.amountDueCents || 0) === 0 && (inv.totalCents || 0) > 0;
+  }
+
+  function getAvailableCompetenceMonths(data) {
+    data = data || {};
+    return collectCompetenceMonths(data.transactions, data.invoices);
+  }
+
+  function resolveDefaultCompetenceMonth(availableMonths, preferredMonth) {
+    if (preferredMonth && availableMonths.indexOf(preferredMonth) >= 0) {
+      return preferredMonth;
+    }
+    var current = getCurrentCompetenceMonth();
+    if (availableMonths.indexOf(current) >= 0) return current;
+    return availableMonths.length ? availableMonths[0] : "";
+  }
+
+  var DASHBOARD_MONTH_KEY = "cfm:dashboard:competenceMonth";
+
+  function getStoredDashboardCompetenceMonth() {
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        return sessionStorage.getItem(DASHBOARD_MONTH_KEY) || "";
+      }
+    } catch (e) { /* ignore */ }
+    return "";
+  }
+
+  function setStoredDashboardCompetenceMonth(month) {
+    try {
+      if (typeof sessionStorage !== "undefined" && month) {
+        sessionStorage.setItem(DASHBOARD_MONTH_KEY, month);
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  function aggregateMonthSummary(data, competenceMonth) {
+    var fmt = CFM.formatters || {};
+    var sums = sumMonthTransactions(data.transactions, competenceMonth);
+    var monthInvoices = (data.invoices || []).filter(function (inv) {
+      return inv && inv.competenceMonth === competenceMonth;
+    });
+    var openInvoices = monthInvoices.filter(isInvoiceOpen);
+    var paidInvoices = monthInvoices.filter(isInvoicePaid);
+    var activeRecurring = (data.recurringRules || []).filter(function (rule) {
+      return rule && rule.active !== false && !rule.candidate;
+    });
+    var recurringOutCents = activeRecurring.reduce(function (sum, rule) {
+      if (String(rule.flow || "out") !== "out") return sum;
+      return sum + (rule.amountCents || rule.expectedAmountCents || 0);
+    }, 0);
+    var futurePlans = (data.installmentPlans || []).filter(function (plan) {
+      if (!plan) return false;
+      var total = plan.totalInstallments || 0;
+      var current = plan.currentInstallment || 0;
+      return total > 0 && current < total;
+    });
+    var futureInstallmentCents = futurePlans.reduce(function (sum, plan) {
+      return sum + (plan.installmentAmountCents || 0);
+    }, 0);
+
+    return {
+      competenceMonth: competenceMonth,
+      label: fmt.formatCompetenceBR ? fmt.formatCompetenceBR(competenceMonth) : competenceMonth,
+      labelShort: formatMonthShort(competenceMonth),
+      inCents: sums.inCents,
+      outCents: sums.outCents,
+      netCents: sums.netCents,
+      transactionCount: sums.transactionCount,
+      invoiceCount: monthInvoices.length,
+      openInvoiceCount: openInvoices.length,
+      paidInvoiceCount: paidInvoices.length,
+      openInvoiceCents: openInvoices.reduce(function (s, inv) {
+        return s + (inv.amountDueCents != null ? inv.amountDueCents : inv.totalCents || 0);
+      }, 0),
+      activeRecurringCount: activeRecurring.length,
+      recurringOutCents: recurringOutCents,
+      futureInstallmentCount: futurePlans.length,
+      futureInstallmentCents: futureInstallmentCents
+    };
+  }
+
+  function inferSortDate(competenceMonth, day) {
+    if (!competenceMonth || competenceMonth.length < 7) return "9999-12-31";
+    var d = day != null ? day : 15;
+    var dd = d < 10 ? "0" + d : String(d);
+    return competenceMonth + "-" + dd;
+  }
+
+  function getUpcomingDueItems(data, competenceMonth, limit) {
+    limit = limit || 8;
+    var items = [];
+    var cardNameById = {};
+    (data.cards || []).forEach(function (card) {
+      if (card && card.id) cardNameById[card.id] = card.name || card.id;
+    });
+
+    (data.invoices || []).forEach(function (inv) {
+      if (!inv || !isInvoiceOpen(inv)) return;
+      if (!inv.competenceMonth) return;
+      if (inv.competenceMonth < competenceMonth) return;
+      items.push({
+        type: "invoice",
+        sortDate: inferSortDate(inv.competenceMonth, 28),
+        competenceMonth: inv.competenceMonth,
+        label: "Fatura " + (inv.competenceMonth || ""),
+        detail: cardNameById[inv.cardId] || inv.cardName || "Cartão",
+        amountCents: inv.amountDueCents != null ? inv.amountDueCents : inv.totalCents || 0,
+        status: inv.status || "open"
+      });
+    });
+
+    (data.recurringRules || []).forEach(function (rule) {
+      if (!rule || rule.active === false || rule.candidate) return;
+      items.push({
+        type: "recurring",
+        sortDate: inferSortDate(competenceMonth, 5),
+        competenceMonth: competenceMonth,
+        label: rule.description || "Recorrência",
+        detail: rule.frequency || "mensal",
+        amountCents: rule.amountCents || rule.expectedAmountCents || 0,
+        status: "active"
+      });
+    });
+
+    (data.installmentPlans || []).forEach(function (plan) {
+      if (!plan) return;
+      var total = plan.totalInstallments || 0;
+      var current = plan.currentInstallment || 0;
+      if (!total || current >= total) return;
+      items.push({
+        type: "installment",
+        sortDate: inferSortDate(competenceMonth, 10),
+        competenceMonth: competenceMonth,
+        label: plan.description || "Parcelamento",
+        detail: (cardNameById[plan.cardId] || plan.cardName || "Cartão") +
+          " · " + (current + 1) + "/" + total,
+        amountCents: plan.installmentAmountCents || 0,
+        status: "pending"
+      });
+    });
+
+    return items.sort(function (a, b) {
+      return String(a.sortDate).localeCompare(String(b.sortDate)) ||
+        String(a.label).localeCompare(String(b.label), "pt-BR");
+    }).slice(0, limit);
+  }
+
+  function getAttentionCards(data, competenceMonth, enrichedCards) {
+    enrichedCards = enrichedCards || enrichCards(
+      data.cards, data.invoices, data.transactions, data.installmentPlans
+    );
+    var openByCard = {};
+    (data.invoices || []).forEach(function (inv) {
+      if (!inv || inv.competenceMonth !== competenceMonth || !isInvoiceOpen(inv)) return;
+      openByCard[inv.cardId] = true;
+    });
+
+    var results = [];
+    enrichedCards.forEach(function (card) {
+      var reasons = [];
+      if (openByCard[card.id]) reasons.push("fatura_aberta");
+      if (card.usedPercent != null && card.usedPercent >= 70) {
+        reasons.push(card.usedPercent >= 90 ? "limite_critico" : "limite_alto");
+      }
+      if (!reasons.length) return;
+      results.push({
+        id: card.id,
+        name: card.name,
+        lastFour: card.lastFour,
+        usedPercent: card.usedPercent,
+        limitCents: card.limitCents,
+        usedCents: card.usedCents,
+        availableCents: card.availableCents,
+        reasons: reasons,
+        severity: reasons.indexOf("limite_critico") >= 0 ? "high"
+          : reasons.indexOf("fatura_aberta") >= 0 ? "medium" : "low"
+      });
+    });
+
+    return results.sort(function (a, b) {
+      var rank = { high: 0, medium: 1, low: 2 };
+      return (rank[a.severity] || 9) - (rank[b.severity] || 9);
+    });
+  }
+
+  function getTopExpenseGroups(data, competenceMonth, limit) {
+    limit = limit || 6;
+    var groups = {};
+    (data.transactions || []).forEach(function (tx) {
+      if (!isCountableOutflow(tx)) return;
+      if (resolveCompetenceMonth(tx) !== competenceMonth) return;
+      var key = normalizeExpenseGroupKey(tx);
+      if (!groups[key]) {
+        groups[key] = { label: key, amountCents: 0, count: 0 };
+      }
+      groups[key].amountCents += tx.amountCents || 0;
+      groups[key].count++;
+    });
+    return Object.keys(groups).map(function (key) {
+      return groups[key];
+    }).sort(function (a, b) {
+      return b.amountCents - a.amountCents;
+    }).slice(0, limit);
+  }
+
+  function buildDashboardOperationalView(data, competenceMonth) {
+    var availableMonths = getAvailableCompetenceMonths(data);
+    var selectedMonth = resolveDefaultCompetenceMonth(
+      availableMonths,
+      competenceMonth || getStoredDashboardCompetenceMonth()
+    );
+    if (selectedMonth) setStoredDashboardCompetenceMonth(selectedMonth);
+
+    return {
+      availableMonths: availableMonths,
+      selectedCompetenceMonth: selectedMonth,
+      summary: selectedMonth ? aggregateMonthSummary(data, selectedMonth) : null,
+      upcomingDueItems: selectedMonth ? getUpcomingDueItems(data, selectedMonth) : [],
+      attentionCards: selectedMonth
+        ? getAttentionCards(data, selectedMonth, data.enrichedCards)
+        : [],
+      topExpenseGroups: selectedMonth
+        ? getTopExpenseGroups(data, selectedMonth)
+        : []
+    };
+  }
+
+  function getFinancialReadModel(options) {
     var store = getStore();
     if (!store || !store.getActiveFinancialData) return emptyReadModel();
 
@@ -247,6 +493,11 @@ window.CFM = window.CFM || {};
       return sum + (rule.amountCents || 0);
     }, 0);
 
+    var competenceOverride = options && options.competenceMonth;
+    data.dashboard = buildDashboardOperationalView(data, competenceOverride);
+    data.dashboardMonth = data.dashboard.summary ||
+      pickDashboardMonth(data.monthlyHistory, data.currentCompetenceMonth);
+
     return data;
   }
 
@@ -255,6 +506,18 @@ window.CFM = window.CFM || {};
     sumMonthTransactions: sumMonthTransactions,
     buildMonthlyHistory: buildMonthlyHistory,
     enrichCards: enrichCards,
+    getAvailableCompetenceMonths: getAvailableCompetenceMonths,
+    aggregateMonthSummary: aggregateMonthSummary,
+    getUpcomingDueItems: getUpcomingDueItems,
+    getAttentionCards: getAttentionCards,
+    getTopExpenseGroups: getTopExpenseGroups,
+    buildDashboardOperationalView: buildDashboardOperationalView,
+    setStoredDashboardCompetenceMonth: setStoredDashboardCompetenceMonth,
+    getStoredDashboardCompetenceMonth: getStoredDashboardCompetenceMonth,
+    resolveDefaultCompetenceMonth: resolveDefaultCompetenceMonth,
+    isSettlementTransaction: isSettlementTransaction,
+    isCountableOutflow: isCountableOutflow,
+    isCountableInflow: isCountableInflow,
     getFinancialReadModel: getFinancialReadModel
   };
 })(window.CFM);
