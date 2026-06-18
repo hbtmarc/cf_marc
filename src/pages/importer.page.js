@@ -1,5 +1,5 @@
 /**
- * Página de importação — Fase 0.3.18 (modais internos do projeto)
+ * Página de importação — Fase 0.3.20 (formatação monetária e datas PT-BR)
  * UX orientada ao usuário final; detalhes técnicos recolhidos.
  * Nada é gravado. Firebase será integrado na Fase 1.
  */
@@ -85,6 +85,13 @@ window.CFM = window.CFM || {};
    * LOCAL HELPERS
    * ════════════════════════════════════════════════ */
 
+  function formatInstallmentGroupBadgeLabel(label) {
+    if (label === "Grupo identificado nas observações") {
+      return "Grupo detectado na revisão";
+    }
+    return label;
+  }
+
   function esc(s) {
     return String(s)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -92,9 +99,31 @@ window.CFM = window.CFM || {};
   }
 
   function fmt() { return CFM.formatters || {}; }
-  function fcents(c)  { return fmt().formatCurrencyFromCents ? fmt().formatCurrencyFromCents(c) : String(c) + " cts"; }
-  function fdate(d)   { return fmt().formatDate  ? fmt().formatDate(d)  : d; }
-  function fmonth(m)  { return fmt().formatMonth ? fmt().formatMonth(m) : m; }
+
+  function displayMoney(fmtValue, centsValue) {
+    var fn = fmt().formatCurrencyBRL || fmt().formatCurrencyFromCents;
+    if (!fn) return fmtValue != null && fmtValue !== "" ? String(fmtValue) : "—";
+    if (typeof centsValue === "number" && Number.isFinite(centsValue)) {
+      return fn(centsValue);
+    }
+    if (fmtValue != null && fmtValue !== "") {
+      return fn(fmtValue);
+    }
+    return "—";
+  }
+
+  function displayDate(value) {
+    var fn = fmt().formatDisplayDate || fmt().formatDateBR || fmt().formatDate;
+    if (!fn) return value || "—";
+    return fn(value);
+  }
+
+  function fcents(c)  { return displayMoney(null, c); }
+  function fdate(d)     { return displayDate(d); }
+  function fmonth(m)    {
+    var fn = fmt().formatCompetenceBR || fmt().formatMonth;
+    return fn ? fn(m) : (m || "—");
+  }
 
   function flowBadge(flow) {
     if (flow === "in")
@@ -398,13 +427,13 @@ window.CFM = window.CFM || {};
       "  </div>" +
       (descLead ? '  <p class="similarity-item__impact">' + esc(descLead) + "</p>" : "") +
       '  <p class="similarity-item__desc">' +
-      '"' + esc(pair.description1) + '" · ' + esc(pair.amountFmt || "") +
-      (pair.date1 ? " · " + esc(pair.date1) : "") +
+      '"' + esc(pair.description1) + '" · ' + esc(displayMoney(pair.amountFmt, pair.amountCents)) +
+      (pair.date1 ? " · " + esc(displayDate(pair.date1)) : "") +
       "</p>" +
       (pair.index1 !== pair.index2 || pair.description2 !== pair.description1
         ? '  <p class="similarity-item__desc similarity-item__desc--secondary">' +
           '"' + esc(pair.description2) + '"' +
-          (pair.date2 ? " · " + esc(pair.date2) : "") +
+          (pair.date2 ? " · " + esc(displayDate(pair.date2)) : "") +
           (pair.month2 && pair.month1 !== pair.month2 ? " · " + esc(pair.month2) : "") +
           "</p>"
         : "") +
@@ -479,7 +508,8 @@ window.CFM = window.CFM || {};
     var srcRows = "";
     if (src.institution)  srcRows += '<div class="source-info__row"><dt>Instituição</dt><dd>' + esc(src.institution)  + "</dd></div>";
     if (src.documentType) srcRows += '<div class="source-info__row"><dt>Tipo</dt><dd>'        + esc(src.documentType) + "</dd></div>";
-    if (src.periodStart)  srcRows += '<div class="source-info__row"><dt>Período</dt><dd>'     + esc(src.periodStart)  + " → " + esc(src.periodEnd || "—") + "</dd></div>";
+    if (src.periodStart)  srcRows += '<div class="source-info__row"><dt>Período</dt><dd>' +
+      esc(displayDate(src.periodStart)) + " → " + esc(displayDate(src.periodEnd || "—")) + "</dd></div>";
     if (src.label)        srcRows += '<div class="source-info__row"><dt>Origem</dt><dd>'      + esc(src.label)        + "</dd></div>";
     if (report.schema)    srcRows += '<div class="source-info__row"><dt>Schema</dt><dd><code>' + esc(report.schema) + "</code></dd></div>";
 
@@ -563,7 +593,8 @@ window.CFM = window.CFM || {};
         '  <ul class="entity-list">' +
         refInvoices.map(function (inv) {
           return '<li class="entity-list__item"><code>' + esc(inv.externalRef || inv.id || "—") +
-            "</code> · " + esc(inv.cardName || "—") + " · " + esc(inv.competenceFmt || inv.competenceMonth || "") +
+            "</code> · " + esc(inv.cardName || "—") + " · " +
+            esc(fmonth(inv.competenceMonth) || inv.competenceFmt || "") +
             (inv.linkedTransactionCount ? " · " + inv.linkedTransactionCount + " tx" : "") + "</li>";
         }).join("") +
         "</ul></section>";
@@ -624,7 +655,8 @@ window.CFM = window.CFM || {};
       srcBrief = '<p class="summary-source">';
       if (src.institution) srcBrief += esc(src.institution);
       if (src.periodStart) {
-        srcBrief += (src.institution ? " · " : "") + esc(src.periodStart) + " → " + esc(src.periodEnd || "—");
+        srcBrief += (src.institution ? " · " : "") + esc(displayDate(src.periodStart)) +
+          " → " + esc(displayDate(src.periodEnd || "—"));
       }
       srcBrief += "</p>";
     }
@@ -655,9 +687,9 @@ window.CFM = window.CFM || {};
       return (
         '<li class="summary-card-mini">' +
         '  <p class="summary-card-mini__name">' + esc(card.name) + "</p>" +
-        '  <p class="summary-card-mini__row"><span>Limite</span><strong>' + esc(card.limitFmt) + "</strong></p>" +
-        '  <p class="summary-card-mini__row"><span>Usado</span><strong>' + esc(card.usedFmt) + "</strong></p>" +
-        '  <p class="summary-card-mini__row"><span>Disponível</span><strong>' + esc(card.availableFmt) + "</strong></p>" +
+        '  <p class="summary-card-mini__row"><span>Limite</span><strong>' + esc(displayMoney(card.limitFmt, card.limitCents)) + "</strong></p>" +
+        '  <p class="summary-card-mini__row"><span>Usado</span><strong>' + esc(displayMoney(card.usedFmt, card.usedCents)) + "</strong></p>" +
+        '  <p class="summary-card-mini__row"><span>Disponível</span><strong>' + esc(displayMoney(card.availableFmt, card.availableCents)) + "</strong></p>" +
         (pct != null ? '  <p class="summary-card-mini__pct">' + pct + "% utilizado</p>" : "") +
         "</li>"
       );
@@ -738,9 +770,9 @@ window.CFM = window.CFM || {};
           : ' <span class="status-chip status-chip--other">' + esc(getSnapshotSourceLabel("missing")) + "</span>") +
         "  </div>" +
         '  <div class="card-limit-item__amounts">' +
-        '    <span>Limite: <strong>' + esc(card.limitFmt) + "</strong></span>" +
-        '    <span>Usado: <strong>' + esc(card.usedFmt) + "</strong></span>" +
-        '    <span>Disponível: <strong>' + esc(card.availableFmt) + "</strong></span>" +
+        '    <span>Limite: <strong>' + esc(displayMoney(card.limitFmt, card.limitCents)) + "</strong></span>" +
+        '    <span>Usado: <strong>' + esc(displayMoney(card.usedFmt, card.usedCents)) + "</strong></span>" +
+        '    <span>Disponível: <strong>' + esc(displayMoney(card.availableFmt, card.availableCents)) + "</strong></span>" +
         (pct != null ? '    <span>Utilizado: <strong>' + pct + "%</strong></span>" : "") +
         "  </div>" +
         (card.usedPercent != null
@@ -755,10 +787,13 @@ window.CFM = window.CFM || {};
         "  </div>" +
         (card.linkedPurchaseCount > 0 || card.linkedInvoiceCount > 0
           ? '  <div class="card-limit-item__totals">' +
-            (card.consolidatedInvoiceTotalFmt ? "<span>Faturas: " + esc(card.consolidatedInvoiceTotalFmt) + "</span>" : "") +
-            (card.purchaseTotalFmt ? "<span>Compras: " + esc(card.purchaseTotalFmt) + "</span>" : "") +
+            (card.consolidatedInvoiceTotalFmt ? "<span>Faturas: " +
+              esc(displayMoney(card.consolidatedInvoiceTotalFmt, card.consolidatedInvoiceTotalCents)) + "</span>" : "") +
+            (card.purchaseTotalFmt ? "<span>Compras: " +
+              esc(displayMoney(card.purchaseTotalFmt, card.purchaseTotalCents)) + "</span>" : "") +
             (card.futureInstallmentTotalFmt && card.futureInstallmentCount > 0
-              ? "<span>Parcelas futuras: " + esc(card.futureInstallmentTotalFmt) + "/mês</span>" : "") +
+              ? "<span>Parcelas futuras: " +
+                esc(displayMoney(card.futureInstallmentTotalFmt, card.futureInstallmentTotalCents)) + "/mês</span>" : "") +
             "  </div>"
           : "") +
         aliasesHtml +
@@ -786,10 +821,12 @@ window.CFM = window.CFM || {};
         '<p class="invoice-stub-note">Referência criada para manter vínculo com transações. Não é uma fatura consolidada.</p>';
     } else {
       var primary = inv.invoicePrimary || {};
-      var mainAmount = primary.primaryFmt ||
-        (inv.primaryAmountFmt) ||
-        (inv.invoiceDisplay && inv.invoiceDisplay.amountDueFmt) ||
-        (inv.amountDueFmt || inv.totalFmt);
+      var mainAmount = displayMoney(
+        primary.primaryFmt || inv.primaryAmountFmt ||
+          (inv.invoiceDisplay && inv.invoiceDisplay.amountDueFmt) ||
+          inv.amountDueFmt || inv.totalFmt,
+        primary.primaryCents || inv.primaryAmountCents || inv.amountDueCents || inv.totalCents
+      );
       var primaryLabel = primary.primaryLabel || inv.primaryAmountLabel || "Total da fatura";
       amountHtml =
         (primary.statusHint || inv.primaryStatusHint
@@ -802,7 +839,7 @@ window.CFM = window.CFM || {};
         amountHtml += '<div class="invoice-secondary-amounts">' +
           secondaryLines.map(function (line) {
             return '<span class="invoice-secondary-amounts__item">' + esc(line.label) + ": <strong>" +
-              esc(line.fmt) + "</strong>" +
+              esc(displayMoney(line.fmt, line.cents)) + "</strong>" +
               (line.note ? " — " + esc(line.note) : "") + "</span>";
           }).join("") + "</div>";
       }
@@ -811,8 +848,9 @@ window.CFM = window.CFM || {};
     var creditHtml = "";
     if (inv.hasCredit) {
       var msg = inv.creditBehavior === "applies_to_next_invoice"
-        ? "Saldo positivo de " + inv.creditBalanceFmt + " será abatido da próxima fatura."
-        : "Saldo credor de " + inv.creditBalanceFmt + " (não é receita).";
+        ? "Saldo positivo de " + displayMoney(inv.creditBalanceFmt, inv.creditBalanceCents) +
+          " será abatido da próxima fatura."
+        : "Saldo credor de " + displayMoney(inv.creditBalanceFmt, inv.creditBalanceCents) + " (não é receita).";
       creditHtml = '<div class="credit-balance">' + ic("positive", "cfm-icon--success") + " " + esc(msg) + "</div>";
     }
 
@@ -825,14 +863,14 @@ window.CFM = window.CFM || {};
       stmtHtml =
         '<div class="invoice-statement-summary">' +
         '<span>Encargos/despesas: <strong>' +
-          esc(disp.chargesFmt || inv.invoiceChargesFmt) + "</strong></span>";
+          esc(displayMoney(disp.chargesFmt || inv.invoiceChargesFmt, disp.chargesCents || inv.invoiceChargesCents)) + "</strong></span>";
       if (disp.internalCreditsCents > 0) {
         stmtHtml += '<span>' + esc(creditLabel) + ': <strong>' +
-          esc(disp.internalCreditsFmt || inv.invoicePaymentsCreditsFmt) + "</strong></span>";
+          esc(displayMoney(disp.internalCreditsFmt || inv.invoicePaymentsCreditsFmt, disp.internalCreditsCents)) + "</strong></span>";
       }
       if (disp.externalSettlementCents > 0) {
         stmtHtml += '<span>' + esc(settlementLabel) + ': <strong>' +
-          esc(disp.externalSettlementFmt || inv.settlementPaymentsFmt) + "</strong></span>";
+          esc(displayMoney(disp.externalSettlementFmt || inv.settlementPaymentsFmt, disp.externalSettlementCents)) + "</strong></span>";
       }
       stmtHtml += "</div>";
 
@@ -842,7 +880,7 @@ window.CFM = window.CFM || {};
           '<summary class="invoice-breakdown-details__summary">Detalhes de créditos</summary>' +
           '<ul class="invoice-breakdown-list">' +
           inv.paymentBreakdownRows.map(function (row) {
-            return '<li>' + esc(row.label) + ": <strong>" + esc(row.fmt) + "</strong></li>";
+            return '<li>' + esc(row.label) + ": <strong>" + esc(displayMoney(row.fmt, row.cents)) + "</strong></li>";
           }).join("") +
           "</ul></details>";
       }
@@ -865,7 +903,8 @@ window.CFM = window.CFM || {};
       if (inv.isWithinReconciliationTolerance && inv.reconciliationDiffFmt &&
           inv.reconciliationDiff && Math.abs(inv.reconciliationDiff) > 0) {
         reconHtml += '<p class="invoice-recon-tolerance">Diferença informativa: ' +
-          esc(inv.reconciliationDiffFmt) + " (dentro da tolerância).</p>";
+          esc(displayMoney(inv.reconciliationDiffFmt, inv.reconciliationDiffCents != null
+            ? Math.abs(inv.reconciliationDiffCents) : null)) + " (dentro da tolerância).</p>";
       }
     } else if (!inv.isReference && inv.reconciliationPartial) {
       reconHtml = '<div class="reconciliation-partial">' + ic("info", "cfm-icon--info") + " " +
@@ -880,7 +919,8 @@ window.CFM = window.CFM || {};
     } else if (!inv.isReference && inv.hasReconciliationGap && inv.reconciliationStatus === "requires_review") {
       var diffLabel = inv.reconciliationDiff > 0 ? "fatura maior que encargos vinculados" : "encargos vinculados maiores que fatura";
       reconHtml = '<div class="reconciliation-gap">' + ic("balance") + " Diferença de " +
-        esc(inv.reconciliationDiffFmt) + " (" + esc(diffLabel) + ")</div>";
+        esc(displayMoney(inv.reconciliationDiffFmt, inv.reconciliationDiffCents != null
+          ? Math.abs(inv.reconciliationDiffCents) : null)) + " (" + esc(diffLabel) + ")</div>";
     } else if (!inv.isReference && inv.reconciliationStatus === "consistent" && inv.reconciliationMessage) {
       reconHtml = '<div class="reconciliation-ok">' + ic("success", "cfm-icon--success") + " " + esc(inv.reconciliationMessage) +
         (inv.linkedTransactionCount ? " (" + inv.linkedTransactionCount + " transação(ões))" : "") +
@@ -919,7 +959,7 @@ window.CFM = window.CFM || {};
       '    <div>' +
       '      <p class="invoice-card__card-name">' + esc(inv.cardName) + cardLastFourHtml +
       "      </p>" +
-      '      <p class="invoice-card__period">' + esc(inv.competenceFmt) + "</p>" +
+      '      <p class="invoice-card__period">' + esc(fmonth(inv.competenceMonth) || inv.competenceFmt) + "</p>" +
       "    </div>" +
       '    <div class="invoice-card__badges">' + badges + "</div>" +
       "  </div>" +
@@ -987,7 +1027,7 @@ window.CFM = window.CFM || {};
     }
 
     var monthOpts = Object.keys(months).sort().map(function (m) {
-      return '<option value="' + esc(m) + '">' + esc(m) + "</option>";
+      return '<option value="' + esc(m) + '">' + esc(fmonth(m)) + "</option>";
     }).join("");
 
     var hasCards    = Object.keys(cards).length    > 0;
@@ -1033,8 +1073,8 @@ window.CFM = window.CFM || {};
       ? sem.getTransactionTypeLabel(tx.type, tx)
       : (tx.typeLabel || "");
     var metaParts = [
-      tx.amountFmt,
-      tx.dateFmt || tx.date || tx.competenceMonth,
+      displayMoney(tx.amountFmt, tx.amountCents),
+      displayDate(tx.dateFmt || tx.date || tx.competenceMonth),
       via,
       invoiceText
     ].filter(Boolean);
@@ -1110,7 +1150,7 @@ window.CFM = window.CFM || {};
         '<li class="' + cls + '">' +
         '  <div class="tx-item__main">' +
         '    <span class="tx-item__desc">' + esc(tx.description) + "</span>" +
-        '    <span class="tx-item__amount">' + esc(tx.amountFmt) + "</span>" +
+        '    <span class="tx-item__amount">' + esc(displayMoney(tx.amountFmt, tx.amountCents)) + "</span>" +
         "  </div>" +
         '  <div class="tx-item__tags">' +
         flowBadge(tx.flow) + typeBadge(tx.type, tx) +
@@ -1120,7 +1160,7 @@ window.CFM = window.CFM || {};
           : "") +
         "  </div>" +
         '  <div class="tx-item__meta">' +
-        '    <span class="tx-item__date">' + esc(tx.date || tx.competenceMonth) + "</span>" +
+        '    <span class="tx-item__date">' + esc(displayDate(tx.dateFmt || tx.date || tx.competenceMonth)) + "</span>" +
         (via ? '<span class="tx-item__via">' + esc(via) + "</span>" : "") +
         invoiceMeta +
         "  </div>" +
@@ -1481,9 +1521,9 @@ window.CFM = window.CFM || {};
             "  </div>" +
             '  <p class="review-item__desc">' + esc(item.description) + "</p>" +
             '  <div class="review-item__meta">' +
-            (item.amountFmt  ? '<span>Valor: <strong>' + esc(item.amountFmt)  + "</strong></span>" : "") +
-            (item.date       ? '<span>Data: '  + esc(item.date)               + "</span>" : "") +
-            (item.competence ? '<span>Competência: ' + esc(item.competence)   + "</span>" : "") +
+            (item.amountFmt  ? '<span>Valor: <strong>' + esc(displayMoney(item.amountFmt, item.amountCents)) + "</strong></span>" : "") +
+            (item.date       ? '<span>Data: '  + esc(displayDate(item.date))               + "</span>" : "") +
+            (item.competence ? '<span>Competência: ' + esc(fmonth(item.competence))   + "</span>" : "") +
             "  </div>" +
             '  <p class="review-item__reason"><strong>Motivo:</strong> ' + esc(item.reason) + "</p>" +
             (item.suggestedActionLabel ?
@@ -1630,7 +1670,7 @@ window.CFM = window.CFM || {};
     var infoHtml =
       buildInstallmentObservationsSection(
         infoInstallments,
-        "Parcelas vinculadas a planos consistentes — não indicam erro."
+        "Parcelas vinculadas para conferência — revise quando quiser, sem bloquear a importação."
       ) +
       buildInfoSection(
         "Categorias a revisar",
@@ -1649,11 +1689,15 @@ window.CFM = window.CFM || {};
       return emptyPanel("Nenhuma observação relevante neste arquivo.");
     }
 
+    var noticeMod = blocking > 0 ? "" : " obs-status-banner obs-status-banner--ok";
     return (
-      '<div class="notice ' + banner.noticeClass + ' similarity-notice" role="note">' +
-      '  <span>' + ic(banner.icon, banner.noticeClass === "notice--warning" ? "cfm-icon--warning" : "cfm-icon--info") + '</span>' +
-      '  <span><strong>' + esc(banner.text) + '</strong> ' + esc(banner.counts) + ".</span>" +
-      "</div>" +
+      '<div class="notice ' + banner.noticeClass + ' similarity-notice' + noticeMod + '" role="note">' +
+      '  <span class="similarity-notice__icon">' +
+      ic(banner.icon, blocking > 0 ? "cfm-icon--warning" : "cfm-icon--success") + "</span>" +
+      '  <div class="similarity-notice__body">' +
+      '    <p class="similarity-notice__title">' + esc(banner.text) + "</p>" +
+      '    <p class="similarity-notice__counts">' + esc(banner.counts) + "</p>" +
+      "  </div></div>" +
       sectionsHtml + attentionHtml + infoHtml
     );
   }
@@ -1670,7 +1714,9 @@ window.CFM = window.CFM || {};
       var freqLabel = rule.frequency === "monthly" ? "Mensal" :
                       rule.frequency === "weekly"  ? "Semanal" :
                       rule.frequency === "yearly"  ? "Anual" : rule.frequency || "—";
-      var amountLine = rule.recurringAmountLabel || rule.amountFmt || "Valor a confirmar";
+      var amountLine = rule.hasRecurringAmount
+        ? displayMoney(rule.recurringAmountLabel || rule.amountFmt, rule.expectedAmountCents)
+        : (rule.recurringAmountLabel || rule.amountFmt || "Valor a confirmar");
       var sem = CFM.importSemantics || {};
       var badges = rule.recurringBadges && rule.recurringBadges.length
         ? rule.recurringBadges
@@ -1741,8 +1787,8 @@ window.CFM = window.CFM || {};
         '  <div class="installment-item__meta">' +
         '    <span>Parcela: <strong>' + esc(progress) + "</strong></span>" +
         remainHtml +
-        '    <span>Valor/parcela: <strong>' + esc(plan.installmentAmtFmt || "—") + "</strong></span>" +
-        (plan.totalAmtFmt ? '    <span>Total: ' + esc(plan.totalAmtFmt) + "</span>" : "") +
+        '    <span>Valor/parcela: <strong>' + esc(displayMoney(plan.installmentAmtFmt, plan.installmentAmountCents)) + "</strong></span>" +
+        (plan.totalAmtFmt ? '    <span>Total: ' + esc(displayMoney(plan.totalAmtFmt, plan.totalAmtCents)) + "</span>" : "") +
         '    ' + flowBadge(plan.flow || "out") +
         (plan.cardName ? '    <span>Cartão: ' + esc(plan.cardName) + (plan.cardLastFour ? " ···" + esc(plan.cardLastFour) : "") + "</span>" : "") +
         (plan.startCompetence ? '    <span>Início: ' + esc(plan.startCompetence) + "</span>" : "") +
@@ -1812,8 +1858,8 @@ window.CFM = window.CFM || {};
       groups.map(function (group) {
         var txLines = (group.transactions || []).map(function (tx) {
           var meta = [
-            tx.amountFmt,
-            tx.dateFmt || tx.date || tx.competenceMonth,
+            displayMoney(tx.amountFmt, tx.amountCents),
+            displayDate(tx.dateFmt || tx.date || tx.competenceMonth),
             tx.cardName || "",
             tx.invoiceLabel ? ("Fatura " + tx.invoiceLabel) : "",
             tx.installmentLabel || ""
@@ -1832,14 +1878,16 @@ window.CFM = window.CFM || {};
             '  <strong>' + esc(plan.description) + "</strong>" +
             '  <span class="inst-obs-derived-tx__meta">' +
             esc([
-              plan.installmentAmtFmt,
+              displayMoney(plan.installmentAmtFmt, plan.installmentAmountCents),
               plan.totalInstallments ? (plan.currentInstallment + "/" + plan.totalInstallments) : "",
               plan.cardName || ""
             ].filter(Boolean).join(" · ")) +
             "</span></li>";
         }
-        var dates = [group.date1, group.date2].filter(Boolean).join(" · ");
-        var badge = group.badgeLabel || group.fallbackLabel || "Grupo identificado nas observações";
+        var dates = [group.date1, group.date2].filter(Boolean).map(displayDate).join(" · ");
+        var badge = formatInstallmentGroupBadgeLabel(
+          group.badgeLabel || group.fallbackLabel || "Grupo identificado nas observações"
+        );
         return (
           '<li class="inst-obs-derived-item inst-group-card installment-item--group-highlight"' +
           ' data-group-key="' + esc(group.groupKey || "") + '"' +
@@ -1849,7 +1897,8 @@ window.CFM = window.CFM || {};
           '    <span class="status-chip status-chip--other">' + esc(badge) + "</span>" +
           "  </div>" +
           '  <div class="installment-item__meta">' +
-          (group.amountFmt ? '    <span>Valor: <strong>' + esc(group.amountFmt) + "</strong></span>" : "") +
+          (group.amountFmt ? '    <span>Valor: <strong>' +
+            esc(displayMoney(group.amountFmt, group.amountCents)) + "</strong></span>" : "") +
           (dates ? '    <span>Datas: ' + esc(dates) + "</span>" : "") +
           "  </div>" +
           (txLines ? '  <ul class="inst-obs-derived-tx-list">' + txLines + "</ul>" : "") +
@@ -1911,7 +1960,7 @@ window.CFM = window.CFM || {};
         banner.hidden = !(state.obsFilter && state.obsFilter.mode === "all_related_observations");
       }
       if (bannerText && state.obsFilter && state.obsFilter.mode === "all_related_observations") {
-        bannerText.textContent = "Filtrando parcelas relacionadas das observações";
+        bannerText.textContent = "Revisando parcelas vinculadas para conferência";
       }
 
       if (!instPanel) return;
@@ -1924,8 +1973,8 @@ window.CFM = window.CFM || {};
       instPanel.hidden = false;
       instPanel.innerHTML =
         '<div class="inst-compare-panel__head">' +
-        '  <div><h4 class="inst-compare-panel__title">Controlando parcelas relacionadas</h4>' +
-        '  <p class="inst-compare-panel__subtitle">Mostrando todas as ocorrências encontradas nas observações. Confira os grupos antes de validar.</p></div>' +
+        '  <div><h4 class="inst-compare-panel__title">Parcelas vinculadas para conferência</h4>' +
+        '  <p class="inst-compare-panel__subtitle">Revise cada grupo antes de validar a importação. O arquivo JSON não será alterado.</p></div>' +
         "</div>" +
         '<div class="inst-compare-panel__actions">' +
         '  <button type="button" class="btn btn--ghost btn--xs" id="inst-dismiss-all"' +
@@ -2206,14 +2255,18 @@ window.CFM = window.CFM || {};
   }
 
   function buildReportHtml(report) {
+    var fileMeta = [
+      report.source && report.source.institution ? esc(report.source.institution) : "",
+      esc(report.fileSizeFormatted || "")
+    ].filter(Boolean).join(" · ");
     var fileInfo =
-      '<div class="import-file-info">' +
-      '  <span class="import-file-info__name">' + esc(report.fileName || "") + "</span>" +
-      (report.source && report.source.institution
-        ? ' · <span class="import-file-info__bank">' + esc(report.source.institution) + "</span>"
-        : "") +
-      " · " + esc(report.fileSizeFormatted || "") +
-      "</div>";
+      '<div class="import-file-card" role="region" aria-label="Arquivo importado">' +
+      '  <div class="import-file-card__icon" aria-hidden="true">' + ic("file-text") + "</div>" +
+      '  <div class="import-file-card__body">' +
+      '    <p class="import-file-card__label">Arquivo analisado</p>' +
+      '    <p class="import-file-card__name import-file-info__name">' + esc(report.fileName || "") + "</p>" +
+      (fileMeta ? '    <p class="import-file-card__meta">' + fileMeta + "</p>" : "") +
+      "  </div></div>";
 
     /* tab nav */
     var obsCountsInit = countActiveObservations(report);
@@ -2690,14 +2743,16 @@ window.CFM = window.CFM || {};
   function render(container) {
     container.innerHTML =
       '<div class="page-view page--import">' +
-      '  <header class="page-header">' +
+      '  <header class="page-header page-header--import">' +
       '    <h2 class="page-header__title">Importar extrato</h2>' +
       '    <p class="page-header__desc">Envie seu arquivo JSON para validar lançamentos, cartões e faturas antes de confirmar a importação.</p>' +
       "  </header>" +
-      '  <div class="notice notice--warning" role="note">' +
-      '    <span aria-hidden="true">' + ic("warning", "cfm-icon--warning") + '</span>' +
-      '    <span>Validação local — nada é gravado nesta fase.</span>' +
-      "  </div>" +
+      '  <div class="import-local-notice" role="note">' +
+      '    <span class="import-local-notice__icon" aria-hidden="true">' + ic("shield-check", "cfm-icon--info") + "</span>" +
+      '    <div class="import-local-notice__text">' +
+      '      <strong>Validação local</strong>' +
+      "      <span>Nada é gravado nesta fase — explore o relatório com tranquilidade.</span>" +
+      "    </div></div>" +
       '  <div id="import-content">' + buildUploadZone() + "</div>" +
       '  <div id="import-actions-wrap"></div>' +
       buildIdleTechnicalDetails() +

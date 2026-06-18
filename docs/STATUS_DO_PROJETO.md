@@ -2,7 +2,7 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 17 de junho de 2026  
-**Fase atual:** Fase 0.3.18 — Modais internos do projeto (validação visual final da Fase 0.3)
+**Fase atual:** Fase 0.3.20 — Formatação monetária e datas (validação visual final da Fase 0.3)
 
 ---
 
@@ -1200,3 +1200,50 @@ Nenhum popup nativo do navegador em código de produção. Toda confirmação us
 ### Testes
 
 `node scripts/test-phase-0.3.18.js` (varredura anti-native + regressão)
+
+---
+
+## Fase 0.3.19 — Polimento visual final do importador
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada — aguardando validação visual final
+
+**Objetivo:** Elevar acabamento visual do importador para sensação de produto financeiro premium, **sem alterar lógica, schema JSON, contadores ou comportamento funcional**.
+
+### Escopo
+
+| Área | Refino |
+|------|--------|
+| Tokens CSS | Aliases semânticos (`--surface-raised`, `--accent`, `--focus-ring`, etc.) |
+| Layout | Container, header, aviso local, card do arquivo |
+| Tabs | Estado ativo, badges, hover/focus |
+| Resumo / cartões / faturas | Hierarquia, sombras leves, barras de utilização |
+| Lançamentos / comparação | Cards, destaque intencional |
+| Observações / parcelas | Checklist inteligente, painel de controle |
+| Recorrências | Ativas vs candidatas visualmente distintas |
+| Modais | Espaçamento, overlay, animações discretas |
+| Acessibilidade | `focus-visible`, `prefers-reduced-motion` |
+
+### Testes
+
+`node scripts/test-phase-0.3.18.js` + suite 0.3.17 → 0.3.14 + porto/nubank/recurring/036d–f (regressão funcional inalterada)
+
+---
+
+## Fase 0.3.20 — Formatação monetária e datas
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada
+
+**Objetivo:** Garantir moeda sempre com 2 casas decimais e datas em PT-BR na UI do importador, **sem alterar cálculos, schema ou lógica**.
+
+### Helpers centralizados (`src/utils/formatters.js`)
+
+| Helper | Função |
+|--------|--------|
+| `formatCurrencyBRL` | `Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })` — sempre 2 casas |
+| `formatDateBR` | `Intl.DateTimeFormat('pt-BR')` — `dd/mm/aaaa` |
+| `formatCompetenceBR` | `YYYY-MM` → `Junho/2026` |
+| `formatDisplayDate` | Data ou competência conforme contexto |
+
+### Testes
+
+`node scripts/test-phase-0.3.20.js` + regressão completa 0.3.x

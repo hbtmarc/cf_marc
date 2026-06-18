@@ -981,4 +981,61 @@ Lista de verificação manual por fase.
 
 ---
 
+## Fase 0.3.19 — Polimento visual final do importador
+
+### Badge
+- [ ] `Fase 0.3.19 · Polimento visual final`
+
+### Escopo (somente visual)
+- [ ] Nenhuma alteração de schema JSON, parser ou regras financeiras
+- [ ] Contadores e comportamentos funcionais preservados
+- [ ] Nenhum popup nativo (`alert`/`confirm`/`prompt`)
+
+### Layout geral
+- [ ] Aviso local elegante (não alarmante)
+- [ ] Card do arquivo com aparência de produto
+- [ ] Container do relatório com profundidade refinada
+- [ ] Sem scroll horizontal; valores financeiros legíveis
+
+### Abas e painéis
+- [ ] Tabs com estado ativo premium e badges integrados
+- [ ] Resumo: métricas com hierarquia clara
+- [ ] Cartões: barras de utilização e snapshot elegantes
+- [ ] Faturas: status aberta/quitada claros; total em destaque
+- [ ] Lançamentos: linhas legíveis; comparação intencional
+- [ ] Observações: checklist inteligente; parcelas como painel de controle
+- [ ] Recorrências: ativas vs candidatas distintas
+- [ ] Segurança: checklist de privacidade
+- [ ] Modal interno polido; ESC/foco/backdrop OK
+
+### Microinterações
+- [ ] Hover/focus discretos em cards e botões
+- [ ] `prefers-reduced-motion` respeitado
+
+### Regressão
+- [ ] Suite completa de testes automatizados → ALL PASS
+
+---
+
+## Fase 0.3.20 — Formatação monetária e datas
+
+### Badge
+- [ ] `Fase 0.3.20 · Formatação monetária e datas`
+
+### Moeda
+- [ ] Nenhum valor com uma casa decimal (ex.: R$ 70,6)
+- [ ] Sempre duas casas (ex.: R$ 70,60 · R$ 1.676,50)
+- [ ] Labels como *Valor a confirmar* preservados
+
+### Datas
+- [ ] Lançamentos em `dd/mm/aaaa` (não ISO `2026-01-15`)
+- [ ] Competências de fatura em `Junho/2026`
+- [ ] Período do arquivo formatado em PT-BR
+
+### Regressão
+- [ ] `node scripts/test-phase-0.3.20.js` → ALL PASS
+- [ ] Suite 0.3.19 + anteriores → ALL PASS
+
+---
+
 Atualizar tabela de critérios em `STATUS_DO_PROJETO.md` ao concluir cada fase.

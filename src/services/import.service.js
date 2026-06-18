@@ -672,10 +672,10 @@ window.CFM = window.CFM || {};
 
     if (val.normalizeImportPayload) payload = val.normalizeImportPayload(payload);
 
-    var fcents = fmt.formatCurrencyFromCents || function (c) { return String(c) + " cts"; };
+    var fcents = fmt.formatCurrencyBRL || fmt.formatCurrencyFromCents || function (c) { return String(c) + " cts"; };
     var fsize  = fmt.formatFileSize          || function (b) { return b + " B"; };
-    var fdate  = fmt.formatDate              || function (d) { return d; };
-    var fmonth = fmt.formatMonth             || function (m) { return m; };
+    var fdate  = fmt.formatDateBR || fmt.formatDate || function (d) { return d; };
+    var fmonth = fmt.formatCompetenceBR || fmt.formatMonth || function (m) { return m; };
 
     /* ── Arrays base ── */
     var transactions     = Array.isArray(payload.transactions)     ? payload.transactions     : [];
