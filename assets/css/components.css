@@ -711,6 +711,80 @@ label.btn {
   flex: 1 1 200px;
 }
 
+/* ── Modal de confirmação interno (app-confirm) ── */
+.app-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(2px);
+}
+.app-confirm {
+  width: min(100%, 420px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
+  padding: 1.25rem 1.375rem 1.125rem;
+  outline: none;
+}
+.app-confirm--warning {
+  border-color: var(--color-warning-border);
+  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18), inset 0 0 0 1px rgba(180, 83, 9, 0.08);
+}
+.app-confirm--danger {
+  border-color: rgba(220, 38, 38, 0.35);
+}
+.app-confirm__title {
+  margin: 0 0 0.625rem;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+.app-confirm__message,
+.app-confirm__details {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+.app-confirm__details {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+}
+.app-confirm__body {
+  margin-bottom: 1.125rem;
+}
+.app-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+.app-confirm__actions .btn {
+  min-height: 2.5rem;
+  min-width: 5.5rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+.app-confirm__confirm:focus-visible,
+.app-confirm__cancel:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.app-confirm--warning .app-confirm__confirm {
+  background: var(--color-warning);
+  border-color: var(--color-warning);
+}
+.app-confirm--warning .app-confirm__confirm:hover {
+  filter: brightness(0.95);
+}
+
 /* ── Responsividade das transações (legado — ver pages.css 0.3.7) ── */
 @media (max-width: 600px) {
   .stat-grid:not(.stat-grid--primary):not(.stat-grid--secondary) {

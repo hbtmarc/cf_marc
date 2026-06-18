@@ -492,6 +492,18 @@ window.CFM = window.CFM || {};
     return Object.keys(map).map(function (k) { return map[k]; });
   }
 
+  function filterRepeatedPurchaseInstallments(pairs, transactions, installmentPlans) {
+    if (!pairs || !pairs.length) return [];
+    var sem = CFM.importSemantics || {};
+    return pairs.filter(function (pair) {
+      if (sem.shouldSuppressRepeatedPurchasePair &&
+          sem.shouldSuppressRepeatedPurchasePair(pair, transactions, installmentPlans)) {
+        return false;
+      }
+      return true;
+    });
+  }
+
   function filterFinancingSimilarities(pairs, transactions, installmentPlans, ruleApplications, val) {
     if (!pairs || !pairs.length) return [];
     var planByRef = {};
@@ -859,7 +871,11 @@ window.CFM = window.CFM || {};
     var categoryReviewHintsFmt = formatSimilarityPairs(categoryReviewHints, fcents);
     var recurringCandidates = formatSimilarityPairs(similarityReport.recurringCandidates, fcents);
     var repeatedPurchases   = formatSimilarityPairs(
-      filterFinancingSimilarities(similarityReport.repeatedPurchases, transactions, installmentPlans, ruleApplications, val),
+      filterRepeatedPurchaseInstallments(
+        filterFinancingSimilarities(similarityReport.repeatedPurchases, transactions, installmentPlans, ruleApplications, val),
+        transactions,
+        installmentPlans
+      ),
       fcents);
     var similarTransfers    = formatSimilarityPairs(similarityReport.similarTransfers, fcents);
 
@@ -963,16 +979,41 @@ window.CFM = window.CFM || {};
         : null;
       var hasOriginalReview = !!(tx.review && tx.review.required);
       var needsEffectiveReview = !!effectiveReviewTxSet[i];
+      var invoiceRef = tx.invoiceId || tx.invoiceExternalRef || "";
+      var invoiceLabel = "";
+      if (invoiceRef && CFM.importSemantics && CFM.importSemantics.getInvoiceHumanLabel) {
+        invoiceLabel = CFM.importSemantics.getInvoiceHumanLabel(invoiceRef, invoiceMap);
+      }
+      var stableRef = CFM.importSemantics && CFM.importSemantics.getTransactionStableRef
+        ? CFM.importSemantics.getTransactionStableRef(tx, i)
+        : String(tx.id || tx.externalRef || ("idx:" + i));
+      var semTx = CFM.importSemantics || {};
+      var instCur = semTx.txInstallmentCurrent ? semTx.txInstallmentCurrent(tx) : null;
+      var instTot = semTx.txInstallmentTotal ? semTx.txInstallmentTotal(tx) : null;
+      var instLabel = semTx.getTransactionInstallmentLabel
+        ? semTx.getTransactionInstallmentLabel(tx) : "";
+      var typeLabel = semTx.getTransactionTypeLabel
+        ? semTx.getTransactionTypeLabel(tx.type, tx) : (tx.type || "");
       return {
         index:            i,
+        id:               tx.id || "",
+        externalRef:      tx.externalRef || tx.transactionExternalRef || "",
+        stableRef:        stableRef,
+        displayIndex:     i,
         description:      String(tx.description || "—").substring(0, 100),
         amountFmt:        fcents(tx.amountCents || 0),
         amountCents:      tx.amountCents || 0,
         flow:             tx.flow  || "",
         type:             tx.type  || "",
+        typeLabel:        typeLabel,
         subtype:          tx.subtype || (val.classifyInstallmentKind ? val.classifyInstallmentKind(tx) : ""),
-        date:             tx.date  || "",
+        date:             tx.date || tx.transactionDate || "",
+        dateFmt:          fdate(tx.date || tx.transactionDate || ""),
         competenceMonth:  tx.competenceMonth || "",
+        competenceFmt:    fmonth(tx.competenceMonth || ""),
+        installmentCurrent: instCur,
+        installmentTotal:   instTot,
+        installmentLabel:   instLabel,
         accountId:        tx.accountId  || "",
         accountName:      account.name  || tx.accountId  || "",
         cardId:           resolvedCardId || rawCardRef || "",
@@ -981,7 +1022,8 @@ window.CFM = window.CFM || {};
         cardLastFour:     css.formatLastFourDisplay
           ? (css.formatLastFourDisplay(card.lastFour || card.last4) || "")
           : (card.lastFour || ""),
-        invoiceId:        tx.invoiceId || tx.invoiceExternalRef || "",
+        invoiceId:        invoiceRef,
+        invoiceLabel:     invoiceLabel,
         installmentPlanId:tx.installmentPlanId || tx.installmentPlanExternalRef || "",
         category:         tx.category   || "",
         suggestedCategory: ruleApp ? ruleApp.suggestedCategory : "",
@@ -1162,10 +1204,22 @@ window.CFM = window.CFM || {};
         enrichedInv.amountDueFmt = enrichedInv.invoiceDisplay.amountDueFmt;
       }
 
+      if (CFM.importSemantics && CFM.importSemantics.getInvoicePrimaryDisplay) {
+        var primaryDisplay = CFM.importSemantics.getInvoicePrimaryDisplay(
+          enrichedInv, recon, transactions, fcents
+        );
+        enrichedInv.invoicePrimary = primaryDisplay;
+        enrichedInv.primaryAmountFmt = primaryDisplay.primaryFmt;
+        enrichedInv.primaryAmountLabel = primaryDisplay.primaryLabel;
+        enrichedInv.primarySecondaryLines = primaryDisplay.secondaryLines || [];
+        enrichedInv.primaryStatusHint = primaryDisplay.statusHint || "";
+      }
+
       return enrichedInv;
     }).filter(Boolean);
 
     /* ── allInstallmentPlans ── */
+    var semPlans = CFM.importSemantics || {};
     var allInstallmentPlans = installmentPlans.map(function (plan) {
       if (!plan) return null;
       var rawCardRef = plan.cardId || plan.cardExternalRef || "";
@@ -1177,8 +1231,24 @@ window.CFM = window.CFM || {};
                       kind === "financing" ? "Financiamento" : "Parcelamento";
       var cur = plan.currentInstallment || 0;
       var tot = plan.totalInstallments || 0;
+      var planStableRef = plan.externalRef || plan.id || "";
+      var groupKey = planStableRef
+        ? ("plan:" + planStableRef)
+        : (semPlans.buildInstallmentGroupKeyFromTx
+          ? semPlans.buildInstallmentGroupKeyFromTx({
+            cardId: resolvedCardId || rawCardRef,
+            cardExternalRef: plan.cardExternalRef || "",
+            description: plan.description,
+            installmentGroupKey: plan.installmentGroupKey || "",
+            planExternalRef: plan.planExternalRef || "",
+            amountCents: plan.installmentAmountCents || 0
+          }, installmentPlans)
+          : "");
       return {
         id:               plan.id  || "",
+        externalRef:      plan.externalRef || "",
+        planStableRef:    planStableRef,
+        groupKey:         groupKey,
         kind:             kind,
         kindLabel:        kindLabel,
         description:      String(plan.description || "").substring(0, 80),
@@ -1225,13 +1295,17 @@ window.CFM = window.CFM || {};
     var allRecurringRules = recognizedRecurrences.map(function (rule) {
       if (!rule) return null;
       var semRule = CFM.importSemantics || {};
+      var amountInfo = semRule.getRecurringDisplayAmount
+        ? semRule.getRecurringDisplayAmount(rule, transactions)
+        : { hasValue: !!(rule.amountCents || rule.expectedAmountCents), amountCents: rule.amountCents || rule.expectedAmountCents || 0, label: "Valor a confirmar" };
       var mapped = {
         id:           rule.id  || "",
         externalRef:  rule.externalRef || rule.id || "",
         description:  String(rule.description || "").substring(0, 80),
-        amountFmt:    rule.expectedAmountCents ? fcents(rule.expectedAmountCents) :
-                      (rule.amountCents ? fcents(rule.amountCents) : "—"),
-        expectedAmountCents: rule.expectedAmountCents || rule.amountCents || 0,
+        amountFmt:    amountInfo.hasValue ? fcents(amountInfo.amountCents) : (amountInfo.label || "Valor a confirmar"),
+        hasRecurringAmount: amountInfo.hasValue,
+        recurringAmountLabel: amountInfo.hasValue ? fcents(amountInfo.amountCents) : (amountInfo.label || "Valor a confirmar"),
+        expectedAmountCents: amountInfo.hasValue ? amountInfo.amountCents : (rule.expectedAmountCents || rule.amountCents || 0),
         type:         rule.type || "",
         flow:         rule.flow      || "",
         frequency:    rule.frequency || "",
@@ -1254,7 +1328,9 @@ window.CFM = window.CFM || {};
         recurrenceKind: rule.recurrenceKind ||
           (rule.status === "candidate" ? "candidate" :
             (rule.source === "engine_suggested" ? "candidate" : "imported")),
-        confidence:   rule.confidence  || ""
+        confidence:   rule.confidence  || "",
+        confidenceHuman: semRule.getRecurringConfidenceLabel
+          ? semRule.getRecurringConfidenceLabel(rule) : ""
       };
       mapped.isActive = semRule.isRecurringRuleActive
         ? semRule.isRecurringRuleActive(mapped)
@@ -1348,6 +1424,10 @@ window.CFM = window.CFM || {};
     var invoiceGroups = css.groupInvoices
       ? css.groupInvoices(allInvoices) : { consolidated: allInvoices, open: [], paid: [], reference: [] };
 
+    var visibleInvoicesCount = allInvoices.filter(function (inv) {
+      return inv && !inv.isReference && !inv.isStub && !inv.referenceOnly;
+    }).length;
+
     /* ── allCards (legado — espelha summaries) ── */
     var allCards = cardSummaries.map(function (card) {
       return {
@@ -1381,7 +1461,8 @@ window.CFM = window.CFM || {};
       counters: {
         accounts:          accounts.length,
         cards:             cards.length,
-        invoices:          invoices.length,
+        invoices:          visibleInvoicesCount,
+        invoicesTotal:       invoices.length,
         transactions:      transactions.length,
         installmentPlans:  installmentPlans.length,
         recurringRules:    recurringRules.length,

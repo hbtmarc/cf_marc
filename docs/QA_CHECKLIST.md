@@ -738,4 +738,247 @@ Lista de verificação manual por fase.
 
 ---
 
+## Fase 0.3.12 — Fechamento do importador consolidado (`#/importar`)
+
+**Fixture consolidado (manual, local):** `cfm_20260617_1949.json`  
+**Testes automatizados:** ver seção abaixo
+
+### Badge
+- [ ] `Fase 0.3.12 · Fechamento do importador`
+
+### Resumo consolidado
+- [ ] Arquivo validado · **0 pendências bloqueantes**
+- [ ] 4 cartões · 9 faturas · 245 lançamentos · 60 parcelas · recorrências conforme JSON
+- [ ] 27 informativos em Observações (sem bloqueantes nem atenções reais)
+
+### Observações
+- [ ] **0 bloqueantes · 0 atenções**
+- [ ] Apenas informativos legítimos
+- [ ] Apple/iCloud, Google/Gmail via Apple e Clube iFood **não** aparecem como recorrência candidata
+
+### Recorrências — badge ATIVA padronizado
+- [ ] Recorrências confirmadas (Apple/iCloud, Google/Gmail via Apple, Clube iFood): pill verde **ATIVA** (mesmo padrão de `IMPORTADA DO JSON`, altura/padding/radius/peso)
+- [ ] Origem **IMPORTADA DO JSON** em pill amarela/warning chip
+- [ ] Candidatas legítimas: **CANDIDATA** + **ATENÇÃO** + “Não bloqueia a importação”
+- [ ] Header da linha quebra em mobile/tablet sem scroll horizontal
+
+### Abas sem regressão
+- [ ] Cartões · Faturas · Lançamentos · Parcelas — contadores e semântica intactos
+- [ ] Console limpo · sem dependências novas · GitHub Pages + local
+
+### Testes automatizados (obrigatório antes de release)
+- [ ] `node scripts/test-phase-porto-v1-1.js` → ALL PASS
+- [ ] `node scripts/test-phase-nubank-v2.js` → ALL PASS
+- [ ] `node scripts/test-phase-recurring-confirmed.js` → ALL PASS
+- [ ] `node scripts/test-phase-036d.js` → ALL PASS
+- [ ] `node scripts/test-phase-036e.js` → ALL PASS
+- [ ] `node scripts/test-phase-036f.js` → ALL PASS
+
+**Nota:** Não há suite Mercado Pago dedicada; validar MP apenas se fixture existir localmente.
+
+---
+
+## Fase 0.3.13 — Polimento UX do importador (`#/importar`)
+
+**Fixture consolidado (manual, local):** `cfm_20260617_1949.json`
+
+### Badge
+- [ ] `Fase 0.3.13 · Polimento do importador`
+
+### Ocultação de informações técnicas
+- [ ] Aba **Faturas**: somente faturas reais (abertas/pagas/consolidadas)
+- [ ] Nenhuma seção “Faturas de referência / STB” na UI principal
+- [ ] Nenhum card “Referência de vínculo” visível
+- [ ] Stub/referência listados em **Detalhes técnicos da validação**
+- [ ] Contador da aba Faturas = faturas exibidas (não inclui stubs)
+- [ ] **Recorrências**: sem badge `IMPORTADA DO JSON`
+- [ ] **Parcelas**: sem `Origem: Importado do JSON`
+- [ ] **Lançamentos**: fatura como `Junho/2026` (nunca `invoice_...`)
+
+### Observações — comparação clicável
+- [ ] Referências `#208` / `#215` são links clicáveis
+- [ ] Botão **Comparar lançamentos** abre aba Lançamentos
+- [ ] Filtro temporário mostra só transações relacionadas
+- [ ] Lançamentos destacados + scroll até o primeiro
+- [ ] Banner `Comparando N lançamentos…` + **Limpar filtro**
+- [ ] Ação usa identificador estável (não só índice visual)
+
+### Observações — conferido
+- [ ] **Marcar como conferido** remove item da lista principal
+- [ ] Badge/contador da aba Observações diminui
+- [ ] Nada gravado no JSON; estado em `sessionStorage` por arquivo (opcional)
+- [ ] Reimportar mesmo arquivo restaura conferidos da sessão
+
+### Microcopy e layout
+- [ ] Compras repetidas: título *Compra semelhante encontrada* + descrição de produto
+- [ ] Desktop/tablet/mobile sem scroll horizontal
+- [ ] Console limpo
+
+### Regressão automatizada
+- [ ] `node scripts/test-phase-porto-v1-1.js` → ALL PASS
+- [ ] `node scripts/test-phase-nubank-v2.js` → ALL PASS
+- [ ] `node scripts/test-phase-recurring-confirmed.js` → ALL PASS
+- [ ] `node scripts/test-phase-036d.js` → ALL PASS
+- [ ] `node scripts/test-phase-036e.js` → ALL PASS
+- [ ] `node scripts/test-phase-036f.js` → ALL PASS
+- [ ] `node scripts/test-phase-0.3.14.js` → ALL PASS
+
+---
+
+## Fase 0.3.14 — Decisão e valores do importador (`#/importar`)
+
+**Fixture:** `cfm_20260617_1949.json` (manual, local)
+
+### Badge
+- [ ] `Fase 0.3.14 · Decisão e valores do importador`
+
+### Faturas pagas — valor principal
+- [ ] Faturas pagas com movimento **não** exibem `R$ 0,00` como valor principal
+- [ ] Label **Total da fatura** + hint **Fatura quitada**
+- [ ] Linhas secundárias: Compras/encargos, Pagamentos/créditos, Saldo final
+- [ ] Faturas abertas inalteradas
+
+### Comparação inteligente (Observações → Lançamentos)
+- [ ] Painel: título, subtítulo, 5 botões de decisão
+- [ ] Cards com data, fatura humana, cartão, valor, tipo, categoria, parcela
+- [ ] **São compras diferentes** → remove observação (conferido)
+- [ ] **É duplicata** → escolher manter/ignorar (estado local)
+- [ ] **São parcelas relacionadas** → remove observação + atalho Parcelas
+- [ ] **Limpar comparação** → lista completa
+
+### Parcelas vs compras repetidas
+- [ ] Parcelas 1/2 + 2/2 **não** em Compras repetidas
+- [ ] Compras semelhantes legítimas continuam em Observações
+
+### Recorrências com valor
+- [ ] Nenhuma recorrência derivável com `— Mensal`
+- [ ] Formato `R$ X · Mensal` ou `Valor a confirmar · Mensal`
+- [ ] Sem `Confiança: 100` na UI principal
+
+### Regressão
+- [ ] Suite 0.3.11–0.3.13 + `test-phase-0.3.14.js` → ALL PASS
+- [ ] Console limpo · responsivo · sem scroll horizontal
+
+---
+
+## Fase 0.3.15 — Ações contextuais do importador (`#/importar`)
+
+**Fixture:** `cfm_20260617_1949.json` (manual, local)
+
+### Badge
+- [ ] `Fase 0.3.15 · Ações contextuais do importador`
+
+### Compras semelhantes (`repeated_purchase`)
+- [ ] Observações: **Comparar compras** + **Marcar como conferido**
+- [ ] Painel Lançamentos: título **Comparando compras semelhantes**
+- [ ] Botões: **São compras diferentes**, **É duplicata**, **Revisar depois**, **Limpar comparação**
+- [ ] **Não** aparece **São parcelas relacionadas** nem **Ver grupo de parcelas**
+
+### Parcelas relacionadas (`installment_related`)
+- [ ] Observações: **Ver grupo de parcelas** + **Marcar como conferido**
+- [ ] Microcopy: **Parcelas vinculadas a um plano consistente — não indicam erro.**
+- [ ] Aba Parcelas: banner **Filtrando grupo de parcelas relacionado** + **Limpar filtro**
+- [ ] Painel: **Parcelas corretas**, **Não é parcelamento**, **Revisar depois**, **Limpar filtro**
+- [ ] **Não** aparece **São compras diferentes** nem **É duplicata**
+
+### Filtro de grupo na aba Parcelas
+- [ ] Mostra todas as parcelas/planos do grupo (refs estáveis, não `#77`)
+- [ ] Contador **N parcela(s) no grupo**
+- [ ] Destaque visual do grupo
+
+### Estado local
+- [ ] **Marcar como conferido** / **Parcelas corretas** remove observação sem alterar JSON
+- [ ] **Não é parcelamento** troca contexto local para revisão de compra (se aplicável)
+
+### Regressão
+- [ ] `node scripts/test-phase-0.3.15.js` → ALL PASS
+- [ ] Suite 0.3.14 + porto + nubank + recurring + 036d/e/f → ALL PASS
+- [ ] Console limpo · responsivo · sem scroll horizontal
+
+---
+
+## Fase 0.3.16 — Controle de parcelas relacionadas (`#/importar`)
+
+**Fixture:** `cfm_20260617_1949.json` (manual, local)
+
+### Badge
+- [ ] `Fase 0.3.16 · Controle de parcelas relacionadas`
+
+### Seção global Observações
+- [ ] Subtítulo + botão **Ver todas as parcelas relacionadas** abaixo do título
+- [ ] Nunca mostra `0 parcela(s) no grupo` quando há observações
+
+### Por card
+- [ ] **Comparar este par** + **Marcar como conferido**
+- [ ] Sem **São compras diferentes** / **É duplicata**
+
+### Aba Parcelas (filtro global)
+- [ ] Painel **Controlando parcelas relacionadas**
+- [ ] Banner **Filtrando parcelas relacionadas das observações**
+- [ ] Contador **N ocorrência(s) nas observações** ou planos relacionados
+- [ ] Fallback **Grupo identificado nas observações** se planos não baterem
+- [ ] **Marcar todas como conferidas** remove observações (sessionStorage)
+
+### Aba Lançamentos (par)
+- [ ] **Comparar este par** mostra exatamente 2 transações
+- [ ] Painel **Conferindo par de parcelas** sem opções de compra/duplicata
+
+### Regressão
+- [ ] `node scripts/test-phase-0.3.16.js` → ALL PASS
+- [ ] Suite 0.3.15 + anteriores → ALL PASS
+
+---
+
+## Fase 0.3.17 — Conclusão individual de grupos de parcelas (`#/importar`)
+
+### Badge
+- [ ] `Fase 0.3.17 · Conclusão individual de parcelas`
+
+### Filtro global — ação por grupo
+- [ ] Cada grupo exibe **Marcar grupo como concluído**
+- [ ] Grupo com 2 transações: **Comparar este par**
+- [ ] Grupo com 3+ transações: **Ver lançamentos do grupo**
+- [ ] Concluir um grupo remove só aquele card
+- [ ] Contador de grupos/ocorrências diminui
+- [ ] Aba Observações reflete a conclusão (sessionStorage)
+- [ ] Feedback *Grupo marcado como concluído.*
+
+### Estado vazio e global
+- [ ] Concluir todos individualmente → estado *Todas as parcelas relacionadas foram conferidas*
+- [ ] **Marcar todas como conferidas** (topo) continua funcionando
+- [ ] **Limpar filtro** restaura aba Parcelas normal
+
+### Regressão
+- [ ] `node scripts/test-phase-0.3.17.js` → ALL PASS
+- [ ] Suite 0.3.16 + anteriores → ALL PASS
+
+---
+
+## Fase 0.3.18 — Modais internos do projeto
+
+### Badge
+- [ ] `Fase 0.3.18 · Modais internos do projeto`
+
+### Regra de produto
+- [ ] Nenhum `alert` / `confirm` / `prompt` nativo em produção
+- [ ] Decisões sempre via componente interno (`CFM.openAppConfirm`)
+
+### Modal de confirmação
+- [ ] `Marcar todas como conferidas` abre modal interno (não popup do navegador)
+- [ ] Título: *Marcar todas como conferidas?*
+- [ ] Botões: **Marcar todas** / **Cancelar**
+- [ ] Botões com visual consistente com o app
+- [ ] ESC e clique no overlay cancelam
+- [ ] Foco retorna ao botão que abriu o modal
+- [ ] Modal com foco acessível (trap + `focus-visible`)
+- [ ] `role="dialog"`, `aria-modal="true"`, foco preso no modal
+- [ ] Responsivo desktop/tablet/mobile, sem scroll horizontal
+- [ ] Cancelar mantém estado; confirmar executa a ação esperada
+
+### Regressão
+- [ ] `node scripts/test-phase-0.3.18.js` → ALL PASS
+- [ ] Suite 0.3.17 + anteriores → ALL PASS
+
+---
+
 Atualizar tabela de critérios em `STATUS_DO_PROJETO.md` ao concluir cada fase.

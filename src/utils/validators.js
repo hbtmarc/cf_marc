@@ -470,7 +470,39 @@ window.CFM = window.CFM || {};
         sameType && PURCHASE_TYPES.indexOf(typeA) >= 0 && sameAmount &&
         (descBaseA === descBaseB || descriptionsSimilar(descBaseA, descBaseB)) &&
         !(hashA && hashB && hashA === hashB)) {
+      if (instCurA != null && instCurB != null && instCurA !== instCurB &&
+          instTotA && instTotA === instTotB) {
+        return { classification: "installment_related", confidence: "high" };
+      }
+      if (planRefA && planRefB && planRefA === planRefB) {
+        return { classification: "installment_related", confidence: "high" };
+      }
       return { classification: "repeated_purchase", confidence: "low", informational: true };
+    }
+
+    /* Parcelas sequenciais em meses diferentes — mesmo cartão/valor/merchant */
+    if (monthA && monthB && monthA !== monthB && sameType &&
+        PURCHASE_TYPES.indexOf(typeA) >= 0 && nearAmount &&
+        (descBaseA === descBaseB || descriptionsSimilar(descBaseA, descBaseB))) {
+      var cardA = txA.cardId || txA.cardExternalRef || "";
+      var cardB = txB.cardId || txB.cardExternalRef || "";
+      if (planRefA && planRefB && planRefA === planRefB) {
+        return { classification: "installment_related", confidence: "high" };
+      }
+      if (instCurA != null && instCurB != null && instCurA !== instCurB &&
+          instTotA && instTotA === instTotB) {
+        return { classification: "installment_related", confidence: "high" };
+      }
+      if (cardA && cardA === cardB &&
+          (/parcela?\s*\d+\s*[/\\]\s*\d+/i.test(txA.description || "") ||
+           /parcela?\s*\d+\s*[/\\]\s*\d+/i.test(txB.description || ""))) {
+        return { classification: "installment_related", confidence: "high" };
+      }
+      var apart = monthsApart(monthA, monthB);
+      if (cardA && cardA === cardB && apart === 1 && sameAmount &&
+          descriptionsSimilar(descBaseA, descBaseB)) {
+        return { classification: "installment_related", confidence: "medium" };
+      }
     }
 
     /* Transferência semelhante */

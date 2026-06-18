@@ -1,8 +1,8 @@
 # Status do Projeto
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
-**Última atualização:** 16 de junho de 2026  
-**Fase atual:** Fase 0.3.11 — Semântica multi-cartões
+**Última atualização:** 17 de junho de 2026  
+**Fase atual:** Fase 0.3.18 — Modais internos do projeto (validação visual final da Fase 0.3)
 
 ---
 
@@ -982,7 +982,221 @@ Fase fechada após correção da contagem real de bloqueantes, recorrências can
 
 **Teste:** `node scripts/test-phase-porto-v1-1.js` · JSON manual: `cfm_import_v1_porto_pdf_prints_v1_1.json` (local)
 
-### Próximos passos
+---
 
-1. Validar manualmente `cfm_import_v1_porto_pdf_prints_v1_1.json`.
-2. **Bloqueio explícito:** Firebase Auth + RTDB só após contrato PASS no arquivo de produção.
+## Fase 0.3.12 — Fechamento do importador consolidado
+
+**Data:** 17/06/2026 | **Estado:** ✅ Concluída — **Fase 0.3 encerrada**
+
+**Objetivo:** Fechamento técnico/cosmético do importador consolidado, sem alterar contrato JSON, schema, gerador ou lógica validada de faturas/cartões/recorrências.
+
+### Correção principal
+
+| Área | Detalhe |
+|------|---------|
+| Badge recorrência ativa | `getRecurringRuleBadges` + renderização com classe base `status-chip` → pill verde **ATIVA** alinhada a `IMPORTADA DO JSON`, `CANDIDATA`, `ATENÇÃO`, `SAÍDA` |
+| Badge candidata/atencão | Classe base `confidence-badge` restaurada no helper `recurringBadgeHtml` |
+| Layout Recorrências | `flex-wrap` no header da linha para mobile/tablet sem scroll horizontal |
+
+### Arquivos alterados
+
+| Arquivo | Papel |
+|---------|-------|
+| `src/pages/importer.page.js` | Helper `recurringBadgeHtml`; aba Recorrências |
+| `assets/css/pages.css` | Header recorrência responsivo |
+| `index.html` | Badge `Fase 0.3.12 · Fechamento do importador` |
+
+### Validação consolidada (`cfm_20260617_1949.json` — manual, local)
+
+| Critério | Resultado esperado |
+|----------|-------------------|
+| Pendências bloqueantes | 0 |
+| Atenções em Observações | 0 |
+| Informativos | 27 |
+| Cartões | 4 |
+| Faturas | 9 |
+| Lançamentos | 245 |
+| Parcelas | 60 |
+| Recorrências confirmadas | Apple/iCloud, Google/Gmail via Apple, Clube iFood — **ATIVA** + **IMPORTADA DO JSON**; não candidatas em Observações |
+
+### Critérios de aceite — Fase 0.3.12
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | Badge `Fase 0.3.12 · Fechamento do importador` | ✅ |
+| 2 | Recorrências ativas com pill **ATIVA** (verde, caixa alta) | ✅ |
+| 3 | Candidatas legítimas: **CANDIDATA** + **ATENÇÃO** + “Não bloqueia a importação” | ✅ |
+| 4 | Observações: 0 bloqueantes · 0 atenções · informativos legítimos | ✅ |
+| 5 | Regressão: Porto, Nubank, BB, recorrências confirmadas | ✅ |
+
+**Testes automatizados:** `test-phase-porto-v1-1.js`, `test-phase-nubank-v2.js`, `test-phase-recurring-confirmed.js`, `test-phase-036d/e/f.js`
+
+---
+
+## Fase 0.3.13 — Polimento UX do importador
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada — aguardando validação visual final
+
+**Objetivo:** Refinar a interface para usuário final: ocultar ruído técnico/backend, comparar lançamentos a partir de Observações e marcar observações como conferidas (estado local).
+
+### Correções
+
+| # | Correção | Detalhe |
+|---|----------|---------|
+| 1 | Faturas stub/referência | Removidas da aba Faturas; listadas em **Detalhes técnicos da validação**; contador da aba = faturas reais (`invoicesTotal` nos detalhes) |
+| 2 | Observações acionáveis | Links `#208`/`#215` clicáveis; **Comparar lançamentos** → aba Lançamentos com filtro + destaque + banner **Limpar filtro**; refs estáveis (`id`/`externalRef`/`idx:`) |
+| 3 | Conferido local | **Marcar como conferido** remove da lista principal; badge da aba atualiza; `sessionStorage` por nome do arquivo |
+| 4 | Ruído JSON | Removidos `IMPORTADA DO JSON`, `Origem: Importado do JSON` e IDs crus na UI principal; fatura em lançamentos → `Junho/2026` |
+| 5 | Microcopy | Títulos/descrições de produto (ex.: *Compra semelhante encontrada*) |
+
+### Arquivos alterados
+
+| Arquivo | Papel |
+|---------|-------|
+| `src/utils/import-semantics.js` | `getTransactionStableRef`, `enrichObservationTransactionRefs`, `getObservationUiCopy`, `getInvoiceHumanLabel` |
+| `src/services/import.service.js` | `stableRef`, `invoiceLabel`, contador `invoices` visível |
+| `src/pages/importer.page.js` | Compare/dismiss, faturas, observações, abas Recorrências/Parcelas |
+| `assets/css/pages.css` | Banner comparação, links, destaque, botões compactos |
+| `index.html` | Badge `Fase 0.3.13 · Polimento do importador` |
+
+### Critérios de aceite — Fase 0.3.13
+
+| # | Critério | Status |
+|---|----------|--------|
+| 1 | Aba Faturas sem stub/referência visível | ✅ |
+| 2 | Comparar lançamentos + limpar filtro | ✅ |
+| 3 | Marcar como conferido (local, não JSON) | ✅ |
+| 4 | UI principal sem “Importado do JSON” / IDs crus | ✅ |
+| 5 | Regressão automatizada | ✅ |
+
+### Encerramento da Fase 0.3
+
+Após validação manual com `cfm_20260617_1949.json`, a **Fase 0.3** do importador pode ser considerada **encerrada**. Nenhuma persistência real, Firebase ou conciliação cruzada foi iniciada.
+
+### Próxima fase recomendada
+
+**Fase 0.4 — Conciliação cruzada inteligente**
+
+---
+
+## Fase 0.3.14 — Decisão e valores do importador
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada — aguardando validação visual final
+
+**Objetivo:** Corrigir semântica visual de faturas pagas, comparação inteligente de observações, supressão de parcelas em compras repetidas e recorrências sem valor — sem alterar JSON/schema/gerador.
+
+### Correções
+
+| # | Correção | Detalhe |
+|---|----------|---------|
+| 1 | Faturas pagas | `getInvoicePrimaryDisplay`: total real como valor principal; `R$ 0,00` só como saldo final secundário |
+| 2 | Comparação inteligente | Painel com 5 decisões; cards enriquecidos (data, fatura, cartão, parcela, categoria); duplicata com manter/ignorar (estado local) |
+| 3 | Parcelas ≠ compra repetida | Heurística ampliada em `validators` + `shouldSuppressRepeatedPurchasePair` |
+| 4 | Recorrências com valor | `getRecurringDisplayAmount`; fallback `Valor a confirmar`; remove `Confiança: 100` da UI |
+
+### Testes
+
+`node scripts/test-phase-0.3.14.js` + regressão 0.3.11–0.3.13
+
+### Encerramento Fase 0.3
+
+Após validação manual com `cfm_20260617_1949.json`, a Fase 0.3 pode ser encerrada. Próxima: **Fase 0.4 — Conciliação cruzada inteligente** (sem iniciar nesta etapa).
+
+---
+
+## Fase 0.3.15 — Ações contextuais do importador
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada — aguardando validação visual final
+
+**Objetivo:** Separar ações do painel de comparação conforme o tipo real da observação (`contextKind`), com filtro de grupo de parcelas na aba Parcelas — sem alterar JSON/schema/gerador/conciliação cruzada.
+
+### Correções
+
+| # | Correção | Detalhe |
+|---|----------|---------|
+| 1 | `getObservationContextKind` | Campo semântico `contextKind` + aliases (`installment_match`, etc.) |
+| 2 | Compras semelhantes | Painel **Comparando compras semelhantes**; botões só de compra/duplicata |
+| 3 | Parcelas relacionadas | Painel **Conferindo parcelas relacionadas** na aba Parcelas |
+| 4 | Filtro de grupo | `installmentCompareFilter` com refs estáveis (`plan:`, `externalRef`, chave derivada) |
+| 5 | Microcopy Observações | Botões **Comparar compras** vs **Ver grupo de parcelas** por contexto |
+
+### Testes
+
+`node scripts/test-phase-0.3.15.js` + regressão 0.3.14 e fases anteriores
+
+### Encerramento Fase 0.3
+
+Após validação manual com `cfm_20260617_1949.json`, a Fase 0.3 pode ser encerrada. Próxima: **Fase 0.4 — Conciliação cruzada inteligente**.
+
+---
+
+## Fase 0.3.16 — Controle de parcelas relacionadas
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada — aguardando validação visual final
+
+**Objetivo:** Corrigir filtro zero na aba Parcelas e separar controle global (todas as observações) vs controle por par (duas transações) — sem alterar JSON/schema/gerador.
+
+### Causa raiz corrigida
+
+O filtro de grupo (`groupKey` / `planMatchesInstallmentGroupFilter`) só buscava planos consolidados; observações criadas por par de transações geravam `groupKey` tipo `txset:…` sem correspondência em `allInstallmentPlans` → **0 parcelas**.
+
+### Correções
+
+| # | Correção | Detalhe |
+|---|----------|---------|
+| 1 | Botão global | **Ver todas as parcelas relacionadas** na seção Observações |
+| 2 | Filtro global | `installmentObservationFilter` (`mode: all_related_observations`) |
+| 3 | Fallback | Lista derivada das observações quando planos não batem |
+| 4 | Por card | **Comparar este par** → Lançamentos com painel de par de parcelas |
+| 5 | Refs estáveis | `getStableTransactionRef` + `matchTransactionRef` unificados |
+
+### Testes
+
+`node scripts/test-phase-0.3.16.js` + regressão 0.3.15 e anteriores
+
+---
+
+## Fase 0.3.17 — Conclusão individual de grupos de parcelas
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada — aguardando validação visual final
+
+**Objetivo:** Permitir marcar cada grupo do filtro global como concluído individualmente, sem obrigar **Marcar todas como conferidas**.
+
+### Correções
+
+| # | Correção | Detalhe |
+|---|----------|---------|
+| 1 | Grupos unificados | `buildInstallmentDisplayGroups` (plano ou observação) |
+| 2 | Ação por grupo | **Marcar grupo como concluído** em cada card |
+| 3 | Persistência | `dismissedObservations[pairKey]` via `dismissInstallmentGroup` |
+| 4 | Contadores | Grupos/ocorrências pendentes atualizados ao concluir |
+| 5 | Estado vazio | Mensagem elegante quando todos os grupos foram concluídos |
+| 6 | Feedback | Banner discreto *Grupo marcado como concluído.* |
+
+### Testes
+
+`node scripts/test-phase-0.3.17.js` + regressão 0.3.16 e anteriores
+
+---
+
+## Fase 0.3.18 — Modais internos do projeto
+
+**Data:** 17/06/2026 | **Estado:** ✅ Implementada — aguardando validação visual final
+
+**Objetivo:** Eliminar `window.confirm`/`alert`/`prompt` nativos e padronizar decisões do usuário via modal interno acessível.
+
+### Regra permanente
+
+Nenhum popup nativo do navegador em código de produção. Toda confirmação usa `CFM.openAppConfirm`.
+
+### Implementação
+
+| Item | Detalhe |
+|------|---------|
+| Componente | `src/components/app-confirm.js` → `CFM.openAppConfirm(options)` |
+| Estilo | `assets/css/components.css` — overlay, card, tom `warning` |
+| Substituição | `Marcar todas como conferidas` no importador |
+
+### Testes
+
+`node scripts/test-phase-0.3.18.js` (varredura anti-native + regressão)

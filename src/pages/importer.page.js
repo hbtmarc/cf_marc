@@ -1,5 +1,5 @@
 /**
- * Página de importação — Fase 0.3.8
+ * Página de importação — Fase 0.3.18 (modais internos do projeto)
  * UX orientada ao usuário final; detalhes técnicos recolhidos.
  * Nada é gravado. Firebase será integrado na Fase 1.
  */
@@ -153,6 +153,35 @@ window.CFM = window.CFM || {};
     return '<span class="confidence-badge confidence-badge--' + esc(confidence || "none") + '">' + esc(label) + "</span>";
   }
 
+  function recurringBadgeHtml(badge) {
+    if (!badge || !badge.label) return "";
+    var cls = String(badge.cls || "").trim();
+    var isAttention = badge.kind === "attention" ||
+      cls.indexOf("confidence-badge") >= 0;
+    if (isAttention) {
+      if (cls.indexOf("confidence-badge ") === 0 || cls === "confidence-badge") {
+        /* full class */
+      } else if (cls.indexOf("confidence-badge--") === 0) {
+        cls = "confidence-badge " + cls;
+      } else if (!cls) {
+        cls = "confidence-badge confidence-badge--warning";
+      } else {
+        cls = "confidence-badge " + cls;
+      }
+      return ' <span class="' + esc(cls) + '">' + esc(badge.label) + "</span>";
+    }
+    if (cls.indexOf("status-chip ") === 0 || cls === "status-chip") {
+      /* full class */
+    } else if (cls.indexOf("status-chip--") === 0) {
+      cls = "status-chip " + cls;
+    } else if (!cls) {
+      cls = "status-chip status-chip--other";
+    } else {
+      cls = "status-chip " + cls;
+    }
+    return ' <span class="' + esc(cls) + '">' + esc(badge.label) + "</span>";
+  }
+
   function observationSeverityBadge(pair) {
     if (pair.informational || pair.severity === "info" || pair.tier === "informational") {
       return '<span class="confidence-badge confidence-badge--info">Informativo</span>';
@@ -193,31 +222,195 @@ window.CFM = window.CFM || {};
     });
   }
 
-  function similarityPairRow(pair, groupLabel) {
-    var title = pair.classificationLabel || groupLabel || "Observação";
-    if (pair.classification === "exact_duplicate") title = "Duplicata exata";
-    else if (pair.classification === "probable_duplicate") title = "Duplicata provável";
-    else if (pair.classification === "category_review") title = "Categoria a revisar";
-    else if (pair.classification === "installment_related" && pair.informational) {
-      title = "Parcelas relacionadas";
+  function getObservationPairKey(pair) {
+    if (!pair) return "";
+    if (pair.pairKey) return pair.pairKey;
+    return (pair.classification || "observation") + ":idx:" + pair.index1 + ":" + pair.index2;
+  }
+
+  function isObservationDismissed(pair) {
+    return !!dismissedObservations[getObservationPairKey(pair)];
+  }
+
+  function filterActiveObservations(list) {
+    return (list || []).filter(function (pair) { return !isObservationDismissed(pair); });
+  }
+
+  function countActiveObservations(report) {
+    var blocking = 0;
+    var attention = 0;
+    var informational = 0;
+    var keys = [
+      "exactDuplicates", "probableDuplicates", "installmentRelated", "similarTransfers",
+      "recurringCandidates", "repeatedPurchases", "informationalInstallments", "categoryReviewHints"
+    ];
+    keys.forEach(function (key) {
+      filterActiveObservations(report[key]).forEach(function (pair) {
+        if (pair.blocking || pair.tier === "blocking") blocking++;
+        else if (pair.attention || pair.tier === "attention") attention++;
+        else informational++;
+      });
+    });
+    return { blocking: blocking, attention: attention, informational: informational };
+  }
+
+  function getObservationCompareRefs(pair) {
+    var sem = CFM.importSemantics || {};
+    if (sem.getObservationTransactionRefs) {
+      var refs = sem.getObservationTransactionRefs(pair);
+      if (refs.length) return refs;
+    }
+    var refsFallback = [];
+    if (pair.transactionRef1) refsFallback.push(pair.transactionRef1);
+    if (pair.transactionRef2 && pair.transactionRef2 !== pair.transactionRef1) {
+      refsFallback.push(pair.transactionRef2);
+    }
+    return refsFallback;
+  }
+
+  function collectActiveInstallmentObservations(report) {
+    if (!report) return [];
+    var keys = ["installmentRelated", "informationalInstallments"];
+    var out = [];
+    keys.forEach(function (key) {
+      filterActiveObservations(report[key] || []).forEach(function (pair) {
+        if (getPairContextKind(pair) === "installment_related") out.push(pair);
+      });
+    });
+    return out;
+  }
+
+  function observationTxRefsHtml(pair) {
+    var refs = getObservationCompareRefs(pair);
+    if (!refs.length) return "";
+    var idx1 = pair.displayIndex1 != null ? pair.displayIndex1 : pair.index1;
+    var idx2 = pair.displayIndex2 != null ? pair.displayIndex2 : pair.index2;
+    var sameTx = refs.length === 1 || idx1 === idx2;
+    if (sameTx) {
+      return (
+        '<span class="similarity-item__refs">' +
+        'Transação <button type="button" class="obs-tx-link" data-tx-ref="' + esc(refs[0]) + '">#' +
+        esc(idx1) + "</button></span>"
+      );
     }
     return (
-      '<li class="similarity-item' + (pair.informational ? " similarity-item--info" : "") + '">' +
+      '<span class="similarity-item__refs">' +
+      'Transações <button type="button" class="obs-tx-link" data-tx-ref="' + esc(refs[0]) + '">#' +
+      esc(idx1) + '</button> e <button type="button" class="obs-tx-link" data-tx-ref="' +
+      esc(refs[1] || refs[0]) + '">#' + esc(idx2) + "</button></span>"
+    );
+  }
+
+  function getPairContextKind(pair) {
+    var sem = CFM.importSemantics || {};
+    var pairKey = getObservationPairKey(pair);
+    if (observationContextOverrides[pairKey]) return observationContextOverrides[pairKey];
+    return sem.getObservationContextKind ? sem.getObservationContextKind(pair) : "generic";
+  }
+
+  function findObservationPair(report, pairKey) {
+    if (!report || !pairKey) return null;
+    var keys = [
+      "repeatedPurchases", "probableDuplicates", "exactDuplicates",
+      "installmentRelated", "informationalInstallments", "similarTransfers",
+      "recurringCandidates", "categoryReviewHints"
+    ];
+    for (var k = 0; k < keys.length; k++) {
+      var list = report[keys[k]] || [];
+      for (var i = 0; i < list.length; i++) {
+        if (getObservationPairKey(list[i]) === pairKey) return list[i];
+      }
+    }
+    var sr = report.similarityReport;
+    if (sr) {
+      for (var j = 0; j < keys.length; j++) {
+        var srList = sr[keys[j]] || [];
+        for (var n = 0; n < srList.length; n++) {
+          if (getObservationPairKey(srList[n]) === pairKey) return srList[n];
+        }
+      }
+    }
+    return null;
+  }
+
+  function observationActionsHtml(pair) {
+    var ctx = getPairContextKind(pair);
+    var pairKey = getObservationPairKey(pair);
+    var dismissBtn =
+      ' <button type="button" class="btn btn--ghost btn--xs obs-dismiss-btn"' +
+      ' data-pair-key="' + esc(pairKey) + '"' +
+      ' aria-label="Marcar observação como conferida">Marcar como conferido</button>';
+
+    if (ctx === "installment_related") {
+      var refs = getObservationCompareRefs(pair);
+      var compareBtn = refs.length
+        ? ' <button type="button" class="btn btn--ghost btn--xs obs-compare-installment-pair"' +
+          ' data-pair-key="' + esc(pairKey) + '"' +
+          ' data-tx-refs="' + esc(refs.join(",")) + '"' +
+          ' aria-label="Comparar as duas transações deste par de parcelas">Comparar este par</button>'
+        : "";
+      return (
+        '<div class="similarity-item__actions">' +
+        compareBtn +
+        dismissBtn +
+        "</div>"
+      );
+    }
+
+    if (ctx === "repeated_purchase") {
+      var refs = getObservationCompareRefs(pair);
+      var compareBtn = refs.length
+        ? ' <button type="button" class="btn btn--ghost btn--xs obs-compare-purchase-btn"' +
+          ' data-pair-key="' + esc(pairKey) + '"' +
+          ' data-tx-refs="' + esc(refs.join(",")) + '"' +
+          ' aria-label="Comparar compras semelhantes lado a lado">Comparar compras</button>'
+        : "";
+      return '<div class="similarity-item__actions">' + compareBtn + dismissBtn + "</div>";
+    }
+
+    var refsGeneric = getObservationCompareRefs(pair);
+    var compareGeneric = refsGeneric.length
+      ? ' <button type="button" class="btn btn--ghost btn--xs obs-compare-btn"' +
+        ' data-pair-key="' + esc(pairKey) + '"' +
+        ' data-tx-refs="' + esc(refsGeneric.join(",")) + '">Comparar lançamentos</button>'
+      : "";
+    return '<div class="similarity-item__actions">' + compareGeneric + dismissBtn + "</div>";
+  }
+
+  function similarityPairRow(pair, groupLabel) {
+    var sem = CFM.importSemantics || {};
+    var ui = sem.getObservationUiCopy ? sem.getObservationUiCopy(pair) : {};
+    var title = ui.title || pair.classificationLabel || groupLabel || "Observação";
+    var impact = ui.impact || "";
+    var descLead = ui.cardDescription && getPairContextKind(pair) === "installment_related"
+      ? ui.cardDescription
+      : (ui.description || "");
+    var pairKey = getObservationPairKey(pair);
+
+    return (
+      '<li class="similarity-item' + (pair.informational ? " similarity-item--info" : "") +
+      '" data-pair-key="' + esc(pairKey) + '"' +
+      ' data-context-kind="' + esc(getPairContextKind(pair)) + '">' +
       '  <div class="similarity-item__header">' +
       '    <strong>' + esc(title) + "</strong> " +
       observationSeverityBadge(pair) +
       observationExtraBadges(pair) +
       "  </div>" +
+      (descLead ? '  <p class="similarity-item__impact">' + esc(descLead) + "</p>" : "") +
       '  <p class="similarity-item__desc">' +
       '"' + esc(pair.description1) + '" · ' + esc(pair.amountFmt || "") +
       (pair.date1 ? " · " + esc(pair.date1) : "") +
       "</p>" +
-      '  <p class="similarity-item__desc similarity-item__desc--secondary">' +
-      '"' + esc(pair.description2) + '"' +
-      (pair.date2 ? " · " + esc(pair.date2) : "") +
-      (pair.month2 && pair.month1 !== pair.month2 ? " · " + esc(pair.month2) : "") +
-      "</p>" +
-      '  <small class="similarity-item__refs">Transações #' + pair.index1 + " e #" + pair.index2 + "</small>" +
+      (pair.index1 !== pair.index2 || pair.description2 !== pair.description1
+        ? '  <p class="similarity-item__desc similarity-item__desc--secondary">' +
+          '"' + esc(pair.description2) + '"' +
+          (pair.date2 ? " · " + esc(pair.date2) : "") +
+          (pair.month2 && pair.month1 !== pair.month2 ? " · " + esc(pair.month2) : "") +
+          "</p>"
+        : "") +
+      observationTxRefsHtml(pair) +
+      (impact ? '  <p class="similarity-item__hint">' + esc(impact) + "</p>" : "") +
+      observationActionsHtml(pair) +
       "</li>"
     );
   }
@@ -305,6 +498,8 @@ window.CFM = window.CFM || {};
       { label: "Classif. por regra pessoal", value: c.personalRuleAppliedCount != null ? c.personalRuleAppliedCount : (c.ruleClassified || 0), mod: (c.personalRuleAppliedCount || c.ruleClassified || 0) > 0 ? "success" : "" },
       { label: "Rev. fatura (não stub)",    value: c.invoiceReviewCount || 0 },
       { label: "Stubs de fatura",           value: c.invoiceStubCount != null ? c.invoiceStubCount : (c.invoiceStubReviewCount || 0) },
+      { label: "Faturas (total JSON)",      value: c.invoicesTotal != null ? c.invoicesTotal : (c.invoices || 0) },
+      { label: "Refs. de fatura (stub)",    value: c.invoiceReferences || 0 },
       { label: "Hash inválido (rawHash)",   value: c.badRawHashCount != null ? c.badRawHashCount : 0, mod: (c.badRawHashCount || 0) > 0 ? "danger" : "success" },
       { label: "Financiamentos",            value: c.recognizedFinancing || 0 },
       { label: "Dup. exatas",               value: c.exactDuplicates || 0,   mod: (c.exactDuplicates || 0) > 0 ? "danger" : "" },
@@ -358,6 +553,22 @@ window.CFM = window.CFM || {};
         "  </p></section>";
     }
 
+    var invoiceRefHtml = "";
+    var refInvoices = report.invoiceGroups && report.invoiceGroups.reference;
+    if (refInvoices && refInvoices.length) {
+      invoiceRefHtml =
+        '<section class="tech-ref-panel">' +
+        '  <h4 class="report-section__title">Faturas de referência / stub (' + refInvoices.length + ")</h4>" +
+        '  <p class="report-empty" style="font-style:normal;margin:0.25rem 0 0.75rem">Vínculos internos — não exibidos na aba Faturas.</p>' +
+        '  <ul class="entity-list">' +
+        refInvoices.map(function (inv) {
+          return '<li class="entity-list__item"><code>' + esc(inv.externalRef || inv.id || "—") +
+            "</code> · " + esc(inv.cardName || "—") + " · " + esc(inv.competenceFmt || inv.competenceMonth || "") +
+            (inv.linkedTransactionCount ? " · " + inv.linkedTransactionCount + " tx" : "") + "</li>";
+        }).join("") +
+        "</ul></section>";
+    }
+
     return (
       '<details class="import-tech-details">' +
       '<summary class="import-tech-details__summary">Detalhes técnicos da validação</summary>' +
@@ -369,6 +580,7 @@ window.CFM = window.CFM || {};
       "</div>" +
       autoHtml +
       reimportHtml +
+      invoiceRefHtml +
       buildSchemaReferenceBlock() +
       buildPrivacyDeveloperNotes() +
       "</div></details>"
@@ -573,10 +785,27 @@ window.CFM = window.CFM || {};
         '<p class="invoice-amount invoice-amount--reference">Referência de vínculo</p>' +
         '<p class="invoice-stub-note">Referência criada para manter vínculo com transações. Não é uma fatura consolidada.</p>';
     } else {
-      var mainAmount = (inv.invoiceDisplay && inv.invoiceDisplay.amountDueFmt)
-        ? inv.invoiceDisplay.amountDueFmt
-        : (inv.amountDueFmt || inv.totalFmt);
-      amountHtml = '<p class="invoice-amount">' + esc(mainAmount) + "</p>";
+      var primary = inv.invoicePrimary || {};
+      var mainAmount = primary.primaryFmt ||
+        (inv.primaryAmountFmt) ||
+        (inv.invoiceDisplay && inv.invoiceDisplay.amountDueFmt) ||
+        (inv.amountDueFmt || inv.totalFmt);
+      var primaryLabel = primary.primaryLabel || inv.primaryAmountLabel || "Total da fatura";
+      amountHtml =
+        (primary.statusHint || inv.primaryStatusHint
+          ? '<p class="invoice-status-hint">' + esc(primary.statusHint || inv.primaryStatusHint) + "</p>"
+          : "") +
+        '<p class="invoice-amount"><span class="invoice-amount__label">' + esc(primaryLabel) +
+        "</span> " + esc(mainAmount) + "</p>";
+      var secondaryLines = primary.secondaryLines || inv.primarySecondaryLines || [];
+      if (secondaryLines.length) {
+        amountHtml += '<div class="invoice-secondary-amounts">' +
+          secondaryLines.map(function (line) {
+            return '<span class="invoice-secondary-amounts__item">' + esc(line.label) + ": <strong>" +
+              esc(line.fmt) + "</strong>" +
+              (line.note ? " — " + esc(line.note) : "") + "</span>";
+          }).join("") + "</div>";
+      }
     }
 
     var creditHtml = "";
@@ -726,19 +955,10 @@ window.CFM = window.CFM || {};
       return '<div class="invoice-grid">' + invoices.map(renderInvoiceCard).join("") + "</div>";
     }
 
-    var stubNotice = (groups.reference && groups.reference.length)
-      ? '<div class="notice notice--info" role="note" style="margin-bottom:1rem">' +
-        '  <span>' + ic("info", "cfm-icon--info") + '</span>' +
-        '  <span>Algumas entradas são referências de vínculo — não representam faturas consolidadas.</span>' +
-        "</div>"
-      : "";
-
     return (
-      stubNotice +
       buildInvoiceSection("Faturas consolidadas", groups.consolidated) +
       buildInvoiceSection("Faturas abertas", groups.open) +
-      buildInvoiceSection("Faturas pagas", groups.paid) +
-      buildInvoiceSection("Faturas de referência / stub", groups.reference)
+      buildInvoiceSection("Faturas pagas", groups.paid)
     );
   }
 
@@ -788,6 +1008,7 @@ window.CFM = window.CFM || {};
       : '<input type="checkbox" id="tx-filter-review" hidden />';
 
     return (
+      '<div id="tx-compare-panel" class="tx-compare-panel" hidden role="region" aria-label="Comparação de lançamentos"></div>' +
       '<div class="filter-bar">' +
       '  <select class="filter-bar__select" id="tx-filter-type"><option value="">Todos os tipos</option>'          + optRows(types) + '</select>' +
       '  <select class="filter-bar__select" id="tx-filter-flow"><option value="">Todas as direções</option>'       + optRows(flows) + '</select>' +
@@ -799,10 +1020,78 @@ window.CFM = window.CFM || {};
     );
   }
 
-  function renderTransactionRows(txList) {
+  function renderCompareTransactionCard(tx, report, compareHint, contextKind) {
+    if (!tx) return "";
+    var ignored = isTransactionIgnored(tx.stableRef);
+    var cls = "tx-compare-card" + (ignored ? " tx-compare-card--ignored" : "");
+    var invoiceText = tx.invoiceLabel
+      ? "Fatura " + tx.invoiceLabel
+      : "";
+    var via = tx.cardName || tx.accountName || "";
+    var sem = CFM.importSemantics || {};
+    var typeLabel = sem.getTransactionTypeLabel
+      ? sem.getTransactionTypeLabel(tx.type, tx)
+      : (tx.typeLabel || "");
+    var metaParts = [
+      tx.amountFmt,
+      tx.dateFmt || tx.date || tx.competenceMonth,
+      via,
+      invoiceText
+    ].filter(Boolean);
+    var catLine = tx.categoryLabel || tx.category || "";
+    var hint = compareHint || "";
+    if (contextKind === "installment_related") {
+      hint = "Confira se estas movimentações pertencem ao mesmo parcelamento.";
+    } else if (contextKind === "installment_group") {
+      hint = "Confira se estas movimentações pertencem ao mesmo parcelamento.";
+    } else if (contextKind === "repeated_purchase" && tx.amountFmt) {
+      hint = hint || "Mesmo valor — confira se foram compras distintas ou duplicata.";
+    }
+    return (
+      '<article class="' + cls + '" data-tx-ref="' + esc(tx.stableRef) + '">' +
+      '  <header class="tx-compare-card__header">' +
+      '    <strong class="tx-compare-card__desc">' + esc(tx.description) + "</strong>" +
+      (ignored ? ' <span class="status-chip status-chip--other">Ignorada na importação</span>' : "") +
+      "  </header>" +
+      '  <p class="tx-compare-card__meta">' + esc(metaParts.join(" · ")) + "</p>" +
+      (catLine ? '  <p class="tx-compare-card__cat">Categoria: ' + esc(catLine) + "</p>" : "") +
+      (typeLabel ? '  <p class="tx-compare-card__cat">Tipo: ' + esc(typeLabel) + "</p>" : "") +
+      (tx.installmentLabel
+        ? '  <p class="tx-compare-card__inst">' + esc(tx.installmentLabel) + "</p>"
+        : "") +
+      (tx.merchantDisplayName && tx.merchantDisplayName !== tx.description
+        ? '  <p class="tx-compare-card__norm">Nome normalizado: ' + esc(tx.merchantDisplayName) + "</p>"
+        : "") +
+      (hint ? '  <p class="tx-compare-card__hint">' + esc(hint) + "</p>" : "") +
+      "</article>"
+    );
+  }
+
+  function renderTransactionRows(txList, highlightRefs, compareMode, contextKind) {
     if (!txList || txList.length === 0) {
       return '<p class="report-empty">Nenhuma transação corresponde aos filtros.</p>';
     }
+    if (compareMode && compareMode.active) {
+      var sem = CFM.importSemantics || {};
+      var hint = "";
+      if (txList.length >= 2 && sem.getTransactionCompareHint) {
+        hint = sem.getTransactionCompareHint(txList[0], txList[1]);
+      }
+      return (
+        '<div class="tx-compare-cards">' +
+        txList.map(function (tx) {
+          return renderCompareTransactionCard(
+            tx,
+            currentReport,
+            hint,
+            compareMode.contextKind || compareMode.mode
+          );
+        }).join("") +
+        "</div>"
+      );
+    }
+    var highlightSet = {};
+    (highlightRefs || []).forEach(function (r) { highlightSet[r] = true; });
     var parts = [];
     txList.forEach(function (tx) {
       var cls = "tx-item";
@@ -810,8 +1099,12 @@ window.CFM = window.CFM || {};
       if (tx.needsEffectiveReview) cls += " tx-item--review";
       if (tx.isInvoiceInternalCredit) cls += " tx-item--invoice-credit";
       else if (tx.isInvoiceSettlement || tx.isCreditCardPayment) cls += " tx-item--settlement";
+      if (highlightSet[tx.stableRef]) cls += " tx-item--compare-highlight";
 
       var via = tx.cardName || tx.accountName || "";
+      var invoiceMeta = tx.invoiceLabel
+        ? '<span class="tx-item__invoice">Fatura: ' + esc(tx.invoiceLabel) + "</span>"
+        : "";
 
       parts.push(
         '<li class="' + cls + '">' +
@@ -829,7 +1122,7 @@ window.CFM = window.CFM || {};
         '  <div class="tx-item__meta">' +
         '    <span class="tx-item__date">' + esc(tx.date || tx.competenceMonth) + "</span>" +
         (via ? '<span class="tx-item__via">' + esc(via) + "</span>" : "") +
-        (tx.invoiceId ? '<span class="tx-item__invoice">Fatura: ' + esc(tx.invoiceId) + "</span>" : "") +
+        invoiceMeta +
         "  </div>" +
         "</li>"
       );
@@ -837,14 +1130,177 @@ window.CFM = window.CFM || {};
     return '<ul class="tx-list">' + parts.join("") + "</ul>";
   }
 
-  function wireTransactionFilters(panel, report) {
+  function wireTransactionFilters(panel, report, container) {
     var state = {
       type: "", flow: "", competenceMonth: "",
-      cardId: "", accountId: "", reviewOnly: false
+      cardId: "", accountId: "", reviewOnly: false,
+      compareRefs: txCompareFilter && txCompareFilter.refs ? txCompareFilter.refs.slice() : null,
+      comparePairKey: txCompareFilter && txCompareFilter.pairKey ? txCompareFilter.pairKey : null,
+      dupPickerOpen: false
     };
 
+    function clearCompare() {
+      state.compareRefs = null;
+      state.comparePairKey = null;
+      state.dupPickerOpen = false;
+      txCompareFilter = null;
+      renderComparePanel();
+      applyFilters();
+    }
+
+    function renderComparePanel() {
+      var comparePanel = panel.querySelector("#tx-compare-panel");
+      if (!comparePanel) return;
+      if (!state.compareRefs || !state.compareRefs.length) {
+        comparePanel.hidden = true;
+        comparePanel.innerHTML = "";
+        return;
+      }
+      var ctx = (txCompareFilter && txCompareFilter.contextKind) || "repeated_purchase";
+      var mode = (txCompareFilter && txCompareFilter.mode) || "";
+
+      if (ctx === "installment_related" || mode === "installment_pair" || mode === "installment_group") {
+        comparePanel.hidden = false;
+        var instPairKey = state.comparePairKey || (txCompareFilter && txCompareFilter.pairKey) || "";
+        var panelTitle = mode === "installment_group"
+          ? "Conferindo lançamentos do grupo"
+          : "Conferindo par de parcelas";
+        var panelSubtitle = mode === "installment_group"
+          ? "Confira data, fatura, cartão e parcela de cada lançamento antes de validar."
+          : "Compare data, fatura, cartão e parcela antes de validar.";
+        comparePanel.innerHTML =
+          '<div class="tx-compare-panel__head">' +
+          '  <div><h4 class="tx-compare-panel__title">' + esc(panelTitle) + "</h4>" +
+          '  <p class="tx-compare-panel__subtitle">' + esc(panelSubtitle) + "</p></div>" +
+          "</div>" +
+          '<div class="tx-compare-panel__actions">' +
+          '  <button type="button" class="btn btn--ghost btn--xs" id="tx-inst-correct"' +
+          ' aria-label="Confirmar que as parcelas estão corretas">Parcelas corretas</button>' +
+          '  <button type="button" class="btn btn--ghost btn--xs" id="tx-inst-not-group"' +
+          ' aria-label="Indicar que não é parcelamento">Não é parcelamento</button>' +
+          '  <button type="button" class="btn btn--ghost btn--xs" id="tx-inst-later"' +
+          ' aria-label="Revisar par de parcelas depois">Revisar depois</button>' +
+          '  <button type="button" class="btn btn--ghost btn--xs" id="tx-compare-clear"' +
+          ' aria-label="Limpar comparação de lançamentos">Limpar comparação</button>' +
+          "</div>";
+
+        var btnInstCorrect = comparePanel.querySelector("#tx-inst-correct");
+        var btnInstNotGroup = comparePanel.querySelector("#tx-inst-not-group");
+        var btnInstLater = comparePanel.querySelector("#tx-inst-later");
+        var btnInstClear = comparePanel.querySelector("#tx-compare-clear");
+
+        if (btnInstCorrect) btnInstCorrect.addEventListener("click", function () {
+          if (instPairKey) {
+            dismissedObservations[instPairKey] = true;
+            saveDismissedObservations(currentReport);
+          }
+          clearCompare();
+          if (container) refreshSimilaritiesTab(container);
+        });
+        if (btnInstNotGroup) btnInstNotGroup.addEventListener("click", function () {
+          if (instPairKey) observationContextOverrides[instPairKey] = "repeated_purchase";
+          clearCompare();
+          if (container) refreshSimilaritiesTab(container);
+        });
+        if (btnInstLater) btnInstLater.addEventListener("click", clearCompare);
+        if (btnInstClear) btnInstClear.addEventListener("click", clearCompare);
+        return;
+      }
+
+      if (ctx !== "repeated_purchase") {
+        comparePanel.hidden = true;
+        comparePanel.innerHTML = "";
+        return;
+      }
+      comparePanel.hidden = false;
+      var dupPickerHtml = "";
+      if (state.dupPickerOpen && state.compareRefs.length >= 2) {
+        dupPickerHtml =
+          '<div class="tx-compare-dup-picker" id="tx-compare-dup-picker">' +
+          '  <p class="tx-compare-dup-picker__title">Qual lançamento manter?</p>' +
+          '  <div class="tx-compare-dup-picker__actions">' +
+          state.compareRefs.map(function (ref) {
+            return '<button type="button" class="btn btn--ghost btn--xs tx-dup-keep-btn"' +
+              ' data-keep-ref="' + esc(ref) + '" aria-label="Manter este lançamento">Manter este</button>';
+          }).join("") +
+          state.compareRefs.map(function (ref) {
+            return '<button type="button" class="btn btn--ghost btn--xs tx-dup-ignore-btn"' +
+              ' data-ignore-ref="' + esc(ref) + '" aria-label="Ignorar este lançamento">Ignorar este</button>';
+          }).join("") +
+          "  </div></div>";
+      }
+      comparePanel.innerHTML =
+        '<div class="tx-compare-panel__head">' +
+        '  <div><h4 class="tx-compare-panel__title">Comparando compras semelhantes</h4>' +
+        '  <p class="tx-compare-panel__subtitle">Confira data, valor, cartão e fatura antes de decidir se são compras distintas ou duplicadas.</p></div>' +
+        "</div>" +
+        '<div class="tx-compare-panel__actions">' +
+        '  <button type="button" class="btn btn--ghost btn--xs" id="tx-decide-different"' +
+        ' aria-label="Marcar como compras diferentes">São compras diferentes</button>' +
+        '  <button type="button" class="btn btn--ghost btn--xs" id="tx-decide-duplicate"' +
+        ' aria-label="Marcar como duplicata">É duplicata</button>' +
+        '  <button type="button" class="btn btn--ghost btn--xs" id="tx-decide-later"' +
+        ' aria-label="Revisar observação depois">Revisar depois</button>' +
+        '  <button type="button" class="btn btn--ghost btn--xs" id="tx-compare-clear"' +
+        ' aria-label="Limpar comparação de lançamentos">Limpar comparação</button>' +
+        "</div>" +
+        dupPickerHtml;
+
+      var btnDifferent = comparePanel.querySelector("#tx-decide-different");
+      var btnDuplicate = comparePanel.querySelector("#tx-decide-duplicate");
+      var btnLater = comparePanel.querySelector("#tx-decide-later");
+      var btnClear = comparePanel.querySelector("#tx-compare-clear");
+
+      if (btnDifferent) btnDifferent.addEventListener("click", function () {
+        if (state.comparePairKey) {
+          dismissedObservations[state.comparePairKey] = true;
+          saveDismissedObservations(currentReport);
+        }
+        clearCompare();
+        if (container) refreshSimilaritiesTab(container);
+      });
+      if (btnDuplicate) btnDuplicate.addEventListener("click", function () {
+        state.dupPickerOpen = true;
+        renderComparePanel();
+      });
+      if (btnLater) btnLater.addEventListener("click", clearCompare);
+      if (btnClear) btnClear.addEventListener("click", clearCompare);
+
+      comparePanel.querySelectorAll(".tx-dup-keep-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var keepRef = btn.getAttribute("data-keep-ref");
+          state.compareRefs.forEach(function (ref) {
+            if (ref !== keepRef) markTransactionIgnored(ref);
+          });
+          if (state.comparePairKey) {
+            dismissedObservations[state.comparePairKey] = true;
+            saveDismissedObservations(currentReport);
+          }
+          clearCompare();
+          if (container) refreshSimilaritiesTab(container);
+        });
+      });
+      comparePanel.querySelectorAll(".tx-dup-ignore-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          markTransactionIgnored(btn.getAttribute("data-ignore-ref"));
+          applyFilters();
+        });
+      });
+    }
+
     function applyFilters() {
+      var sem = CFM.importSemantics || {};
+      function txInCompare(tx) {
+        if (!state.compareRefs || !state.compareRefs.length) return true;
+        for (var c = 0; c < state.compareRefs.length; c++) {
+          if (sem.matchTransactionRef && sem.matchTransactionRef(tx, state.compareRefs[c])) return true;
+          if (tx.stableRef === state.compareRefs[c]) return true;
+        }
+        return false;
+      }
+
       var filtered = report.allTransactions.filter(function (tx) {
+        if (state.compareRefs && state.compareRefs.length && !txInCompare(tx)) return false;
         if (state.type            && tx.type            !== state.type)            return false;
         if (state.flow            && tx.flow            !== state.flow)            return false;
         if (state.competenceMonth && tx.competenceMonth !== state.competenceMonth) return false;
@@ -855,10 +1311,30 @@ window.CFM = window.CFM || {};
       });
 
       var countEl = panel.querySelector("#tx-filter-count");
-      if (countEl) countEl.textContent = filtered.length + " de " + report.allTransactions.length + " transações";
+      if (countEl) {
+        countEl.textContent = state.compareRefs && state.compareRefs.length
+          ? filtered.length + " lançamento(s) na comparação"
+          : filtered.length + " de " + report.allTransactions.length + " transações";
+      }
 
+      var compareMode = state.compareRefs && state.compareRefs.length
+        ? {
+          active: true,
+          refs: state.compareRefs,
+          contextKind: (txCompareFilter && txCompareFilter.contextKind) || "repeated_purchase",
+          mode: (txCompareFilter && txCompareFilter.mode) || ""
+        }
+        : null;
       var listEl = panel.querySelector("#tx-list-container");
-      if (listEl) listEl.innerHTML = renderTransactionRows(filtered);
+      if (listEl) {
+        listEl.innerHTML = renderTransactionRows(filtered, state.compareRefs, compareMode, compareMode && compareMode.contextKind);
+        if (state.compareRefs && state.compareRefs.length) {
+          var first = listEl.querySelector(".tx-compare-card, .tx-item--compare-highlight");
+          if (first && first.scrollIntoView) {
+            first.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
+        }
+      }
     }
 
     function wire(id, key) {
@@ -874,7 +1350,67 @@ window.CFM = window.CFM || {};
     var cb = panel.querySelector("#tx-filter-review");
     if (cb) cb.addEventListener("change", function () { state.reviewOnly = this.checked; applyFilters(); });
 
+    renderComparePanel();
     applyFilters();
+  }
+
+  function findTransactionByStableRef(report, ref) {
+    if (!report || !ref) return null;
+    var sem = CFM.importSemantics || {};
+    var list = report.allTransactions || [];
+    for (var i = 0; i < list.length; i++) {
+      if (sem.matchTransactionRef && sem.matchTransactionRef(list[i], ref)) return list[i];
+      if (list[i] && list[i].stableRef === ref) return list[i];
+    }
+    return null;
+  }
+
+  function isTransactionIgnored(ref) {
+    return !!(ignoredTransactions && ignoredTransactions[ref]);
+  }
+
+  function markTransactionIgnored(ref) {
+    if (!ref) return;
+    ignoredTransactions[ref] = true;
+    saveIgnoredTransactions(currentReport);
+  }
+
+  function navigateToCompareTransactions(container, refs, label, pairKey, contextKind, mode) {
+    if (!refs || !refs.length) return;
+    txCompareFilter = {
+      refs: refs.slice(),
+      transactionRefs: refs.slice(),
+      stableRefs: refs.slice(),
+      pairKey: pairKey || null,
+      sourceObservationKey: pairKey || null,
+      label: label || ("Comparando " + refs.length + " lançamentos da observação"),
+      contextKind: contextKind || "repeated_purchase",
+      mode: mode || (contextKind === "installment_related" ? "installment_pair" : "purchase")
+    };
+    renderedTabs.transactions = false;
+    activateTab("transactions", container);
+  }
+
+  function navigateToCompareInstallmentPair(container, pairKey) {
+    var pair = findObservationPair(currentReport, pairKey);
+    var refs = getObservationCompareRefs(pair);
+    if (!refs.length) return;
+    navigateToCompareTransactions(container, refs, null, pairKey, "installment_related", "installment_pair");
+  }
+
+  function navigateToAllRelatedInstallments(container) {
+    var observations = collectActiveInstallmentObservations(currentReport);
+    if (!observations.length) return;
+    var sem = CFM.importSemantics || {};
+    installmentObservationFilter = sem.buildInstallmentObservationFilter
+      ? sem.buildInstallmentObservationFilter(
+        observations,
+        currentReport.allTransactions || [],
+        currentReport.allInstallmentPlans || []
+      )
+      : { mode: "all_related_observations", observationCount: observations.length, pairKeys: [] };
+    renderedTabs.installments = false;
+    activateTab("installments", container);
   }
 
   /* ════════════════════════════════════════════════
@@ -996,13 +1532,13 @@ window.CFM = window.CFM || {};
    * ════════════════════════════════════════════════ */
 
   function buildSimilaritiesTab(report) {
-    var c = report.counters || {};
-    var blocking = c.blockingSimilarityCount || 0;
-    var attention = c.attentionSimilarityCount || 0;
-    var infoCount = c.informationalSimilarityCount || 0;
-    var repeated = report.repeatedPurchases || [];
-    var infoInstallments = report.informationalInstallments || [];
-    var categoryHints = report.categoryReviewHints || [];
+    var obsCounts = countActiveObservations(report);
+    var blocking = obsCounts.blocking;
+    var attention = obsCounts.attention;
+    var infoCount = obsCounts.informational;
+    var repeated = filterActiveObservations(report.repeatedPurchases || []);
+    var infoInstallments = filterActiveObservations(report.informationalInstallments || []);
+    var categoryHints = filterActiveObservations(report.categoryReviewHints || []);
     var sem = CFM.importSemantics || {};
     var banner = sem.buildObservationBanner
       ? sem.buildObservationBanner(blocking, attention, infoCount)
@@ -1016,13 +1552,12 @@ window.CFM = window.CFM || {};
           counts: blocking + " bloqueantes · " + attention + " atenções · " + infoCount + " informativos"
         };
 
-    if (!blocking && !attention && !infoCount && repeated.length === 0 &&
-        infoInstallments.length === 0 && categoryHints.length === 0) {
-      return emptyPanel("Nenhuma observação relevante neste arquivo.");
+    if (!blocking && !attention && !infoCount) {
+      return emptyPanel("Nenhuma observação pendente neste arquivo.");
     }
 
     var sectionsHtml = SIMILARITY_SECTIONS.map(function (sec) {
-      var list = filterObservationsByTier(report[sec.key] || [], "blocking");
+      var list = filterActiveObservations(filterObservationsByTier(report[sec.key] || [], "blocking"));
       if (list.length === 0) return "";
       var rows = list.map(function (pair) { return similarityPairRow(pair, sec.title); }).join("");
       return (
@@ -1034,7 +1569,7 @@ window.CFM = window.CFM || {};
     }).join("");
 
     var attentionHtml = ATTENTION_SIMILARITY_SECTIONS.map(function (sec) {
-      var list = filterObservationsByTier(report[sec.key] || [], "attention");
+      var list = filterActiveObservations(filterObservationsByTier(report[sec.key] || [], "attention"));
       if (list.length === 0) return "";
       var rows = list.map(function (pair) { return similarityPairRow(pair, sec.title); }).join("");
       return (
@@ -1070,12 +1605,32 @@ window.CFM = window.CFM || {};
       );
     }
 
+    function buildInstallmentObservationsSection(list, intro) {
+      if (!list.length) return "";
+      var globalBtn =
+        '<div class="similarity-section__global-actions">' +
+        '  <button type="button" class="btn btn--ghost btn--sm obs-view-all-installments"' +
+        '   aria-label="Ver todas as parcelas relacionadas das observações">' +
+        "Ver todas as parcelas relacionadas</button>" +
+        "</div>";
+      var body =
+        (intro ? '<p class="similarity-intro">' + esc(intro) + "</p>" : "") +
+        globalBtn +
+        '  <ul class="similarity-list">' +
+        list.map(function (pair) { return similarityPairRow(pair, "Parcelas relacionadas"); }).join("") +
+        "</ul>";
+      return (
+        '<details class="similarity-details similarity-details--info">' +
+        '  <summary class="similarity-details__summary">Parcelas relacionadas' +
+        '    <span class="similarity-section__count">' + list.length + "</span></summary>" +
+        '  <div class="similarity-details__body">' + body + "</div></details>"
+      );
+    }
+
     var infoHtml =
-      buildInfoSection(
-        "Parcelas relacionadas",
+      buildInstallmentObservationsSection(
         infoInstallments,
-        "Parcelas vinculadas a plano consistente — não indicam erro.",
-        true
+        "Parcelas vinculadas a planos consistentes — não indicam erro."
       ) +
       buildInfoSection(
         "Categorias a revisar",
@@ -1111,32 +1666,16 @@ window.CFM = window.CFM || {};
     var rules = report.allRecurringRules;
     if (!rules || rules.length === 0) return emptyPanel("Nenhuma recorrência reconhecida.");
 
-    var SOURCE_LABELS = {
-      imported_json:    "Importada do JSON",
-      personal_local:   "Regra pessoal local",
-      example:          "Regra de exemplo",
-      engine_suggested: "Sugerida pelo motor"
-    };
-
     var rows = rules.map(function (rule) {
       var freqLabel = rule.frequency === "monthly" ? "Mensal" :
                       rule.frequency === "weekly"  ? "Semanal" :
                       rule.frequency === "yearly"  ? "Anual" : rule.frequency || "—";
+      var amountLine = rule.recurringAmountLabel || rule.amountFmt || "Valor a confirmar";
       var sem = CFM.importSemantics || {};
       var badges = rule.recurringBadges && rule.recurringBadges.length
         ? rule.recurringBadges
         : (sem.getRecurringRuleBadges ? sem.getRecurringRuleBadges(rule) : []);
-      var stateBadges = badges.map(function (badge) {
-        return ' <span class="' + esc(badge.cls) + '">' + esc(badge.label) + "</span>";
-      }).join("");
-      var sourceLabels = rule.sourceLabels && rule.sourceLabels.length
-        ? rule.sourceLabels
-        : (rule.source
-          ? [SOURCE_LABELS[rule.source] || rule.sourceLabel || rule.source]
-          : (rule.sourceLabel ? [rule.sourceLabel] : []));
-      var sourceChips = sourceLabels.map(function (lbl) {
-        return ' <span class="status-chip status-chip--open">' + esc(lbl) + "</span>";
-      }).join("");
+      var stateBadges = badges.map(recurringBadgeHtml).join("");
       var impact = rule.recurringImpact || (sem.getRecurringRuleImportImpact
         ? sem.getRecurringRuleImportImpact(rule) : {});
       var nonBlocking = impact.showNonBlockingNote
@@ -1147,17 +1686,16 @@ window.CFM = window.CFM || {};
         '<li class="recurring-item recurring-item--' + esc(rule.recurringDisplay || rule.recurrenceKind || "imported") + '">' +
         '  <div class="recurring-item__header">' +
         '    <span class="recurring-item__desc">' + esc(rule.description) + "</span>" +
-        '    ' + flowBadge(rule.flow) + stateBadges + sourceChips + nonBlocking +
+        '    ' + flowBadge(rule.flow) + stateBadges + nonBlocking +
         "  </div>" +
         '  <div class="recurring-item__meta">' +
-        '<span>' + esc(rule.amountFmt) + '</span>' +
-        '<span>' + esc(freqLabel) + (rule.dayOfMonth ? ", dia " + rule.dayOfMonth : "") + "</span>" +
+        '<span>' + esc(amountLine) + " · " + esc(freqLabel) +
+        (rule.dayOfMonth ? ", dia " + rule.dayOfMonth : "") + "</span>" +
         (rule.accountName ? '<span>Conta: ' + esc(rule.accountName) + "</span>" : "") +
         (rule.cardName    ? '<span>Cartão: ' + esc(rule.cardName)    + "</span>" : "") +
         (rule.categoryLabel || rule.category
           ? '<span>Cat.: ' + esc(rule.categoryLabel || rule.category) + "</span>"
           : "") +
-        (rule.confidence  ? '<span>Confiança: ' + esc(String(rule.confidence)) + "</span>" : "") +
         "  </div>" +
         "</li>"
       );
@@ -1189,14 +1727,13 @@ window.CFM = window.CFM || {};
       var remainHtml = plan.remainingMonths != null
         ? '<span>Restantes: <strong>' + plan.remainingMonths + " meses</strong></span>"
         : "";
-      var sourceHtml = plan.sourceLabel
-        ? '<span>Origem: ' + esc(plan.sourceLabel) + "</span>"
-        : "";
-
+      var planRef = plan.planStableRef || plan.externalRef || plan.id || "";
       return (
         '<li class="installment-item' +
         (plan.isInvoiceInstallment ? " installment-item--invoice" : "") +
-        (plan.isFinancing ? " installment-item--financing" : "") + '">' +
+        (plan.isFinancing ? " installment-item--financing" : "") +
+        '" data-plan-ref="' + esc(planRef) + '"' +
+        ' data-group-key="' + esc(plan.groupKey || "") + '">' +
         '  <div class="installment-item__header">' +
         '    <span class="installment-item__desc">' + esc(plan.description) + "</span>" +
         kindChip +
@@ -1209,14 +1746,373 @@ window.CFM = window.CFM || {};
         '    ' + flowBadge(plan.flow || "out") +
         (plan.cardName ? '    <span>Cartão: ' + esc(plan.cardName) + (plan.cardLastFour ? " ···" + esc(plan.cardLastFour) : "") + "</span>" : "") +
         (plan.startCompetence ? '    <span>Início: ' + esc(plan.startCompetence) + "</span>" : "") +
-        sourceHtml +
         (plan.isInvoiceInstallment ? '    <span>Impacta previsão mensal futura</span>' : "") +
         "  </div>" +
         "</li>"
       );
     });
 
-    return '<ul class="entity-list">' + rows.join("") + "</ul>";
+    return (
+      '<div id="inst-compare-panel" class="inst-compare-panel" hidden role="region"' +
+      ' aria-label="Conferência de parcelas relacionadas"></div>' +
+      '<div id="inst-group-banner" class="inst-group-banner" hidden role="status">' +
+      '  <span class="inst-group-banner__text">Filtrando grupo de parcelas relacionado</span>' +
+      '  <button type="button" class="btn btn--ghost btn--xs" id="inst-group-banner-clear"' +
+      ' aria-label="Limpar filtro de grupo de parcelas">Limpar filtro</button>' +
+      "</div>" +
+      '<div class="filter-bar filter-bar--installments">' +
+      '  <span class="filter-bar__count" id="inst-filter-count"></span>' +
+      "</div>" +
+      '<ul class="entity-list" id="inst-list-container">' + rows.join("") + "</ul>" +
+      '<div id="inst-groups-container" class="inst-groups-container" hidden></div>' +
+      '<div id="inst-feedback" class="inst-feedback" hidden role="status"></div>' +
+      '<div id="inst-fallback-container" class="inst-fallback-container" hidden></div>'
+    );
+  }
+
+  function renderInstallmentGroupActionsHtml(group) {
+    var sem = CFM.importSemantics || {};
+    var txRefs = group.transactionRefs || [];
+    var pairKeys = (group.pairKeys || group.observationKeys || []).join(",");
+    var actions = sem.getInstallmentGroupCardActions
+      ? sem.getInstallmentGroupCardActions(group)
+      : ["Marcar grupo como concluído"];
+    var parts = [];
+    if (actions.indexOf("Comparar este par") >= 0 && txRefs.length === 2) {
+      parts.push(
+        '<button type="button" class="btn btn--ghost btn--xs inst-group-compare-pair"' +
+        ' data-pair-key="' + esc(group.pairKey || "") + '"' +
+        ' data-tx-refs="' + esc(txRefs.join(",")) + '"' +
+        ' aria-label="Comparar par de parcelas deste grupo">Comparar este par</button>'
+      );
+    }
+    if (actions.indexOf("Ver lançamentos do grupo") >= 0 && txRefs.length > 2) {
+      parts.push(
+        '<button type="button" class="btn btn--ghost btn--xs inst-group-view-txs"' +
+        ' data-pair-key="' + esc(group.pairKey || "") + '"' +
+        ' data-tx-refs="' + esc(txRefs.join(",")) + '"' +
+        ' aria-label="Ver lançamentos deste grupo">Ver lançamentos do grupo</button>'
+      );
+    }
+    parts.push(
+      '<button type="button" class="btn btn--ghost btn--xs inst-group-dismiss-btn"' +
+      ' data-group-key="' + esc(group.groupKey || "") + '"' +
+      ' data-pair-keys="' + esc(pairKeys) + '"' +
+      ' aria-label="Marcar grupo como concluído">Marcar grupo como concluído</button>'
+    );
+    return '<div class="inst-group-card__actions">' + parts.join("") + "</div>";
+  }
+
+  function renderInstallmentDisplayGroupsHtml(groups) {
+    if (!groups || !groups.length) {
+      return renderInstallmentGroupsEmptyStateHtml();
+    }
+    return (
+      '<ul class="entity-list inst-obs-derived-list">' +
+      groups.map(function (group) {
+        var txLines = (group.transactions || []).map(function (tx) {
+          var meta = [
+            tx.amountFmt,
+            tx.dateFmt || tx.date || tx.competenceMonth,
+            tx.cardName || "",
+            tx.invoiceLabel ? ("Fatura " + tx.invoiceLabel) : "",
+            tx.installmentLabel || ""
+          ].filter(Boolean).join(" · ");
+          return (
+            '<li class="inst-obs-derived-tx">' +
+            '  <strong>' + esc(tx.description) + "</strong>" +
+            '  <span class="inst-obs-derived-tx__meta">' + esc(meta) + "</span>" +
+            "</li>"
+          );
+        }).join("");
+        if (group.plan && !txLines) {
+          var plan = group.plan;
+          txLines =
+            '<li class="inst-obs-derived-tx">' +
+            '  <strong>' + esc(plan.description) + "</strong>" +
+            '  <span class="inst-obs-derived-tx__meta">' +
+            esc([
+              plan.installmentAmtFmt,
+              plan.totalInstallments ? (plan.currentInstallment + "/" + plan.totalInstallments) : "",
+              plan.cardName || ""
+            ].filter(Boolean).join(" · ")) +
+            "</span></li>";
+        }
+        var dates = [group.date1, group.date2].filter(Boolean).join(" · ");
+        var badge = group.badgeLabel || group.fallbackLabel || "Grupo identificado nas observações";
+        return (
+          '<li class="inst-obs-derived-item inst-group-card installment-item--group-highlight"' +
+          ' data-group-key="' + esc(group.groupKey || "") + '"' +
+          ' data-pair-key="' + esc(group.pairKey || "") + '">' +
+          '  <div class="installment-item__header">' +
+          '    <span class="installment-item__desc">' + esc(group.title) + "</span>" +
+          '    <span class="status-chip status-chip--other">' + esc(badge) + "</span>" +
+          "  </div>" +
+          '  <div class="installment-item__meta">' +
+          (group.amountFmt ? '    <span>Valor: <strong>' + esc(group.amountFmt) + "</strong></span>" : "") +
+          (dates ? '    <span>Datas: ' + esc(dates) + "</span>" : "") +
+          "  </div>" +
+          (txLines ? '  <ul class="inst-obs-derived-tx-list">' + txLines + "</ul>" : "") +
+          renderInstallmentGroupActionsHtml(group) +
+          "</li>"
+        );
+      }).join("") +
+      "</ul>"
+    );
+  }
+
+  function renderInstallmentGroupsEmptyStateHtml() {
+    return (
+      '<div class="inst-all-done-state" role="status">' +
+      '  <h4 class="inst-all-done-state__title">Todas as parcelas relacionadas foram conferidas</h4>' +
+      '  <p class="inst-all-done-state__text">Não há mais grupos pendentes neste filtro.</p>' +
+      '  <div class="inst-all-done-state__actions">' +
+      '    <button type="button" class="btn btn--ghost btn--xs" id="inst-go-observations"' +
+      ' aria-label="Voltar para aba Observações">Voltar para observações</button>' +
+      '    <button type="button" class="btn btn--ghost btn--xs" id="inst-empty-clear-filter"' +
+      ' aria-label="Limpar filtro de parcelas">Limpar filtro</button>' +
+      "  </div></div>"
+    );
+  }
+
+  function showInstGroupFeedback(panel, message) {
+    var el = panel.querySelector("#inst-feedback");
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = message || "Grupo marcado como concluído.";
+    if (showInstGroupFeedback._timer) clearTimeout(showInstGroupFeedback._timer);
+    showInstGroupFeedback._timer = setTimeout(function () {
+      el.hidden = true;
+      el.textContent = "";
+    }, 4000);
+  }
+
+  function wireInstallmentGroupFilter(panel, report, container) {
+    var sem = CFM.importSemantics || {};
+    var state = {
+      obsFilter: installmentObservationFilter
+        ? Object.assign({}, installmentObservationFilter)
+        : null
+    };
+
+    function clearObsFilter() {
+      state.obsFilter = null;
+      installmentObservationFilter = null;
+      renderInstPanel();
+      applyFilter();
+    }
+
+    function renderInstPanel() {
+      var instPanel = panel.querySelector("#inst-compare-panel");
+      var banner = panel.querySelector("#inst-group-banner");
+      var bannerText = banner ? banner.querySelector(".inst-group-banner__text") : null;
+
+      if (banner) {
+        banner.hidden = !(state.obsFilter && state.obsFilter.mode === "all_related_observations");
+      }
+      if (bannerText && state.obsFilter && state.obsFilter.mode === "all_related_observations") {
+        bannerText.textContent = "Filtrando parcelas relacionadas das observações";
+      }
+
+      if (!instPanel) return;
+      if (!state.obsFilter || state.obsFilter.mode !== "all_related_observations") {
+        instPanel.hidden = true;
+        instPanel.innerHTML = "";
+        return;
+      }
+
+      instPanel.hidden = false;
+      instPanel.innerHTML =
+        '<div class="inst-compare-panel__head">' +
+        '  <div><h4 class="inst-compare-panel__title">Controlando parcelas relacionadas</h4>' +
+        '  <p class="inst-compare-panel__subtitle">Mostrando todas as ocorrências encontradas nas observações. Confira os grupos antes de validar.</p></div>' +
+        "</div>" +
+        '<div class="inst-compare-panel__actions">' +
+        '  <button type="button" class="btn btn--ghost btn--xs" id="inst-dismiss-all"' +
+        ' aria-label="Marcar todas as observações de parcelas como conferidas">Marcar todas como conferidas</button>' +
+        '  <button type="button" class="btn btn--ghost btn--xs" id="inst-decide-later"' +
+        ' aria-label="Revisar parcelas depois">Revisar depois</button>' +
+        '  <button type="button" class="btn btn--ghost btn--xs" id="inst-group-clear"' +
+        ' aria-label="Limpar filtro de parcelas relacionadas">Limpar filtro</button>' +
+        "</div>";
+
+      var btnDismissAll = instPanel.querySelector("#inst-dismiss-all");
+      var btnLater = instPanel.querySelector("#inst-decide-later");
+      var btnClear = instPanel.querySelector("#inst-group-clear");
+
+      if (btnDismissAll) btnDismissAll.addEventListener("click", function () {
+        var openConfirm = CFM.openAppConfirm;
+        if (!openConfirm) return;
+        openConfirm({
+          title: "Marcar todas como conferidas?",
+          message: "Isso remove os avisos de parcelas relacionadas desta importação. O arquivo JSON não será alterado.",
+          confirmLabel: "Marcar todas",
+          cancelLabel: "Cancelar",
+          tone: "warning",
+          triggerEl: btnDismissAll
+        }).then(function (confirmed) {
+          if (!confirmed) return;
+          (state.obsFilter.pairKeys || []).forEach(function (pairKey) {
+            if (pairKey) dismissedObservations[pairKey] = true;
+          });
+          saveDismissedObservations(currentReport);
+          clearObsFilter();
+          if (container) refreshSimilaritiesTab(container);
+        });
+      });
+      if (btnLater) btnLater.addEventListener("click", clearObsFilter);
+      if (btnClear) btnClear.addEventListener("click", clearObsFilter);
+    }
+
+    function syncObsFilterFromActive() {
+      var observations = collectActiveInstallmentObservations(currentReport);
+      if (!observations.length) {
+        state.obsFilter = null;
+        installmentObservationFilter = null;
+        return false;
+      }
+      state.obsFilter = sem.buildInstallmentObservationFilter
+        ? sem.buildInstallmentObservationFilter(
+          observations,
+          report.allTransactions || [],
+          report.allInstallmentPlans || []
+        )
+        : state.obsFilter;
+      installmentObservationFilter = state.obsFilter;
+      return true;
+    }
+
+    function dismissGroupByPairKeys(pairKeysRaw) {
+      (pairKeysRaw || "").split(",").filter(Boolean).forEach(function (pairKey) {
+        dismissedObservations[pairKey] = true;
+      });
+      saveDismissedObservations(currentReport);
+    }
+
+    function applyFilter() {
+      var plans = report.recognizedFinancing || report.allInstallmentPlans || [];
+      var listEl = panel.querySelector("#inst-list-container");
+      var groupsEl = panel.querySelector("#inst-groups-container");
+      var fallbackEl = panel.querySelector("#inst-fallback-container");
+      var countEl = panel.querySelector("#inst-filter-count");
+
+      if (!state.obsFilter || state.obsFilter.mode !== "all_related_observations") {
+        if (countEl) countEl.textContent = plans.length + " parcelamento(s)";
+        if (listEl) {
+          listEl.hidden = false;
+          listEl.querySelectorAll(".installment-item").forEach(function (item) {
+            item.hidden = false;
+            item.classList.remove("installment-item--group-highlight");
+          });
+        }
+        if (groupsEl) {
+          groupsEl.hidden = true;
+          groupsEl.innerHTML = "";
+        }
+        if (fallbackEl) {
+          fallbackEl.hidden = true;
+          fallbackEl.innerHTML = "";
+        }
+        return;
+      }
+
+      syncObsFilterFromActive();
+      if (!state.obsFilter) {
+        clearObsFilter();
+        if (container) refreshSimilaritiesTab(container);
+        return;
+      }
+
+      var allGroups = sem.buildInstallmentDisplayGroups
+        ? sem.buildInstallmentDisplayGroups(
+          state.obsFilter,
+          plans,
+          report.allTransactions || [],
+          report.allInstallmentPlans || []
+        )
+        : [];
+      var activeGroups = sem.filterActiveInstallmentGroups
+        ? sem.filterActiveInstallmentGroups(allGroups, dismissedObservations)
+        : allGroups;
+
+      if (listEl) listEl.hidden = true;
+      if (fallbackEl) {
+        fallbackEl.hidden = true;
+        fallbackEl.innerHTML = "";
+      }
+      if (groupsEl) {
+        groupsEl.hidden = false;
+        groupsEl.innerHTML = renderInstallmentDisplayGroupsHtml(activeGroups);
+      }
+
+      var pendingObs = activeGroups.reduce(function (sum, group) {
+        return sum + ((group.pairKeys || group.observationKeys || []).length || 1);
+      }, 0);
+      if (countEl) {
+        if (activeGroups.length) {
+          countEl.textContent = activeGroups.length + " grupo(s) pendente(s) · " +
+            pendingObs + " ocorrência(s) nas observações";
+        } else {
+          countEl.textContent = "0 grupo(s) pendente(s)";
+        }
+      }
+
+      if (groupsEl) {
+        var first = groupsEl.querySelector(".inst-group-card, .inst-all-done-state");
+        if (first && first.scrollIntoView) {
+          first.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }
+    }
+
+    function wireGroupActions() {
+      if (panel.getAttribute("data-inst-groups-wired") === "1") return;
+      panel.setAttribute("data-inst-groups-wired", "1");
+      panel.addEventListener("click", function (e) {
+        var target = e.target;
+        if (!target || !target.closest) return;
+
+        var dismissBtn = target.closest(".inst-group-dismiss-btn");
+        if (dismissBtn) {
+          dismissGroupByPairKeys(dismissBtn.getAttribute("data-pair-keys") || "");
+          showInstGroupFeedback(panel, "Grupo marcado como concluído.");
+          applyFilter();
+          if (container) refreshSimilaritiesTab(container);
+          return;
+        }
+
+        var compareBtn = target.closest(".inst-group-compare-pair");
+        if (compareBtn) {
+          var pairKey = compareBtn.getAttribute("data-pair-key") || "";
+          navigateToCompareInstallmentPair(container, pairKey);
+          return;
+        }
+
+        var viewTxBtn = target.closest(".inst-group-view-txs");
+        if (viewTxBtn) {
+          var refsRaw = viewTxBtn.getAttribute("data-tx-refs") || "";
+          var refs = refsRaw.split(",").filter(Boolean);
+          var pk = viewTxBtn.getAttribute("data-pair-key") || "";
+          navigateToCompareTransactions(container, refs, null, pk, "installment_related", "installment_group");
+          return;
+        }
+
+        if (target.closest("#inst-go-observations")) {
+          if (container) activateTab("similarities", container);
+          return;
+        }
+        if (target.closest("#inst-empty-clear-filter")) {
+          clearObsFilter();
+        }
+      });
+    }
+
+    var bannerClear = panel.querySelector("#inst-group-banner-clear");
+    if (bannerClear) bannerClear.addEventListener("click", clearObsFilter);
+
+    wireGroupActions();
+    renderInstPanel();
+    applyFilter();
   }
 
   /* ════════════════════════════════════════════════
@@ -1320,12 +2216,16 @@ window.CFM = window.CFM || {};
       "</div>";
 
     /* tab nav */
+    var obsCountsInit = countActiveObservations(report);
     var tabBtns = TABS.map(function (tab, i) {
       var count = tab.countKey ? (report.counters[tab.countKey] || 0) : 0;
       if (tab.id === "similarities") {
-        var infoN = report.counters.informationalSimilarityCount || 0;
-        var badge = count > 0 ? countBadge(count) :
-          (infoN > 0 ? '<span class="tab-badge tab-badge--info" title="' + infoN + ' informativas">' + infoN + "</span>" : "");
+        var badge = obsCountsInit.blocking > 0 ? countBadge(obsCountsInit.blocking) :
+          (obsCountsInit.attention > 0 ? countBadge(obsCountsInit.attention) :
+          (obsCountsInit.informational > 0
+            ? '<span class="tab-badge tab-badge--info" title="' + obsCountsInit.informational +
+              ' informativos">' + obsCountsInit.informational + "</span>"
+            : ""));
         return (
           '<button class="tab-btn' + (i === 0 ? " is-active" : "") + '"' +
           '  data-tab="' + tab.id + '" role="tab"' +
@@ -1386,8 +2286,141 @@ window.CFM = window.CFM || {};
    * GERENCIAMENTO DE ESTADO
    * ════════════════════════════════════════════════ */
 
-  var currentReport  = null;
-  var renderedTabs   = {};
+  var currentReport         = null;
+  var renderedTabs          = {};
+  var dismissedObservations = {};
+  var txCompareFilter       = null;
+  var installmentObservationFilter = null;
+  var ignoredTransactions   = {};
+  var observationContextOverrides = {};
+
+  function dismissedStorageKey(report) {
+    return "cfm-import-dismissed:" + (report && report.fileName ? report.fileName : "unknown");
+  }
+
+  function loadDismissedObservations(report) {
+    dismissedObservations = {};
+    if (!report || !report.fileName) return;
+    try {
+      var raw = sessionStorage.getItem(dismissedStorageKey(report));
+      if (raw) dismissedObservations = JSON.parse(raw) || {};
+    } catch (e) {
+      dismissedObservations = {};
+    }
+  }
+
+  function saveDismissedObservations(report) {
+    if (!report || !report.fileName) return;
+    try {
+      sessionStorage.setItem(dismissedStorageKey(report), JSON.stringify(dismissedObservations));
+    } catch (e) { /* ignore quota / private mode */ }
+  }
+
+  function ignoredStorageKey(report) {
+    return "cfm-import-ignored:" + (report && report.fileName ? report.fileName : "unknown");
+  }
+
+  function loadIgnoredTransactions(report) {
+    ignoredTransactions = {};
+    if (!report || !report.fileName) return;
+    try {
+      var raw = sessionStorage.getItem(ignoredStorageKey(report));
+      if (raw) ignoredTransactions = JSON.parse(raw) || {};
+    } catch (e) {
+      ignoredTransactions = {};
+    }
+  }
+
+  function saveIgnoredTransactions(report) {
+    if (!report || !report.fileName) return;
+    try {
+      sessionStorage.setItem(ignoredStorageKey(report), JSON.stringify(ignoredTransactions));
+    } catch (e) { /* ignore */ }
+  }
+
+  function updateSimilaritiesTabBadge(container, report) {
+    if (!report) return;
+    var obsCounts = countActiveObservations(report);
+    var btn = container.querySelector('[data-tab="similarities"]');
+    if (!btn) return;
+    var baseLabel = "Observações";
+    if (obsCounts.blocking > 0) {
+      btn.innerHTML = esc(baseLabel) + countBadge(obsCounts.blocking);
+    } else if (obsCounts.attention > 0) {
+      btn.innerHTML = esc(baseLabel) + countBadge(obsCounts.attention);
+    } else if (obsCounts.informational > 0) {
+      btn.innerHTML = esc(baseLabel) +
+        '<span class="tab-badge tab-badge--info" title="' + obsCounts.informational +
+        ' informativos">' + obsCounts.informational + "</span>";
+    } else {
+      btn.innerHTML = esc(baseLabel);
+    }
+  }
+
+  function refreshSimilaritiesTab(container) {
+    if (!currentReport) return;
+    var panel = container.querySelector("#tab-similarities");
+    if (panel) {
+      panel.innerHTML = buildSimilaritiesTab(currentReport);
+      wireSimilaritiesPanel(panel, container);
+    }
+    updateSimilaritiesTabBadge(container, currentReport);
+  }
+
+  function wireSimilaritiesPanel(panel, container) {
+    if (panel.getAttribute("data-obs-wired") === "1") return;
+    panel.setAttribute("data-obs-wired", "1");
+    panel.addEventListener("click", function (e) {
+      var target = e.target;
+      if (!target || !target.closest) return;
+
+      var compareBtn = target.closest(".obs-compare-btn, .obs-compare-purchase-btn, .obs-compare-installment-pair");
+      if (compareBtn) {
+        var pairKey = compareBtn.getAttribute("data-pair-key") || "";
+        if (compareBtn.classList.contains("obs-compare-installment-pair")) {
+          navigateToCompareInstallmentPair(container, pairKey);
+          return;
+        }
+        var refsRaw = compareBtn.getAttribute("data-tx-refs") || "";
+        var refs = refsRaw.split(",").filter(Boolean);
+        var ctx = compareBtn.classList.contains("obs-compare-purchase-btn")
+          ? "repeated_purchase"
+          : "generic";
+        navigateToCompareTransactions(container, refs, null, pairKey, ctx);
+        return;
+      }
+
+      var allInstBtn = target.closest(".obs-view-all-installments");
+      if (allInstBtn) {
+        navigateToAllRelatedInstallments(container);
+        return;
+      }
+
+      var txLink = target.closest(".obs-tx-link");
+      if (txLink) {
+        var ref = txLink.getAttribute("data-tx-ref");
+        var item = txLink.closest(".similarity-item");
+        var itemKey = item ? item.getAttribute("data-pair-key") : "";
+        var itemCtx = item ? item.getAttribute("data-context-kind") : "";
+        if (itemCtx === "installment_related") {
+          navigateToCompareInstallmentPair(container, itemKey);
+        } else if (ref) {
+          navigateToCompareTransactions(container, [ref], null, itemKey, itemCtx || "repeated_purchase");
+        }
+        return;
+      }
+
+      var dismissBtn = target.closest(".obs-dismiss-btn");
+      if (dismissBtn) {
+        var pairKey = dismissBtn.getAttribute("data-pair-key");
+        if (pairKey) {
+          dismissedObservations[pairKey] = true;
+          saveDismissedObservations(currentReport);
+          refreshSimilaritiesTab(container);
+        }
+      }
+    });
+  }
 
   function setContent(container, html) {
     var el = container.querySelector("#import-content");
@@ -1402,6 +2435,11 @@ window.CFM = window.CFM || {};
   function resetToIdle(container) {
     currentReport = null;
     renderedTabs  = {};
+    dismissedObservations = {};
+    txCompareFilter = null;
+    installmentObservationFilter = null;
+    observationContextOverrides = {};
+    ignoredTransactions = {};
     var pageEl = container.querySelector(".page--import");
     if (pageEl) pageEl.classList.remove("has-report");
     setContent(container, buildUploadZone());
@@ -1446,7 +2484,9 @@ window.CFM = window.CFM || {};
       if (panel) {
         panel.innerHTML = buildTabContent(tabId, currentReport);
         renderedTabs[tabId] = true;
-        if (tabId === "transactions") wireTransactionFilters(panel, currentReport);
+        if (tabId === "transactions") wireTransactionFilters(panel, currentReport, container);
+        if (tabId === "installments") wireInstallmentGroupFilter(panel, currentReport, container);
+        if (tabId === "similarities") wireSimilaritiesPanel(panel, container);
       }
     }
   }
@@ -1610,8 +2650,13 @@ window.CFM = window.CFM || {};
 
     CFM.importService.processFile(file)
       .then(function (report) {
+        loadDismissedObservations(report);
+        loadIgnoredTransactions(report);
+        txCompareFilter = null;
+        installmentObservationFilter = null;
+        observationContextOverrides = {};
         currentReport = report;
-        renderedTabs  = {};  /* summary pré-renderizado pelo buildReportHtml */
+        renderedTabs  = {};
         renderedTabs["summary"] = true;
 
         if (report.state === "error") {

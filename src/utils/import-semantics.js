@@ -321,6 +321,243 @@ window.CFM = window.CFM || {};
     return rows;
   }
 
+  function getInvoicePrimaryDisplay(invoice, recon, transactions, formatFn) {
+    var fmt = formatFn || function (c) { return String(c); };
+    var amounts = getInvoiceDisplayAmounts(invoice, recon);
+    var isPaid = isInvoicePaidForDisplay(invoice);
+    var isOpen = isInvoiceOpenProvisional(invoice) || (invoice && invoice.status === "open");
+    var primaryCents = 0;
+    var secondary = [];
+
+    if (isPaid && invoice) {
+      if (invoice.totalCents > 0) primaryCents = invoice.totalCents;
+      else if (invoice.statementTotalCents > 0) primaryCents = invoice.statementTotalCents;
+      else if (amounts.chargesCents > 0) primaryCents = amounts.chargesCents;
+      else if (invoice.chargesCents > 0) primaryCents = invoice.chargesCents;
+      else if (invoice.expensesCents > 0) primaryCents = invoice.expensesCents;
+      else if (invoice.debitsCents > 0) primaryCents = invoice.debitsCents;
+      else if (recon && recon.linkedPurchasesCents > 0) primaryCents = recon.linkedPurchasesCents;
+      else if (recon && recon.invoiceChargesCents > 0) primaryCents = recon.invoiceChargesCents;
+      else {
+        var linkedSum = sumLinkedPurchaseOutflows(invoice, transactions);
+        if (linkedSum > 0) primaryCents = linkedSum;
+        else if (amounts.externalSettlementCents > 0) primaryCents = amounts.externalSettlementCents;
+        else primaryCents = amounts.amountDueCents;
+      }
+
+      if (amounts.chargesCents > 0) {
+        secondary.push({ label: "Compras/encargos", fmt: fmt(amounts.chargesCents) });
+      }
+      var payCred = amounts.internalCreditsCents + amounts.externalSettlementCents;
+      if (payCred > 0) {
+        secondary.push({ label: "Pagamentos/créditos", fmt: fmt(payCred) });
+      }
+      var finalBal = amounts.amountDueCents != null
+        ? amounts.amountDueCents
+        : amounts.statementAmountDueCents;
+      if (finalBal === 0 && primaryCents > 0) {
+        secondary.push({ label: "Saldo final", fmt: fmt(0) });
+      }
+      if (invoice.hasCredit && invoice.creditBalanceCents > 0) {
+        secondary.push({
+          label: "Saldo positivo",
+          fmt: fmt(invoice.creditBalanceCents),
+          note: "será abatido da próxima fatura"
+        });
+      }
+    } else if (invoice) {
+      primaryCents = amounts.amountDueCents || amounts.statementAmountDueCents ||
+        invoice.totalCents || invoice.amountDueCents || 0;
+      if (amounts.chargesCents > 0 && amounts.chargesCents !== primaryCents) {
+        secondary.push({ label: "Compras/encargos", fmt: fmt(amounts.chargesCents) });
+      }
+    }
+
+    return {
+      primaryCents: primaryCents,
+      primaryFmt: fmt(primaryCents),
+      primaryLabel: "Total da fatura",
+      statusHint: isPaid ? "Fatura quitada" : (isOpen ? "Fatura aberta" : ""),
+      secondaryLines: secondary,
+      isPaid: isPaid,
+      isOpen: isOpen
+    };
+  }
+
+  function isInvoicePaidForDisplay(invoice) {
+    if (!invoice) return false;
+    if (invoice.status === "paid") return true;
+    if (invoice.reconciliationStatus === "settled") return true;
+    if (isInvoiceSettled(invoice)) return true;
+    if (invoice.explainedByPayments && invoice.status !== "open") return true;
+    if ((invoice.amountDueCents === 0 || invoice.statementAmountDueCents === 0) &&
+        invoice.status === "paid") return true;
+    return false;
+  }
+
+  function sumLinkedPurchaseOutflows(invoice, transactions) {
+    if (!invoice || !transactions) return 0;
+    var invKeys = [invoice.id, invoice.externalRef, invoice.invoiceExternalRef].filter(Boolean);
+    var sum = 0;
+    transactions.forEach(function (tx) {
+      if (!tx || tx.flow !== "out") return;
+      if (tx.type === "credit_card_payment" || tx.type === "refund") return;
+      if (isInvoiceInternalCreditTransaction(tx) || isExternalInvoiceSettlementTransaction(tx)) return;
+      var txInv = tx.invoiceId || tx.invoiceExternalRef || "";
+      if (invKeys.indexOf(txInv) < 0) return;
+      sum += tx.amountCents || 0;
+    });
+    return sum;
+  }
+
+  function txInstallmentCurrent(tx) {
+    if (!tx) return null;
+    if (tx.installment && tx.installment.current != null) return Number(tx.installment.current);
+    var m = String(tx.description || "").match(/(?:parcela?\s*)?(\d+)\s*[/\\]\s*(\d+)/i);
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  function txInstallmentTotal(tx) {
+    if (!tx) return null;
+    if (tx.installment && tx.installment.total != null) return Number(tx.installment.total);
+    var m = String(tx.description || "").match(/(?:parcela?\s*)?(\d+)\s*[/\\]\s*(\d+)/i);
+    return m ? parseInt(m[2], 10) : null;
+  }
+
+  function shouldSuppressRepeatedPurchasePair(pair, transactions, installmentPlans) {
+    if (!pair || !transactions) return false;
+    var pseudo = Object.assign({}, pair, { classification: "installment_related" });
+    if (isInstallmentRelatedPairConsistent(pseudo, transactions, installmentPlans)) return true;
+
+    var indices = observationIndices(pair);
+    if (indices.length < 2) return false;
+    var txA = transactions[indices[0]];
+    var txB = transactions[indices[1]];
+    if (!txA || !txB) return false;
+
+    var refA = txPlanRef(txA);
+    var refB = txPlanRef(txB);
+    if (refA && refB && refA === refB) return true;
+
+    if (hasInstallmentIndicator(txA, installmentPlans) &&
+        hasInstallmentIndicator(txB, installmentPlans)) {
+      return true;
+    }
+
+    var curA = txInstallmentCurrent(txA);
+    var curB = txInstallmentCurrent(txB);
+    var totA = txInstallmentTotal(txA);
+    var totB = txInstallmentTotal(txB);
+    if (curA != null && curB != null && curA !== curB && totA && totA === totB) return true;
+
+    var cardA = txA.cardId || txA.cardExternalRef || "";
+    var cardB = txB.cardId || txB.cardExternalRef || "";
+    if (cardA && cardA === cardB &&
+        amountsEquivalent(txA.amountCents, txB.amountCents) &&
+        descriptionsSimilarBase(
+          normalizeMerchantBase(txA.description),
+          normalizeMerchantBase(txB.description)
+        )) {
+      if (curA != null && curB != null && curA !== curB) return true;
+      if (/parcela?\s*\d+\s*[/\\]\s*\d+/i.test(txA.description || "") ||
+          /parcela?\s*\d+\s*[/\\]\s*\d+/i.test(txB.description || "")) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function findTransactionByRef(transactions, ref) {
+    if (!ref || !transactions) return null;
+    for (var i = 0; i < transactions.length; i++) {
+      var tx = transactions[i];
+      if (!tx) continue;
+      if (getTransactionStableRef(tx, i) === ref) return tx;
+      if (tx.id === ref || tx.externalRef === ref || tx.transactionExternalRef === ref) return tx;
+    }
+    return null;
+  }
+
+  function getRecurringDisplayAmount(rule, transactions) {
+    if (!rule) return { amountCents: null, label: "Valor a confirmar", hasValue: false };
+
+    var cents = rule.amountCents || rule.expectedAmountCents || rule.valueCents ||
+      rule.monthlyAmountCents || rule.lastAmountCents || rule.averageAmountCents || 0;
+    if (cents > 0) return { amountCents: cents, label: null, hasValue: true };
+
+    var refs = rule.transactionRefs || rule.linkedTransactionRefs || rule.sourceTransactionRefs || [];
+    if (!Array.isArray(refs)) refs = [refs];
+    for (var r = 0; r < refs.length; r++) {
+      var linked = findTransactionByRef(transactions, refs[r]);
+      if (linked && linked.amountCents > 0) {
+        return { amountCents: linked.amountCents, label: null, hasValue: true };
+      }
+    }
+
+    if (rule.description && transactions && transactions.length) {
+      var base = normalizeMerchantBase(rule.description);
+      var ruleFlow = rule.flow || "out";
+      for (var i = 0; i < transactions.length; i++) {
+        var tx = transactions[i];
+        if (!tx || (tx.flow || "out") !== ruleFlow) continue;
+        if (!descriptionsSimilarBase(base, normalizeMerchantBase(tx.description))) continue;
+        if (tx.amountCents > 0) {
+          return { amountCents: tx.amountCents, label: null, hasValue: true };
+        }
+      }
+    }
+
+    return { amountCents: null, label: "Valor a confirmar", hasValue: false };
+  }
+
+  function getRecurringConfidenceLabel(rule) {
+    if (!rule || rule.confidence == null || rule.confidence === "") return "";
+    var c = Number(rule.confidence);
+    if (!isNaN(c) && c >= 90) return "Confirmada pelo histórico";
+    if (!isNaN(c) && c >= 70) return "Boa consistência";
+    if (rule.confidence === "high") return "Confirmada pelo histórico";
+    if (rule.confidence === "medium") return "Boa consistência";
+    return "";
+  }
+
+  function getTransactionCompareHint(txA, txB) {
+    if (!txA || !txB) return "";
+    if (txA.amountCents === txB.amountCents &&
+        normalizeMerchantBase(txA.description) === normalizeMerchantBase(txB.description)) {
+      return "Possível repetição: mesmo valor e nome parecido, mas em datas diferentes.";
+    }
+    if (txA.amountCents === txB.amountCents) {
+      return "Mesmo valor — confira se foram compras distintas ou duplicata.";
+    }
+    return "Confira data, fatura e cartão antes de decidir.";
+  }
+
+  function getTransactionTypeLabel(type, tx) {
+    var display = getTransactionDisplayType(tx || { type: type });
+    if (display && display.label) return display.label;
+    var map = {
+      credit_card_purchase: "Compra no cartão",
+      credit_card_payment: "Pagamento de fatura",
+      income: "Receita",
+      expense: "Despesa",
+      transfer: "Transferência",
+      refund: "Reembolso",
+      fee: "Tarifa",
+      adjustment: "Ajuste"
+    };
+    return map[type] || type || "Lançamento";
+  }
+
+  function getTransactionInstallmentLabel(tx) {
+    if (!tx) return "";
+    var cur = txInstallmentCurrent(tx);
+    var tot = txInstallmentTotal(tx);
+    if (cur != null && tot != null) return "Parcela " + cur + "/" + tot;
+    if (tx.installmentPlanId || tx.installmentPlanExternalRef) return "Parcelamento";
+    return "";
+  }
+
   function isRecurringRuleCandidate(rule) {
     if (!rule) return false;
     if (rule.candidate === true) return true;
@@ -893,8 +1130,564 @@ window.CFM = window.CFM || {};
     return "informational";
   }
 
-  function annotateObservation(obs, transactions, installmentPlans) {
+  function getTransactionStableRef(tx, index) {
+    if (!tx) return index != null ? "idx:" + index : "";
+    return String(
+      tx.id || tx.externalRef || tx.transactionExternalRef ||
+      (index != null ? "idx:" + index : "")
+    ).trim();
+  }
+
+  function getStableTransactionRef(tx, index) {
+    return getTransactionStableRef(tx, index);
+  }
+
+  function matchTransactionRef(tx, ref) {
+    if (!tx || ref == null || ref === "") return false;
+    var needle = String(ref).trim();
+    if (tx.stableRef === needle) return true;
+    if (tx.id && String(tx.id) === needle) return true;
+    if (tx.externalRef && String(tx.externalRef) === needle) return true;
+    if (needle.indexOf("idx:") === 0 && tx.index != null) {
+      return needle === ("idx:" + tx.index);
+    }
+    return false;
+  }
+
+  function findEnrichedTransactionByRef(transactions, ref) {
+    if (!ref) return null;
+    for (var i = 0; i < (transactions || []).length; i++) {
+      if (matchTransactionRef(transactions[i], ref)) return transactions[i];
+    }
+    return null;
+  }
+
+  function pushUniqueRef(list, value) {
+    if (!value) return;
+    var v = String(value).trim();
+    if (v && list.indexOf(v) < 0) list.push(v);
+  }
+
+  function getObservationTransactionRefs(obs) {
+    var refs = [];
+    if (!obs) return refs;
+    if (obs.transactionRef1) refs.push(obs.transactionRef1);
+    if (obs.transactionRef2 && obs.transactionRef2 !== obs.transactionRef1) {
+      refs.push(obs.transactionRef2);
+    }
+    return refs;
+  }
+
+  function extractObservationRefBundle(obs, transactions, installmentPlans) {
+    var stableRefs = [];
+    var externalRefs = [];
+    var transactionRefs = [];
+    var installmentPlanRefs = [];
+    var groupKeys = [];
+    getObservationTransactionRefs(obs).forEach(function (ref) {
+      pushUniqueRef(transactionRefs, ref);
+      pushUniqueRef(stableRefs, ref);
+    });
+    observationIndices(obs).forEach(function (idx) {
+      var tx = transactions && transactions[idx];
+      if (!tx) return;
+      var sref = getStableTransactionRef(tx, idx);
+      var eref = tx.externalRef || tx.transactionExternalRef || "";
+      pushUniqueRef(stableRefs, sref);
+      pushUniqueRef(transactionRefs, sref);
+      if (eref) pushUniqueRef(externalRefs, eref);
+      if (tx.id) pushUniqueRef(externalRefs, tx.id);
+      var pref = txPlanRef(tx);
+      if (pref) pushUniqueRef(installmentPlanRefs, pref);
+      var gk = buildInstallmentGroupKeyFromTx(tx, installmentPlans);
+      if (gk) pushUniqueRef(groupKeys, gk);
+    });
+    if (obs.installmentGroupFilter) {
+      var gf = obs.installmentGroupFilter;
+      (gf.transactionRefs || []).forEach(function (ref) {
+        pushUniqueRef(transactionRefs, ref);
+        pushUniqueRef(stableRefs, ref);
+      });
+      (gf.installmentPlanRefs || []).forEach(function (ref) {
+        pushUniqueRef(installmentPlanRefs, ref);
+      });
+      if (gf.groupKey) pushUniqueRef(groupKeys, gf.groupKey);
+    }
+    return {
+      stableRefs: stableRefs,
+      externalRefs: externalRefs,
+      transactionRefs: transactionRefs,
+      installmentPlanRefs: installmentPlanRefs,
+      groupKeys: groupKeys
+    };
+  }
+
+  function enrichObservationTransactionRefs(obs, transactions) {
     var copy = Object.assign({}, obs);
+    var i1 = obs.index1 != null ? obs.index1 : obs.indexA;
+    var i2 = obs.index2 != null ? obs.index2 : obs.indexB;
+    var tx1 = transactions && i1 != null ? transactions[i1] : null;
+    var tx2 = transactions && i2 != null ? transactions[i2] : null;
+    copy.transactionRef1 = getStableTransactionRef(tx1, i1);
+    copy.transactionRef2 = getStableTransactionRef(tx2, i2);
+    copy.displayIndex1 = i1;
+    copy.displayIndex2 = i2;
+    var refs = [copy.transactionRef1, copy.transactionRef2].filter(Boolean).sort();
+    copy.pairKey = (copy.classification || "observation") + ":" + refs.join("|");
+    return copy;
+  }
+
+  var PT_MONTHS = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+  ];
+
+  function formatCompetenceHuman(month) {
+    if (!month) return "";
+    var parts = String(month).split("-");
+    if (parts.length !== 2) return month;
+    var m = parseInt(parts[1], 10);
+    var name = PT_MONTHS[m - 1] || parts[1];
+    return name + "/" + parts[0];
+  }
+
+  function getInvoiceHumanLabel(invoiceRef, invoiceLookup) {
+    if (!invoiceRef) return "";
+    var inv = invoiceLookup && invoiceLookup[invoiceRef];
+    if (inv) {
+      if (inv.competenceMonth) return formatCompetenceHuman(inv.competenceMonth);
+      if (inv.competenceFmt) return inv.competenceFmt;
+    }
+    var match = String(invoiceRef).match(/(\d{4})-(\d{2})$/);
+    if (match) return formatCompetenceHuman(match[1] + "-" + match[2]);
+    return "";
+  }
+
+  function isTechnicalSourceLabel(label) {
+    if (!label) return false;
+    return /importad[oa]\s*(do|de)\s*json/i.test(String(label));
+  }
+
+  function getObservationContextKind(obs) {
+    if (!obs) return "generic";
+    if (obs.contextKind) return obs.contextKind;
+    var cls = getObservationClassification(obs);
+    var type = String(obs.type || obs.observationType || "").trim();
+    if (cls === "repeated_purchase" || type === "repeated_purchase") return "repeated_purchase";
+    if (cls === "installment_related" || type === "installment_related" ||
+        type === "installment_match" || type === "installment_group") {
+      return "installment_related";
+    }
+    if (cls === "recurring_candidate" || type === "recurring_candidate") return "recurring_candidate";
+    if (type === "security" || cls === "privacy" || cls === "privacy_alert") return "security";
+    if (obs.informational || obs.severity === "info" || cls === "category_review") return "info";
+    return "generic";
+  }
+
+  function buildInstallmentGroupKeyFromTx(tx, installmentPlans) {
+    if (!tx) return "";
+    var planRef = txPlanRef(tx);
+    if (planRef) return "plan:" + planRef;
+    if (tx.installmentGroupKey) return "group:" + String(tx.installmentGroupKey);
+    if (tx.planExternalRef) return "plan:" + String(tx.planExternalRef);
+    var card = tx.cardId || tx.cardExternalRef || "";
+    var base = normalizeMerchantBase(tx.description);
+    var tot = txInstallmentTotal(tx);
+    var amt = tx.amountCents;
+    if (card && base && tot != null && amt != null) {
+      return "derived:" + card + "|" + base + "|" + tot + "|" + amt;
+    }
+    return "";
+  }
+
+  function buildInstallmentGroupFilter(obs, transactions, installmentPlans) {
+    var indices = observationIndices(obs);
+    var planRefs = [];
+    var transactionRefs = [];
+    var groupKeys = [];
+    indices.forEach(function (idx) {
+      var tx = transactions && transactions[idx];
+      if (!tx) return;
+      transactionRefs.push(getStableTransactionRef(tx, idx));
+      var pref = txPlanRef(tx);
+      if (pref && planRefs.indexOf(pref) < 0) planRefs.push(pref);
+      var gk = buildInstallmentGroupKeyFromTx(tx, installmentPlans);
+      if (gk && groupKeys.indexOf(gk) < 0) groupKeys.push(gk);
+    });
+    var groupKey = planRefs.length ? ("plan:" + planRefs[0]) : (groupKeys[0] || "");
+    if (!groupKey && transactionRefs.length) {
+      groupKey = "txset:" + transactionRefs.slice().sort().join("|");
+    }
+    var stableRefs = transactionRefs.slice();
+    var externalRefs = [];
+    indices.forEach(function (idx) {
+      var tx = transactions && transactions[idx];
+      if (!tx) return;
+      if (tx.externalRef) pushUniqueRef(externalRefs, tx.externalRef);
+      if (tx.id) pushUniqueRef(externalRefs, tx.id);
+    });
+    return {
+      kind: "installment_group",
+      groupKey: groupKey,
+      installmentPlanRefs: planRefs,
+      transactionRefs: transactionRefs,
+      stableRefs: stableRefs,
+      externalRefs: externalRefs,
+      groupKeys: groupKeys.length ? groupKeys.slice() : (groupKey ? [groupKey] : []),
+      sourceObservationKey: obs.pairKey || ""
+    };
+  }
+
+  function buildInstallmentObservationFilter(observations, transactions, installmentPlans) {
+    var pairKeys = [];
+    var observationKeys = [];
+    var stableRefs = [];
+    var externalRefs = [];
+    var transactionRefs = [];
+    var installmentPlanRefs = [];
+    var groupKeys = [];
+    var obsSnapshots = [];
+    (observations || []).forEach(function (obs) {
+      if (!obs) return;
+      var pk = obs.pairKey || "";
+      pushUniqueRef(pairKeys, pk);
+      pushUniqueRef(observationKeys, pk);
+      var bundle = extractObservationRefBundle(obs, transactions, installmentPlans);
+      bundle.stableRefs.forEach(function (ref) { pushUniqueRef(stableRefs, ref); });
+      bundle.externalRefs.forEach(function (ref) { pushUniqueRef(externalRefs, ref); });
+      bundle.transactionRefs.forEach(function (ref) { pushUniqueRef(transactionRefs, ref); });
+      bundle.installmentPlanRefs.forEach(function (ref) { pushUniqueRef(installmentPlanRefs, ref); });
+      bundle.groupKeys.forEach(function (ref) { pushUniqueRef(groupKeys, ref); });
+      obsSnapshots.push(obs);
+    });
+    return {
+      mode: "all_related_observations",
+      source: "observations",
+      observationKeys: observationKeys,
+      pairKeys: pairKeys,
+      transactionRefs: transactionRefs,
+      stableRefs: stableRefs,
+      externalRefs: externalRefs,
+      installmentPlanRefs: installmentPlanRefs,
+      groupKeys: groupKeys,
+      observations: obsSnapshots,
+      observationCount: obsSnapshots.length
+    };
+  }
+
+  function planMatchesObservationFilter(plan, filter, transactions) {
+    if (!plan || !filter) return false;
+    var planRef = plan.planStableRef || plan.externalRef || plan.id || "";
+    if (filter.installmentPlanRefs && filter.installmentPlanRefs.length) {
+      for (var i = 0; i < filter.installmentPlanRefs.length; i++) {
+        if (filter.installmentPlanRefs[i] === planRef ||
+            filter.installmentPlanRefs[i] === plan.id ||
+            filter.installmentPlanRefs[i] === plan.externalRef) {
+          return true;
+        }
+      }
+    }
+    if (filter.groupKeys && filter.groupKeys.length) {
+      for (var g = 0; g < filter.groupKeys.length; g++) {
+        if (plan.groupKey === filter.groupKeys[g]) return true;
+        if (filter.groupKeys[g].indexOf("plan:") === 0) {
+          var pref = filter.groupKeys[g].slice(5);
+          if (pref && (planRef === pref || plan.id === pref || plan.externalRef === pref)) {
+            return true;
+          }
+        }
+        if (filter.groupKeys[g].indexOf("derived:") === 0 && plan.groupKey === filter.groupKeys[g]) {
+          return true;
+        }
+      }
+    }
+    if (filter.transactionRefs && filter.transactionRefs.length && transactions) {
+      for (var t = 0; t < filter.transactionRefs.length; t++) {
+        var tx = findEnrichedTransactionByRef(transactions, filter.transactionRefs[t]);
+        if (!tx) continue;
+        var txPlan = tx.installmentPlanId || "";
+        if (txPlan && (txPlan === planRef || txPlan === plan.id || txPlan === plan.externalRef)) {
+          return true;
+        }
+      }
+    }
+    return planMatchesInstallmentGroupFilter(plan, filter);
+  }
+
+  function resolvePlansForObservationFilter(filter, plans, transactions) {
+    if (!filter || !plans) return [];
+    var matched = [];
+    (plans || []).forEach(function (plan) {
+      if (planMatchesObservationFilter(plan, filter, transactions)) matched.push(plan);
+    });
+    return matched;
+  }
+
+  function buildObservationDerivedGroup(obs, transactions, installmentPlans) {
+    var refs = getObservationTransactionRefs(obs);
+    var txs = refs.map(function (ref) {
+      return findEnrichedTransactionByRef(transactions, ref);
+    }).filter(Boolean);
+    var gf = obs.installmentGroupFilter || {};
+    var groupKey = gf.groupKey || ("obs:" + (obs.pairKey || refs.slice().sort().join("|")));
+    var pairKey = obs.pairKey || "";
+    return {
+      groupKey: groupKey,
+      pairKey: pairKey,
+      observationKeys: pairKey ? [pairKey] : [],
+      pairKeys: pairKey ? [pairKey] : [],
+      transactionRefs: refs,
+      stableRefs: refs.slice(),
+      externalRefs: gf.externalRefs || [],
+      installmentPlanRefs: gf.installmentPlanRefs || [],
+      source: "observation-derived",
+      title: obs.description1 || (txs[0] && txs[0].description) || "Parcelas relacionadas",
+      description1: obs.description1 || "",
+      description2: obs.description2 || "",
+      amountFmt: obs.amountFmt || "",
+      date1: obs.date1 || "",
+      date2: obs.date2 || "",
+      transactions: txs,
+      fallbackLabel: "Grupo identificado nas observações",
+      badgeLabel: "Grupo identificado nas observações"
+    };
+  }
+
+  function buildObservationDerivedGroups(filter, transactions, installmentPlans) {
+    return (filter && filter.observations ? filter.observations : []).map(function (obs) {
+      return buildObservationDerivedGroup(obs, transactions, installmentPlans);
+    });
+  }
+
+  function observationLinksToPlan(obs, plan, transactions) {
+    if (!obs || !plan) return false;
+    var planRef = plan.planStableRef || plan.externalRef || plan.id || "";
+    var gf = obs.installmentGroupFilter;
+    if (gf && gf.installmentPlanRefs) {
+      for (var i = 0; i < gf.installmentPlanRefs.length; i++) {
+        if (gf.installmentPlanRefs[i] === planRef ||
+            gf.installmentPlanRefs[i] === plan.id ||
+            gf.installmentPlanRefs[i] === plan.externalRef) {
+          return true;
+        }
+      }
+    }
+    if (gf && planMatchesInstallmentGroupFilter(plan, gf)) return true;
+    var refs = getObservationTransactionRefs(obs);
+    for (var t = 0; t < refs.length; t++) {
+      var tx = findEnrichedTransactionByRef(transactions, refs[t]);
+      if (!tx) continue;
+      var txPlan = tx.installmentPlanId || "";
+      if (txPlan && (txPlan === planRef || txPlan === plan.id || txPlan === plan.externalRef)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function buildInstallmentDisplayGroups(filter, plans, transactions, installmentPlans) {
+    if (!filter || !filter.observations || !filter.observations.length) return [];
+    var groups = [];
+    var usedPairKeys = {};
+    var matchedPlans = resolvePlansForObservationFilter(filter, plans || [], transactions || []);
+
+    matchedPlans.forEach(function (plan) {
+      var planRef = plan.planStableRef || plan.externalRef || plan.id || "";
+      var groupKey = plan.groupKey || ("plan:" + planRef);
+      var linkedObs = filter.observations.filter(function (obs) {
+        return observationLinksToPlan(obs, plan, transactions);
+      });
+      var pairKeys = [];
+      linkedObs.forEach(function (obs) {
+        if (obs.pairKey && pairKeys.indexOf(obs.pairKey) < 0) pairKeys.push(obs.pairKey);
+        if (obs.pairKey) usedPairKeys[obs.pairKey] = true;
+      });
+      var txRefs = [];
+      linkedObs.forEach(function (obs) {
+        getObservationTransactionRefs(obs).forEach(function (ref) {
+          pushUniqueRef(txRefs, ref);
+        });
+      });
+      var txs = txRefs.map(function (ref) {
+        return findEnrichedTransactionByRef(transactions, ref);
+      }).filter(Boolean);
+      groups.push({
+        groupKey: groupKey,
+        pairKey: pairKeys[0] || "",
+        observationKeys: pairKeys.slice(),
+        pairKeys: pairKeys.slice(),
+        transactionRefs: txRefs,
+        stableRefs: txRefs.slice(),
+        externalRefs: [],
+        installmentPlanRefs: planRef ? [planRef] : [],
+        source: "plan-matched",
+        title: plan.description || "Parcelamento",
+        amountFmt: plan.installmentAmtFmt || "",
+        plan: plan,
+        transactions: txs,
+        fallbackLabel: plan.kindLabel || "Plano de parcelas",
+        badgeLabel: plan.kindLabel || "Plano de parcelas"
+      });
+    });
+
+    filter.observations.forEach(function (obs) {
+      if (obs.pairKey && usedPairKeys[obs.pairKey]) return;
+      groups.push(buildObservationDerivedGroup(obs, transactions, installmentPlans));
+    });
+
+    return groups;
+  }
+
+  function getInstallmentGroupDismissKeys(group) {
+    if (!group) return [];
+    if (group.pairKeys && group.pairKeys.length) return group.pairKeys.slice();
+    if (group.observationKeys && group.observationKeys.length) return group.observationKeys.slice();
+    if (group.pairKey) return [group.pairKey];
+    return [];
+  }
+
+  function dismissInstallmentGroup(group, dismissedMap) {
+    var keys = getInstallmentGroupDismissKeys(group);
+    keys.forEach(function (key) {
+      if (key) dismissedMap[key] = true;
+    });
+    return keys;
+  }
+
+  function filterActiveInstallmentGroups(groups, dismissedMap) {
+    return (groups || []).filter(function (group) {
+      var keys = getInstallmentGroupDismissKeys(group);
+      if (!keys.length) return true;
+      return keys.some(function (key) { return !dismissedMap[key]; });
+    });
+  }
+
+  function getInstallmentGroupCardActions(group) {
+    var txCount = (group && group.transactionRefs) ? group.transactionRefs.length : 0;
+    var actions = ["Marcar grupo como concluído"];
+    if (txCount === 2) {
+      actions.unshift("Comparar este par");
+    } else if (txCount > 2) {
+      actions.unshift("Ver lançamentos do grupo");
+    }
+    return actions;
+  }
+
+  function getObservationActionLabels(contextKind, scope) {
+    scope = scope || "card";
+    if (contextKind === "installment_related") {
+      if (scope === "section") return ["Ver todas as parcelas relacionadas"];
+      if (scope === "card") return ["Comparar este par", "Marcar como conferido"];
+      if (scope === "compare_panel") {
+        return ["Parcelas corretas", "Não é parcelamento", "Revisar depois", "Limpar comparação"];
+      }
+      if (scope === "global_panel") {
+        return ["Marcar todas como conferidas", "Revisar depois", "Limpar filtro"];
+      }
+      if (scope === "group_card") {
+        return ["Marcar grupo como concluído"];
+      }
+    }
+    if (contextKind === "repeated_purchase") {
+      if (scope === "card") return ["Comparar compras", "Marcar como conferido"];
+      if (scope === "compare_panel") {
+        return ["São compras diferentes", "É duplicata", "Revisar depois", "Limpar comparação"];
+      }
+    }
+    return [];
+  }
+
+  function planMatchesInstallmentGroupFilter(plan, filter) {
+    if (!plan || !filter) return false;
+    var planRef = plan.externalRef || plan.id || plan.planStableRef || "";
+    if (filter.installmentPlanRefs && filter.installmentPlanRefs.length) {
+      for (var i = 0; i < filter.installmentPlanRefs.length; i++) {
+        if (filter.installmentPlanRefs[i] === planRef ||
+            filter.installmentPlanRefs[i] === plan.id ||
+            filter.installmentPlanRefs[i] === plan.externalRef) {
+          return true;
+        }
+      }
+    }
+    if (filter.groupKey && plan.groupKey === filter.groupKey) return true;
+    if (filter.groupKey && filter.groupKey.indexOf("plan:") === 0) {
+      var ref = filter.groupKey.slice(5);
+      if (ref && (planRef === ref || plan.id === ref || plan.externalRef === ref)) return true;
+    }
+    if (filter.groupKey && filter.groupKey.indexOf("derived:") === 0 && plan.groupKey === filter.groupKey) {
+      return true;
+    }
+    return false;
+  }
+
+  function getObservationUiCopy(obs) {
+    var classification = getObservationClassification(obs);
+    var contextKind = getObservationContextKind(obs);
+    if (contextKind === "repeated_purchase" || classification === "repeated_purchase") {
+      return {
+        title: "Compra semelhante encontrada",
+        description: "Encontramos lançamentos parecidos em datas diferentes. Confira se são compras distintas.",
+        impact: "Apenas informativo — não bloqueia a importação."
+      };
+    }
+    if (classification === "recurring_candidate") {
+      return {
+        title: "Recorrência candidata",
+        description: "Despesa repetida em meses diferentes — confira se é assinatura ou compra avulsa.",
+        impact: "Merece conferência — não bloqueia a importação."
+      };
+    }
+    if (classification === "exact_duplicate") {
+      return {
+        title: "Duplicata exata",
+        description: "Dois lançamentos idênticos foram detectados.",
+        impact: "Bloqueia a importação até revisar."
+      };
+    }
+    if (classification === "probable_duplicate") {
+      return {
+        title: "Duplicata provável",
+        description: "Lançamentos muito parecidos — confira se não é repetição.",
+        impact: obs.tier === "attention"
+          ? "Merece conferência — não bloqueia a importação."
+          : "Bloqueia a importação até revisar."
+      };
+    }
+    if (contextKind === "installment_related" || classification === "installment_related") {
+      return {
+        title: "Parcelas relacionadas",
+        description: "Parcelas vinculadas a planos consistentes — não indicam erro.",
+        cardDescription: "Parcelas vinculadas a um plano consistente.",
+        impact: "Apenas informativo — não bloqueia a importação."
+      };
+    }
+    if (classification === "category_review") {
+      return {
+        title: "Categoria a revisar",
+        description: "Categoria genérica — ajuste apenas se quiser refinar.",
+        impact: "Apenas informativo — não bloqueia a importação."
+      };
+    }
+    if (classification === "similar_transfer") {
+      return {
+        title: "Transferência semelhante",
+        description: "Transferências parecidas em valor ou descrição.",
+        impact: obs.tier === "attention"
+          ? "Merece conferência — não bloqueia a importação."
+          : "Bloqueia a importação até revisar."
+      };
+    }
+    return {
+      title: obs.classificationLabel || "Observação",
+      description: "",
+      impact: obs.informational
+        ? "Apenas informativo — não bloqueia a importação."
+        : (obs.attention ? "Merece conferência." : "Bloqueia a importação.")
+    };
+  }
+
+  function annotateObservation(obs, transactions, installmentPlans) {
+    var copy = enrichObservationTransactionRefs(obs, transactions);
     var classification = getObservationClassification(copy);
     var tier = getObservationTier(copy, transactions, installmentPlans);
 
@@ -916,6 +1709,13 @@ window.CFM = window.CFM || {};
       copy.blocking = false;
       copy.informational = false;
       copy.severity = "warning";
+    }
+
+    copy.contextKind = getObservationContextKind(copy);
+    if (copy.contextKind === "installment_related") {
+      copy.installmentGroupFilter = buildInstallmentGroupFilter(
+        copy, transactions, installmentPlans
+      );
     }
 
     return copy;
@@ -1016,6 +1816,8 @@ window.CFM = window.CFM || {};
     isExternalInvoiceSettlementTransaction: isExternalInvoiceSettlementTransaction,
     isInvoiceSettlementForInvoice:       isInvoiceSettlementForInvoice,
     getInvoiceDisplayAmounts:            getInvoiceDisplayAmounts,
+    getInvoicePrimaryDisplay:            getInvoicePrimaryDisplay,
+    isInvoicePaidForDisplay:             isInvoicePaidForDisplay,
     getInvoiceCreditLabel:               getInvoiceCreditLabel,
     getInvoiceSettlementLabel:           getInvoiceSettlementLabel,
     getInvoicePaymentBreakdownRows:      getInvoicePaymentBreakdownRows,
@@ -1026,6 +1828,14 @@ window.CFM = window.CFM || {};
     isRecurringRuleActive:               isRecurringRuleActive,
     getRecurringRuleBadges:              getRecurringRuleBadges,
     getRecurringRuleImportImpact:        getRecurringRuleImportImpact,
+    getRecurringDisplayAmount:           getRecurringDisplayAmount,
+    getRecurringConfidenceLabel:         getRecurringConfidenceLabel,
+    shouldSuppressRepeatedPurchasePair:  shouldSuppressRepeatedPurchasePair,
+    getTransactionCompareHint:           getTransactionCompareHint,
+    getTransactionTypeLabel:             getTransactionTypeLabel,
+    getTransactionInstallmentLabel:      getTransactionInstallmentLabel,
+    txInstallmentCurrent:                txInstallmentCurrent,
+    txInstallmentTotal:                  txInstallmentTotal,
     isRecurringRuleUserConfirmed:        isRecurringRuleUserConfirmed,
     buildRecurringRuleLookup:            buildRecurringRuleLookup,
     isTransactionRecurrenceConfirmed:    isTransactionRecurrenceConfirmed,
@@ -1040,6 +1850,31 @@ window.CFM = window.CFM || {};
     isObservationInformational:          isObservationInformational,
     getObservationTier:                  getObservationTier,
     annotateObservation:                 annotateObservation,
+    getTransactionStableRef:             getTransactionStableRef,
+    getStableTransactionRef:             getStableTransactionRef,
+    matchTransactionRef:                 matchTransactionRef,
+    findEnrichedTransactionByRef:        findEnrichedTransactionByRef,
+    getObservationTransactionRefs:       getObservationTransactionRefs,
+    enrichObservationTransactionRefs:    enrichObservationTransactionRefs,
+    formatCompetenceHuman:               formatCompetenceHuman,
+    getInvoiceHumanLabel:                getInvoiceHumanLabel,
+    isTechnicalSourceLabel:              isTechnicalSourceLabel,
+    getObservationUiCopy:                getObservationUiCopy,
+    getObservationContextKind:           getObservationContextKind,
+    buildInstallmentGroupFilter:         buildInstallmentGroupFilter,
+    buildInstallmentObservationFilter:   buildInstallmentObservationFilter,
+    buildInstallmentGroupKeyFromTx:      buildInstallmentGroupKeyFromTx,
+    planMatchesInstallmentGroupFilter:   planMatchesInstallmentGroupFilter,
+    planMatchesObservationFilter:        planMatchesObservationFilter,
+    resolvePlansForObservationFilter:    resolvePlansForObservationFilter,
+    buildObservationDerivedGroups:       buildObservationDerivedGroups,
+    buildObservationDerivedGroup:        buildObservationDerivedGroup,
+    buildInstallmentDisplayGroups:       buildInstallmentDisplayGroups,
+    getInstallmentGroupDismissKeys:      getInstallmentGroupDismissKeys,
+    dismissInstallmentGroup:             dismissInstallmentGroup,
+    filterActiveInstallmentGroups:       filterActiveInstallmentGroups,
+    getInstallmentGroupCardActions:      getInstallmentGroupCardActions,
+    getObservationActionLabels:          getObservationActionLabels,
     rebuildObservationCounts:            rebuildObservationCounts,
     buildObservationBanner:              buildObservationBanner,
     isSimilarityBlocking:                isSimilarityBlocking,
