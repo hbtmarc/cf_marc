@@ -1,0 +1,11 @@
+# Vídeo — não versionar sem autorização
+assets/video/*.mp4
+
+# macOS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~

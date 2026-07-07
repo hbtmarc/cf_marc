@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 380" fill="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="tankGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2B2F33"/>
+      <stop offset="100%" stop-color="#1A1D1F"/>
+    </linearGradient>
+    <linearGradient id="greenAccent" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#008542"/>
+      <stop offset="100%" stop-color="#006B35"/>
+    </linearGradient>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#D0CEC8" stroke-width="0.5" opacity="0.4"/>
+    </pattern>
+  </defs>
+
+  <!-- Background grid -->
+  <rect width="420" height="380" fill="url(#grid)" opacity="0.3"/>
+
+  <!-- Risk line -->
+  <line x1="40" y1="320" x2="380" y2="320" stroke="#E87722" stroke-width="2" stroke-dasharray="8 6" opacity="0.6"/>
+
+  <!-- Tank base -->
+  <ellipse cx="210" cy="300" rx="140" ry="18" fill="#1A1D1F" opacity="0.15"/>
+
+  <!-- Tank body -->
+  <rect x="70" y="120" width="280" height="180" rx="8" fill="url(#tankGrad)" stroke="#3D4145" stroke-width="2"/>
+
+  <!-- Tank top dome -->
+  <path d="M 70 120 Q 210 60 350 120" fill="url(#tankGrad)" stroke="#3D4145" stroke-width="2"/>
+
+  <!-- Top ring -->
+  <ellipse cx="210" cy="120" rx="140" ry="12" fill="none" stroke="#008542" stroke-width="2" opacity="0.7"/>
+
+  <!-- Corrosion indicator -->
+  <path d="M 180 140 Q 200 155 220 140 Q 240 125 260 140" fill="none" stroke="#E87722" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+  <circle cx="220" cy="138" r="4" fill="#E87722"/>
+
+  <!-- Access ladder -->
+  <line x1="340" y1="120" x2="340" y2="300" stroke="#5C5A56" stroke-width="3"/>
+  <line x1="330" y1="160" x2="350" y2="160" stroke="#5C5A56" stroke-width="2"/>
+  <line x1="330" y1="200" x2="350" y2="200" stroke="#5C5A56" stroke-width="2"/>
+  <line x1="330" y1="240" x2="350" y2="240" stroke="#5C5A56" stroke-width="2"/>
+  <line x1="330" y1="280" x2="350" y2="280" stroke="#5C5A56" stroke-width="2"/>
+
+  <!-- Piping -->
+  <path d="M 70 200 L 30 200 L 30 250 L 70 250" fill="none" stroke="#008542" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="30" cy="225" r="8" fill="none" stroke="#008542" stroke-width="2"/>
+
+  <!-- Alert marker -->
+  <g transform="translate(320, 90)">
+    <polygon points="0,-16 14,12 -14,12" fill="#E87722" opacity="0.9"/>
+    <text x="0" y="6" text-anchor="middle" fill="#1A1D1F" font-size="14" font-weight="bold" font-family="system-ui,sans-serif">!</text>
+  </g>
+
+  <!-- Green accent bar -->
+  <rect x="70" y="290" width="280" height="4" fill="url(#greenAccent)" rx="2"/>
+
+  <!-- Technical dimension lines -->
+  <line x1="70" y1="340" x2="350" y2="340" stroke="#8A8884" stroke-width="1"/>
+  <line x1="70" y1="335" x2="70" y2="345" stroke="#8A8884" stroke-width="1"/>
+  <line x1="350" y1="335" x2="350" y2="345" stroke="#8A8884" stroke-width="1"/>
+</svg>
