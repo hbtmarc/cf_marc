@@ -5,29 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Controle Financeiro Mensal — nova base em construção"
+      content="Controle Financeiro Mensal — receitas, despesas e faturas por competência"
     />
     <title>Controle Financeiro Mensal</title>
   </head>
   <body>
-    <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
-
-    <div class="page">
-      <header class="page__header">
-        <p class="page__eyebrow">Fundação Vite + TypeScript</p>
-        <h1 class="page__title" id="conteudo">Controle Financeiro Mensal</h1>
-        <p class="page__subtitle">Nova base em construção</p>
-      </header>
-
-      <main class="page__main">
-        <p class="page__lead">
-          O MVP de receitas, despesas e faturas será implementado na próxima
-          etapa. Esta página confirma que a nova fundação técnica está
-          funcionando.
-        </p>
-      </main>
-    </div>
-
+    <div id="app"></div>
+    <div id="modal-root" class="modal-root"></div>
+    <div id="live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

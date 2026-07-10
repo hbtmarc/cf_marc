@@ -2,37 +2,52 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 10 de julho de 2026  
-**Etapa atual:** Fundação limpa
+**Etapa atual:** MVP financeiro mensal local concluído
 
 ---
 
 ## Projeto legado
 
-O frontend anterior (Fase 0.6.0, commit `bebde71`) foi encerrado. O código legado permanece acessível pela tag `legacy-v0.6.0`.
+O frontend anterior foi encerrado. O código legado permanece acessível pela tag `legacy-v0.6.0` (commit `bebde71`).
 
-## Nova fundação
+## Etapa 2 — concluída
 
-Fundação técnica criada com Vite + TypeScript vanilla:
+MVP local implementado com:
 
-- build de produção com base `/cf_marc/` para GitHub Pages;
-- tela institucional mínima de verificação;
-- sem integração Firebase no frontend;
-- sem persistência local;
-- sem roteamento.
+- receitas e despesas manuais por competência;
+- cartões de crédito e faturas mensais;
+- dashboard consolidado;
+- hash routing (`#/dashboard`, `#/lancamentos`, `#/faturas`, `#/ajustes`);
+- persistência em `cfm:v2:appData`;
+- testes unitários para cálculos e storage.
 
-## Escopo ainda não implementado
+## Decisões técnicas
 
-- Receitas
-- Despesas
-- Faturas
-- Cartões
-- CRUD
-- Importação
-- Autenticação
-- Firebase SDK
-- Realtime Database
-- GitHub Actions / deploy automático
+- Valores em centavos inteiros — nunca float.
+- Fatura mensal representa o cartão; sem compras individuais.
+- Funções de cálculo puras em `finance.ts`.
+- `localStorage` centralizado em `storage.ts`.
+- Sem framework, sem store global complexo.
+
+## Riscos
+
+- Dados locais podem ser perdidos ao limpar o navegador.
+- Sem backup automático ou sincronização entre dispositivos.
+- Schema `cfm.local.v2` não migra dados do legado `cfm:v1:appData`.
 
 ## Próximo marco
 
-**MVP financeiro local** — receitas, despesas e faturas com persistência local, sem Firebase.
+Integração Firebase (Auth + RTDB) e publicação no GitHub Pages.
+
+## Funcionalidades adiadas
+
+- Firebase e autenticação
+- Sincronização em nuvem
+- Importação bancária (JSON, OFX, CSV)
+- Compras individuais de cartão
+- Parcelamentos
+- Recorrências automáticas
+- Categorias inteligentes
+- Relatórios avançados e gráficos
+- Exportação de dados
+- GitHub Actions
