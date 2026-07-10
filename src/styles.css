@@ -208,6 +208,12 @@ body.modal-open {
   line-height: 1.2;
 }
 
+.topbar__subtitle {
+  margin: var(--space-2) 0 0;
+  max-width: 36rem;
+  color: var(--color-text-muted);
+}
+
 .competence-bar {
   display: inline-flex;
   align-items: center;
@@ -667,6 +673,10 @@ body.modal-open {
   pointer-events: auto;
 }
 
+.modal-root[aria-hidden="true"] {
+  display: none;
+}
+
 .modal-backdrop {
   position: absolute;
   inset: 0;
@@ -753,10 +763,33 @@ body.modal-open {
   border-color: var(--color-action);
 }
 
+.page-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.page-toolbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.field__required {
+  color: var(--color-expense);
+}
+
 .field-error {
   margin: 0;
   font-size: 0.875rem;
   color: var(--color-expense);
+}
+
+.field-error[hidden] {
+  display: none;
 }
 
 .form-actions,

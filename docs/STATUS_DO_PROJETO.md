@@ -21,6 +21,13 @@ MVP local implementado com:
 - persistência em `cfm:v2:appData`;
 - testes unitários para cálculos e storage.
 
+Passe final de aceite da Etapa 2 concluído:
+
+- validação progressiva dos formulários;
+- hierarquia de títulos corrigida;
+- modais validados por teclado e foco;
+- gerenciamento de cartões centralizado em Ajustes.
+
 ## Decisões técnicas
 
 - Valores em centavos inteiros — nunca float.

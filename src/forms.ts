@@ -5,44 +5,39 @@ import {
   validateInvoiceForm,
   validateTransactionForm,
 } from "./finance";
+import {
+  createProgressiveForm,
+  createValidatedField,
+  type ProgressiveFormHandle,
+} from "./form-validation";
 import type { AppData, Card, Invoice, Transaction, TransactionKind } from "./types";
 import {
   announce,
-  bindFormValidation,
   centsToInputValue,
   closeModal,
   el,
   openModal,
-  renderFieldError,
 } from "./ui";
 
 export interface AppMutations {
   update: (mutator: (data: AppData) => void) => void;
 }
 
-function fieldGroup(
-  label: string,
-  control: HTMLElement,
-  fieldId: string,
-  errorHtml = "",
-): HTMLElement {
-  const group = el("div", "field");
-  const labelEl = el("label", "field__label");
-  labelEl.htmlFor = fieldId;
-  labelEl.textContent = label;
-  control.id = fieldId;
-  control.classList.add("field__control");
-  group.appendChild(labelEl);
-  group.appendChild(control);
-  if (errorHtml) {
-    const wrapper = el("div");
-    wrapper.innerHTML = errorHtml;
-    const errorNode = wrapper.firstElementChild;
-    if (errorNode) {
-      group.appendChild(errorNode);
-    }
-  }
-  return group;
+function openFormModal(options: {
+  title: string;
+  form: HTMLFormElement;
+  formController: ProgressiveFormHandle;
+  panelClass?: string;
+}): void {
+  options.formController.bind();
+  openModal({
+    title: options.title,
+    content: options.form,
+    onClose: () => {
+      options.formController.destroy();
+    },
+    ...(options.panelClass ? { panelClass: options.panelClass } : {}),
+  });
 }
 
 export function openTransactionForm(options: {
@@ -68,7 +63,6 @@ export function openTransactionForm(options: {
 
   const description = el("input") as HTMLInputElement;
   description.type = "text";
-  description.required = true;
   description.value = transaction?.description ?? "";
   description.autocomplete = "off";
 
@@ -89,8 +83,7 @@ export function openTransactionForm(options: {
   const status = el("select") as HTMLSelectElement;
   const pending = el("option") as HTMLOptionElement;
   pending.value = "pending";
-  pending.textContent =
-    options.kind === "income" ? "Pendente" : "Pendente";
+  pending.textContent = "Pendente";
   const settled = el("option") as HTMLOptionElement;
   settled.value = "settled";
   settled.textContent =
@@ -99,22 +92,66 @@ export function openTransactionForm(options: {
   status.appendChild(settled);
   status.value = transaction?.status ?? "pending";
 
-  const errorsHost = el("div", "form-errors");
+  const fields = [
+    createValidatedField({
+      name: "tx-description",
+      label: "Descrição",
+      control: description,
+      required: true,
+      getError: () =>
+        description.value.trim().length === 0 ? "Descrição é obrigatória." : null,
+    }),
+    createValidatedField({
+      name: "tx-amount",
+      label: "Valor",
+      control: amount,
+      required: true,
+      getError: () => {
+        const result = validateTransactionForm({
+          description: description.value,
+          amountInput: amount.value,
+          date: date.value,
+          competenceMonth: options.competenceMonth,
+          category: category.value,
+        });
+        return result.errors.amount ?? null;
+      },
+    }),
+    createValidatedField({
+      name: "tx-date",
+      label: "Data",
+      control: date,
+      required: true,
+      getError: () => {
+        const result = validateTransactionForm({
+          description: description.value,
+          amountInput: amount.value,
+          date: date.value,
+          competenceMonth: options.competenceMonth,
+          category: category.value,
+        });
+        return result.errors.date ?? null;
+      },
+    }),
+    createValidatedField({
+      name: "tx-category",
+      label: "Categoria",
+      control: category,
+      required: true,
+      getError: () =>
+        category.value.trim().length === 0 ? "Categoria é obrigatória." : null,
+    }),
+    createValidatedField({
+      name: "tx-status",
+      label: "Status",
+      control: status,
+      getError: () => null,
+    }),
+  ];
 
-  form.appendChild(
-    fieldGroup("Descrição", description, "tx-description"),
-  );
-  form.appendChild(fieldGroup("Valor", amount, "tx-amount"));
-  form.appendChild(fieldGroup("Data", date, "tx-date"));
-  form.appendChild(
-    fieldGroup(
-      "Categoria",
-      category,
-      "tx-category",
-    ),
-  );
-  form.appendChild(fieldGroup("Status", status, "tx-status"));
-  form.appendChild(errorsHost);
+  for (const field of fields) {
+    form.appendChild(field.group);
+  }
 
   const actions = el("div", "form-actions");
   const cancel = el("button", "btn btn--secondary", "Cancelar");
@@ -129,93 +166,77 @@ export function openTransactionForm(options: {
   actions.appendChild(submit);
   form.appendChild(actions);
 
-  const validate = (): boolean => {
-    const result = validateTransactionForm({
-      description: description.value,
-      amountInput: amount.value,
-      date: date.value,
-      competenceMonth: options.competenceMonth,
-      category: category.value,
-    });
-
-    errorsHost.innerHTML = "";
-    for (const [field, message] of Object.entries(result.errors)) {
-      errorsHost.insertAdjacentHTML(
-        "beforeend",
-        renderFieldError(field, message),
-      );
-    }
-
-    return Object.keys(result.errors).length === 0 && result.amountCents !== null;
-  };
-
-  bindFormValidation(form, submit, validate);
-
   cancel.addEventListener("click", () => {
     closeModal();
   });
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!validate()) {
-      return;
-    }
+  const formController = createProgressiveForm({
+    form,
+    submitButton: submit,
+    fields,
+    onSubmit: () => {
+      const result = validateTransactionForm({
+        description: description.value,
+        amountInput: amount.value,
+        date: date.value,
+        competenceMonth: options.competenceMonth,
+        category: category.value,
+      });
 
-    const result = validateTransactionForm({
-      description: description.value,
-      amountInput: amount.value,
-      date: date.value,
-      competenceMonth: options.competenceMonth,
-      category: category.value,
-    });
-
-    if (result.amountCents === null) {
-      return;
-    }
-
-    const amountCents = result.amountCents;
-    const timestamp = nowIso();
-
-    options.mutations.update((data) => {
-      if (isEdit && transaction) {
-        const index = data.transactions.findIndex(
-          (item) => item.id === transaction.id,
-        );
-        if (index >= 0) {
-          data.transactions[index] = {
-            ...transaction,
-            description: description.value.trim(),
-            amountCents,
-            date: date.value,
-            competenceMonth: options.competenceMonth,
-            category: category.value.trim(),
-            status: status.value as Transaction["status"],
-            updatedAt: timestamp,
-          };
-        }
+      if (result.amountCents === null) {
+        formController.markSubmitted();
         return;
       }
 
-      data.transactions.push({
-        id: createId(),
-        kind: options.kind,
-        description: description.value.trim(),
-        amountCents,
-        date: date.value,
-        competenceMonth: options.competenceMonth,
-        category: category.value.trim(),
-        status: status.value as Transaction["status"],
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
-    });
+      const amountCents = result.amountCents;
+      const timestamp = nowIso();
 
-    announce(isEdit ? "Lançamento atualizado." : "Lançamento adicionado.");
-    closeModal();
-    options.onSaved();
+      options.mutations.update((data) => {
+        if (isEdit && transaction) {
+          const index = data.transactions.findIndex(
+            (item) => item.id === transaction.id,
+          );
+          if (index >= 0) {
+            data.transactions[index] = {
+              ...transaction,
+              description: description.value.trim(),
+              amountCents,
+              date: date.value,
+              competenceMonth: options.competenceMonth,
+              category: category.value.trim(),
+              status: status.value as Transaction["status"],
+              updatedAt: timestamp,
+            };
+          }
+          return;
+        }
+
+        data.transactions.push({
+          id: createId(),
+          kind: options.kind,
+          description: description.value.trim(),
+          amountCents,
+          date: date.value,
+          competenceMonth: options.competenceMonth,
+          category: category.value.trim(),
+          status: status.value as Transaction["status"],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      });
+
+      announce(isEdit ? "Lançamento atualizado." : "Lançamento adicionado.");
+      closeModal();
+      options.onSaved();
+    },
   });
 
-  openModal({ title, content: form, panelClass: "modal-panel--form" });
+  openFormModal({
+    title,
+    form,
+    formController,
+    panelClass: "modal-panel--form",
+  });
 }
 
 export function openCardForm(options: {
@@ -250,14 +271,39 @@ export function openCardForm(options: {
     dueDay.value = String(card.dueDay);
   }
 
-  const errorsHost = el("div", "form-errors");
+  const getCardValidation = () =>
+    validateCardForm({
+      name: name.value,
+      closingDay: closingDay.value,
+      dueDay: dueDay.value,
+    });
 
-  form.appendChild(fieldGroup("Nome", name, "card-name"));
-  form.appendChild(
-    fieldGroup("Dia de fechamento", closingDay, "card-closing"),
-  );
-  form.appendChild(fieldGroup("Dia de vencimento", dueDay, "card-due"));
-  form.appendChild(errorsHost);
+  const fields = [
+    createValidatedField({
+      name: "card-name",
+      label: "Nome",
+      control: name,
+      required: true,
+      getError: () =>
+        name.value.trim().length === 0 ? "Nome do cartão é obrigatório." : null,
+    }),
+    createValidatedField({
+      name: "card-closing",
+      label: "Dia de fechamento",
+      control: closingDay,
+      getError: () => getCardValidation().errors.closingDay ?? null,
+    }),
+    createValidatedField({
+      name: "card-due",
+      label: "Dia de vencimento",
+      control: dueDay,
+      getError: () => getCardValidation().errors.dueDay ?? null,
+    }),
+  ];
+
+  for (const field of fields) {
+    form.appendChild(field.group);
+  }
 
   const actions = el("div", "form-actions");
   const cancel = el("button", "btn btn--secondary", "Cancelar");
@@ -272,75 +318,58 @@ export function openCardForm(options: {
   actions.appendChild(submit);
   form.appendChild(actions);
 
-  const validate = (): boolean => {
-    const result = validateCardForm({
-      name: name.value,
-      closingDay: closingDay.value,
-      dueDay: dueDay.value,
-    });
-    errorsHost.innerHTML = "";
-    for (const [field, message] of Object.entries(result.errors)) {
-      errorsHost.insertAdjacentHTML(
-        "beforeend",
-        renderFieldError(field, message),
-      );
-    }
-    return Object.keys(result.errors).length === 0;
-  };
-
-  bindFormValidation(form, submit, validate);
-
   cancel.addEventListener("click", () => {
     closeModal();
   });
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!validate()) {
-      return;
-    }
-
-    const result = validateCardForm({
-      name: name.value,
-      closingDay: closingDay.value,
-      dueDay: dueDay.value,
-    });
-
-    const timestamp = nowIso();
-
-    options.mutations.update((data) => {
-      if (isEdit && card) {
-        const index = data.cards.findIndex((item) => item.id === card.id);
-        if (index >= 0) {
-          data.cards[index] = {
-            ...card,
-            name: name.value.trim(),
-            closingDay: result.closingDay,
-            dueDay: result.dueDay,
-            updatedAt: timestamp,
-          };
-        }
+  const formController = createProgressiveForm({
+    form,
+    submitButton: submit,
+    fields,
+    onSubmit: () => {
+      const result = getCardValidation();
+      if (Object.keys(result.errors).length > 0) {
+        formController.markSubmitted();
         return;
       }
 
-      data.cards.push({
-        id: createId(),
-        name: name.value.trim(),
-        closingDay: result.closingDay,
-        dueDay: result.dueDay,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
-    });
+      const timestamp = nowIso();
 
-    announce(isEdit ? "Cartão atualizado." : "Cartão adicionado.");
-    closeModal();
-    options.onSaved();
+      options.mutations.update((data) => {
+        if (isEdit && card) {
+          const index = data.cards.findIndex((item) => item.id === card.id);
+          if (index >= 0) {
+            data.cards[index] = {
+              ...card,
+              name: name.value.trim(),
+              closingDay: result.closingDay,
+              dueDay: result.dueDay,
+              updatedAt: timestamp,
+            };
+          }
+          return;
+        }
+
+        data.cards.push({
+          id: createId(),
+          name: name.value.trim(),
+          closingDay: result.closingDay,
+          dueDay: result.dueDay,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      });
+
+      announce(isEdit ? "Cartão atualizado." : "Cartão adicionado.");
+      closeModal();
+      options.onSaved();
+    },
   });
 
-  openModal({
+  openFormModal({
     title: isEdit ? "Editar cartão" : "Novo cartão",
-    content: form,
+    form,
+    formController,
     panelClass: "modal-panel--form",
   });
 }
@@ -392,8 +421,6 @@ export function openInvoiceForm(options: {
   status.appendChild(paidOption);
   status.value = invoice?.status ?? "open";
 
-  const errorsHost = el("div", "form-errors");
-
   if (options.data.cards.length === 0) {
     const notice = el(
       "p",
@@ -403,11 +430,48 @@ export function openInvoiceForm(options: {
     form.appendChild(notice);
   }
 
-  form.appendChild(fieldGroup("Cartão", cardId, "invoice-card"));
-  form.appendChild(fieldGroup("Valor", amount, "invoice-amount"));
-  form.appendChild(fieldGroup("Vencimento", dueDate, "invoice-due"));
-  form.appendChild(fieldGroup("Status", status, "invoice-status"));
-  form.appendChild(errorsHost);
+  const getInvoiceValidation = () =>
+    validateInvoiceForm({
+      cardId: cardId.value,
+      competenceMonth: options.competenceMonth,
+      amountInput: amount.value,
+      dueDate: dueDate.value,
+    });
+
+  const fields = [
+    createValidatedField({
+      name: "invoice-card",
+      label: "Cartão",
+      control: cardId,
+      required: true,
+      getError: () =>
+        cardId.value.trim().length === 0 ? "Selecione um cartão." : null,
+    }),
+    createValidatedField({
+      name: "invoice-amount",
+      label: "Valor",
+      control: amount,
+      required: true,
+      getError: () => getInvoiceValidation().errors.amount ?? null,
+    }),
+    createValidatedField({
+      name: "invoice-due",
+      label: "Vencimento",
+      control: dueDate,
+      required: true,
+      getError: () => getInvoiceValidation().errors.dueDate ?? null,
+    }),
+    createValidatedField({
+      name: "invoice-status",
+      label: "Status",
+      control: status,
+      getError: () => null,
+    }),
+  ];
+
+  for (const field of fields) {
+    form.appendChild(field.group);
+  }
 
   const actions = el("div", "form-actions");
   const cancel = el("button", "btn btn--secondary", "Cancelar");
@@ -423,92 +487,70 @@ export function openInvoiceForm(options: {
   actions.appendChild(submit);
   form.appendChild(actions);
 
-  const validate = (): boolean => {
-    const result = validateInvoiceForm({
-      cardId: cardId.value,
-      competenceMonth: options.competenceMonth,
-      amountInput: amount.value,
-      dueDate: dueDate.value,
-    });
-    errorsHost.innerHTML = "";
-    for (const [field, message] of Object.entries(result.errors)) {
-      errorsHost.insertAdjacentHTML(
-        "beforeend",
-        renderFieldError(field, message),
-      );
-    }
-    return (
-      Object.keys(result.errors).length === 0 &&
-      result.amountCents !== null &&
-      options.data.cards.length > 0
-    );
-  };
-
-  bindFormValidation(form, submit, validate);
-
   cancel.addEventListener("click", () => {
     closeModal();
   });
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    if (!validate()) {
-      return;
-    }
-
-    const result = validateInvoiceForm({
-      cardId: cardId.value,
-      competenceMonth: options.competenceMonth,
-      amountInput: amount.value,
-      dueDate: dueDate.value,
-    });
-
-    if (result.amountCents === null) {
-      return;
-    }
-
-    const amountCents = result.amountCents;
-    const timestamp = nowIso();
-
-    options.mutations.update((data) => {
-      if (isEdit && invoice) {
-        const index = data.invoices.findIndex(
-          (item) => item.id === invoice.id,
-        );
-        if (index >= 0) {
-          data.invoices[index] = {
-            ...invoice,
-            cardId: cardId.value,
-            competenceMonth: options.competenceMonth,
-            amountCents,
-            dueDate: dueDate.value,
-            status: status.value as Invoice["status"],
-            updatedAt: timestamp,
-          };
-        }
+  const formController = createProgressiveForm({
+    form,
+    submitButton: submit,
+    fields,
+    onSubmit: () => {
+      if (options.data.cards.length === 0) {
+        formController.markSubmitted();
         return;
       }
 
-      data.invoices.push({
-        id: createId(),
-        cardId: cardId.value,
-        competenceMonth: options.competenceMonth,
-        amountCents,
-        dueDate: dueDate.value,
-        status: status.value as Invoice["status"],
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
-    });
+      const result = getInvoiceValidation();
+      if (result.amountCents === null || Object.keys(result.errors).length > 0) {
+        formController.markSubmitted();
+        return;
+      }
 
-    announce(isEdit ? "Fatura atualizada." : "Fatura adicionada.");
-    closeModal();
-    options.onSaved();
+      const amountCents = result.amountCents;
+      const timestamp = nowIso();
+
+      options.mutations.update((data) => {
+        if (isEdit && invoice) {
+          const index = data.invoices.findIndex(
+            (item) => item.id === invoice.id,
+          );
+          if (index >= 0) {
+            data.invoices[index] = {
+              ...invoice,
+              cardId: cardId.value,
+              competenceMonth: options.competenceMonth,
+              amountCents,
+              dueDate: dueDate.value,
+              status: status.value as Invoice["status"],
+              updatedAt: timestamp,
+            };
+          }
+          return;
+        }
+
+        data.invoices.push({
+          id: createId(),
+          cardId: cardId.value,
+          competenceMonth: options.competenceMonth,
+          amountCents,
+          dueDate: dueDate.value,
+          status: status.value as Invoice["status"],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      });
+
+      announce(isEdit ? "Fatura atualizada." : "Fatura adicionada.");
+      closeModal();
+      options.onSaved();
+    },
   });
 
-  openModal({
+  openFormModal({
     title: isEdit ? "Editar fatura" : "Nova fatura",
-    content: form,
+    form,
+    formController,
     panelClass: "modal-panel--form",
   });
 }
@@ -601,17 +643,6 @@ export function toggleInvoiceStatus(
 export function cardNameById(data: AppData, cardId: string): string {
   const card = data.cards.find((item) => item.id === cardId);
   return card?.name ?? "Cartão removido";
-}
-
-export function actionButton(
-  label: string,
-  className: string,
-  onClick: () => void,
-): HTMLButtonElement {
-  const button = el("button", className, label);
-  button.type = "button";
-  button.addEventListener("click", onClick);
-  return button;
 }
 
 export function iconActionButton(

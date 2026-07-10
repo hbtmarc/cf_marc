@@ -6,13 +6,17 @@ import {
   shiftCompetenceMonth,
   transactionStatusLabel,
 } from "./finance";
+import { PAGE_DESCRIPTIONS } from "./form-validation";
 import type { RoutePath } from "./types";
 import { ROUTE_LABELS } from "./router";
 
 let liveRegion: HTMLElement | null = null;
 let modalRoot: HTMLElement | null = null;
 let lastFocusedElement: HTMLElement | null = null;
-let activeModalClose: (() => void) | null = null;
+let activeModalKeydownHandler: ((event: KeyboardEvent) => void) | null = null;
+
+const FOCUSABLE_SELECTOR =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 export function initUiRoots(): void {
   liveRegion = document.getElementById("live-region");
@@ -68,24 +72,79 @@ export function renderMoney(cents: number): string {
   return `<span class="${moneyClass(cents)}">${escapeHtml(formatCentsToBRL(cents))}</span>`;
 }
 
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+  ).filter(
+    (element) =>
+      !element.hasAttribute("disabled") &&
+      element.getAttribute("aria-hidden") !== "true",
+  );
+}
+
+function cleanupModalListeners(): void {
+  if (activeModalKeydownHandler) {
+    document.removeEventListener("keydown", activeModalKeydownHandler);
+    activeModalKeydownHandler = null;
+  }
+}
+
 export function closeModal(): void {
+  cleanupModalListeners();
+
   if (modalRoot) {
     clearChildren(modalRoot);
     modalRoot.classList.remove("modal-root--open");
+    modalRoot.removeAttribute("aria-hidden");
   }
+
+  const appShell = document.querySelector<HTMLElement>(".app-shell");
+  appShell?.removeAttribute("inert");
+
   if (lastFocusedElement) {
     lastFocusedElement.focus();
     lastFocusedElement = null;
   }
-  activeModalClose = null;
+
   document.body.classList.remove("modal-open");
 }
 
-function handleModalKeydown(event: KeyboardEvent): void {
-  if (event.key === "Escape" && activeModalClose) {
-    event.preventDefault();
-    activeModalClose();
-  }
+function createModalKeydownHandler(
+  panel: HTMLElement,
+  close: () => void,
+): (event: KeyboardEvent) => void {
+  return (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+      return;
+    }
+
+    if (event.key !== "Tab") {
+      return;
+    }
+
+    const focusable = getFocusableElements(panel);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last?.focus();
+      return;
+    }
+
+    if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  };
 }
 
 export function openModal(options: {
@@ -93,18 +152,29 @@ export function openModal(options: {
   content: HTMLElement;
   onClose?: () => void;
   panelClass?: string;
+  initialFocus?: HTMLElement | null;
 }): void {
   if (!modalRoot) {
     return;
   }
 
+  cleanupModalListeners();
   lastFocusedElement = document.activeElement as HTMLElement | null;
   clearChildren(modalRoot);
 
   const backdrop = el("div", "modal-backdrop");
+  backdrop.setAttribute("aria-hidden", "true");
+
   const panel = el("div", `modal-panel ${options.panelClass ?? ""}`.trim());
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+
   const header = el("header", "modal-panel__header");
   const title = el("h2", "modal-panel__title", options.title);
+  const titleId = `modal-title-${Date.now()}`;
+  title.id = titleId;
+  panel.setAttribute("aria-labelledby", titleId);
+
   const closeButton = el("button", "modal-panel__close");
   closeButton.type = "button";
   closeButton.setAttribute("aria-label", "Fechar");
@@ -114,12 +184,11 @@ export function openModal(options: {
   body.appendChild(options.content);
 
   const close = (): void => {
-    document.removeEventListener("keydown", handleModalKeydown);
+    cleanupModalListeners();
     closeModal();
     options.onClose?.();
   };
 
-  activeModalClose = close;
   closeButton.addEventListener("click", close);
   backdrop.addEventListener("click", close);
 
@@ -130,13 +199,19 @@ export function openModal(options: {
   modalRoot.appendChild(backdrop);
   modalRoot.appendChild(panel);
   modalRoot.classList.add("modal-root--open");
+  modalRoot.removeAttribute("aria-hidden");
   document.body.classList.add("modal-open");
-  document.addEventListener("keydown", handleModalKeydown);
 
-  const firstFocusable = panel.querySelector<HTMLElement>(
-    "button, input, select, textarea, [tabindex]:not([tabindex='-1'])",
-  );
-  firstFocusable?.focus();
+  const appShell = document.querySelector<HTMLElement>(".app-shell");
+  appShell?.setAttribute("inert", "");
+
+  activeModalKeydownHandler = createModalKeydownHandler(panel, close);
+  document.addEventListener("keydown", activeModalKeydownHandler);
+
+  const initialFocus =
+    options.initialFocus ??
+    panel.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+  initialFocus?.focus();
 }
 
 export function openConfirmModal(options: {
@@ -179,11 +254,11 @@ export function openConfirmModal(options: {
   content.appendChild(message);
   content.appendChild(actions);
 
-  openModal({ title: options.title, content });
-}
-
-export function renderFieldError(fieldId: string, message: string): string {
-  return `<p class="field-error" id="${fieldId}-error" role="alert">${escapeHtml(message)}</p>`;
+  openModal({
+    title: options.title,
+    content,
+    initialFocus: cancelButton,
+  });
 }
 
 export function renderEmptyState(title: string, description: string): string {
@@ -304,10 +379,17 @@ export function renderNav(currentRoute: RoutePath): string {
 
 export function setPageTitle(route: RoutePath): void {
   const title = ROUTE_LABELS[route];
+  const description = PAGE_DESCRIPTIONS[route];
   const heading = document.getElementById("page-title");
+  const descriptionNode = document.getElementById("page-description");
+
   if (heading) {
     heading.textContent = title;
   }
+  if (descriptionNode) {
+    descriptionNode.textContent = description;
+  }
+
   document.title = `${title} — Controle Financeiro Mensal`;
 }
 
@@ -331,16 +413,8 @@ export function centsToInputValue(cents: number): string {
   return (cents / 100).toFixed(2).replace(".", ",");
 }
 
-export function bindFormValidation(
-  form: HTMLFormElement,
-  submitButton: HTMLButtonElement,
-  validate: () => boolean,
-): void {
-  const update = (): void => {
-    submitButton.disabled = !validate();
-  };
-
-  form.addEventListener("input", update);
-  form.addEventListener("change", update);
-  update();
+export function renderPageToolbar(actions: HTMLElement): HTMLElement {
+  const toolbar = el("div", "page-toolbar");
+  toolbar.appendChild(actions);
+  return toolbar;
 }

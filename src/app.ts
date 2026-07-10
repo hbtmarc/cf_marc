@@ -180,6 +180,7 @@ function buildShell(): void {
           <div class="topbar__titles">
             <p class="topbar__eyebrow">Competência</p>
             <h1 class="topbar__title" id="page-title">${ROUTE_LABELS["/dashboard"]}</h1>
+            <p class="topbar__subtitle" id="page-description"></p>
           </div>
           <div id="competence-host" class="topbar__competence"></div>
         </header>

@@ -13,6 +13,7 @@ import {
   el,
   openConfirmModal,
   renderEmptyState,
+  renderPageToolbar,
   invoiceRowHtml,
 } from "../ui";
 
@@ -24,42 +25,43 @@ export function renderFaturas(
 ): void {
   const month = data.selectedCompetenceMonth;
   const invoices = filterInvoicesByCompetence(data.invoices, month);
+  const hasCards = data.cards.length > 0;
 
   host.innerHTML = "";
 
-  const header = el("div", "page-header");
-  header.innerHTML = `
-    <div>
-      <h2 class="page-header__title">Faturas</h2>
-      <p class="page-header__subtitle">Controle mensal por cartão de crédito.</p>
-    </div>
-  `;
-  const actions = el("div", "page-header__actions");
-  const newCard = el("button", "btn btn--secondary", "Novo cartão");
-  newCard.type = "button";
-  const newInvoice = el("button", "btn btn--primary", "Nova fatura");
-  newInvoice.type = "button";
-  actions.appendChild(newCard);
-  actions.appendChild(newInvoice);
-  header.appendChild(actions);
-  host.appendChild(header);
+  const actions = el("div", "page-toolbar__actions");
 
-  newCard.addEventListener("click", () => {
-    openCardForm({ mutations, onSaved: rerender });
-  });
-
-  newInvoice.addEventListener("click", () => {
-    openInvoiceForm({
-      mutations,
-      data,
-      competenceMonth: month,
-      onSaved: rerender,
+  if (!hasCards) {
+    const registerCard = el("button", "btn btn--primary", "Cadastrar cartão");
+    registerCard.type = "button";
+    registerCard.addEventListener("click", () => {
+      openCardForm({ mutations, onSaved: rerender });
     });
-  });
+    actions.appendChild(registerCard);
+  } else {
+    const newInvoice = el("button", "btn btn--primary", "Nova fatura");
+    newInvoice.type = "button";
+    newInvoice.addEventListener("click", () => {
+      openInvoiceForm({
+        mutations,
+        data,
+        competenceMonth: month,
+        onSaved: rerender,
+      });
+    });
+
+    const manageCards = el("a", "btn btn--ghost", "Gerenciar cartões");
+    manageCards.href = "#/ajustes";
+
+    actions.appendChild(newInvoice);
+    actions.appendChild(manageCards);
+  }
+
+  host.appendChild(renderPageToolbar(actions));
 
   const cardsSection = el("section", "entity-section");
-  cardsSection.innerHTML = `<h3 class="entity-section__title">Cartões cadastrados</h3>`;
-  if (data.cards.length === 0) {
+  cardsSection.innerHTML = `<h2 class="entity-section__title">Cartões cadastrados</h2>`;
+  if (!hasCards) {
     const empty = el("div");
     empty.innerHTML = renderEmptyState(
       "Nenhum cartão",
@@ -85,14 +87,20 @@ export function renderFaturas(
   host.appendChild(cardsSection);
 
   const invoiceSection = el("section", "entity-section");
-  const invoiceTitle = el("h3", "entity-section__title", "Faturas da competência");
+  const invoiceTitle = el(
+    "h2",
+    "entity-section__title",
+    "Faturas da competência",
+  );
   invoiceSection.appendChild(invoiceTitle);
 
   if (invoices.length === 0) {
     const empty = el("div");
     empty.innerHTML = renderEmptyState(
       "Nenhuma fatura",
-      "Registre o valor total da fatura do cartão para esta competência.",
+      hasCards
+        ? "Registre o valor total da fatura do cartão para esta competência."
+        : "Cadastre um cartão antes de registrar a primeira fatura.",
     );
     invoiceSection.appendChild(empty);
   } else {

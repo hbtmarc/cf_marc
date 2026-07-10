@@ -6,12 +6,12 @@ import {
   openCardForm,
 } from "../forms";
 import {
+  announce,
   el,
   openConfirmModal,
   renderEmptyState,
 } from "../ui";
 import { clearAppData, emptyAppData, saveAppData } from "../storage";
-import { announce } from "../ui";
 
 export function renderAjustes(
   host: HTMLElement,
@@ -22,18 +22,9 @@ export function renderAjustes(
 ): void {
   host.innerHTML = "";
 
-  const header = el("div", "page-header");
-  header.innerHTML = `
-    <div>
-      <h2 class="page-header__title">Ajustes</h2>
-      <p class="page-header__subtitle">Cartões e preferências locais.</p>
-    </div>
-  `;
-  host.appendChild(header);
-
   const cardsSection = el("section", "entity-section");
   const cardsHeader = el("div", "entity-section__header");
-  const cardsTitle = el("h3", "entity-section__title", "Cartões");
+  const cardsTitle = el("h2", "entity-section__title", "Cartões");
   const newCard = el("button", "btn btn--secondary btn--small", "Novo cartão");
   newCard.type = "button";
   cardsHeader.appendChild(cardsTitle);
@@ -105,10 +96,11 @@ export function renderAjustes(
 
   const dangerSection = el("section", "entity-section entity-section--danger");
   dangerSection.innerHTML = `
-    <h3 class="entity-section__title">Dados locais</h3>
+    <h2 class="entity-section__title">Dados locais</h2>
     <p class="entity-section__text">
       Todos os lançamentos ficam apenas neste navegador, na chave
       <code>cfm:v2:appData</code>.
+      Limpar os dados do navegador ou acessar por outro dispositivo não preserva estas informações.
     </p>
     <p class="entity-section__meta">Versão do schema: <strong>${data.schemaVersion}</strong></p>
   `;

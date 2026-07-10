@@ -11,6 +11,7 @@ import {
   el,
   openConfirmModal,
   renderEmptyState,
+  renderPageToolbar,
   transactionRowHtml,
 } from "../ui";
 
@@ -27,22 +28,14 @@ export function renderLancamentos(
 
   host.innerHTML = "";
 
-  const header = el("div", "page-header");
-  const title = el("div");
-  title.innerHTML = `
-    <h2 class="page-header__title">Lançamentos</h2>
-    <p class="page-header__subtitle">Receitas e despesas da competência selecionada.</p>
-  `;
-  const actions = el("div", "page-header__actions");
+  const actions = el("div", "page-toolbar__actions");
   const newIncome = el("button", "btn btn--primary", "Nova receita");
   newIncome.type = "button";
   const newExpense = el("button", "btn btn--secondary", "Nova despesa");
   newExpense.type = "button";
   actions.appendChild(newIncome);
   actions.appendChild(newExpense);
-  header.appendChild(title);
-  header.appendChild(actions);
-  host.appendChild(header);
+  host.appendChild(renderPageToolbar(actions));
 
   newIncome.addEventListener("click", () => {
     openTransactionForm({
@@ -97,7 +90,7 @@ function renderSection(options: {
   rerender: () => void;
 }): HTMLElement {
   const section = el("section", "entity-section");
-  const heading = el("h3", "entity-section__title", options.title);
+  const heading = el("h2", "entity-section__title", options.title);
   section.appendChild(heading);
 
   if (options.items.length === 0) {
