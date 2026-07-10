@@ -6,6 +6,8 @@ import {
   formatCentsToBRL,
   formatCompetenceLabel,
   formatDateLabel,
+  invoiceDebtCents,
+  invoiceHasCredit,
   invoiceStatusLabel,
   sumCents,
   transactionStatusLabel,
@@ -219,7 +221,7 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
           origin: formatCompetenceLabel(item.competenceMonth),
           amountCents: item.amountCents,
           kind: "invoice" as const,
-          statusLabel: invoiceStatusLabel(item.status),
+          statusLabel: invoiceStatusLabel(item),
         };
       }),
   ]
@@ -635,12 +637,26 @@ export function renderTransactionTableRow(item: Transaction): string {
   `;
 }
 
+function renderInvoiceAmountCell(invoice: Invoice): string {
+  if (invoiceHasCredit(invoice)) {
+    return `<span class="money money--positive">${escapeHtml(formatCentsToBRL(invoice.creditBalanceCents ?? 0))}</span>`;
+  }
+  return renderMoney(-invoiceDebtCents(invoice));
+}
+
+function invoiceStatusVariant(invoice: Invoice): "success" | "warning" {
+  if (invoiceHasCredit(invoice) || invoice.status === "paid") {
+    return "success";
+  }
+  return "warning";
+}
+
 export function renderInvoiceTableRow(input: {
   invoice: Invoice;
   cardName: string;
 }): string {
-  const statusLabel = invoiceStatusLabel(input.invoice.status);
-  const statusVariant = input.invoice.status === "paid" ? "success" : "warning";
+  const statusLabel = invoiceStatusLabel(input.invoice);
+  const statusVariant = invoiceStatusVariant(input.invoice);
   return `
     <div class="data-table__row data-table__row--invoice" role="row">
       <span class="data-table__cell data-table__cell--date" role="cell">${escapeHtml(formatDateLabel(input.invoice.dueDate))}</span>
@@ -652,7 +668,7 @@ export function renderInvoiceTableRow(input: {
       </span>
       <span class="data-table__cell data-table__cell--competence" role="cell">${escapeHtml(formatCompetenceLabel(input.invoice.competenceMonth))}</span>
       <span class="data-table__cell data-table__cell--status" role="cell">${renderStatusChip(statusLabel, statusVariant)}</span>
-      <span class="data-table__cell data-table__cell--amount" role="cell">${renderMoney(-input.invoice.amountCents)}</span>
+      <span class="data-table__cell data-table__cell--amount" role="cell">${renderInvoiceAmountCell(input.invoice)}</span>
       <span class="data-table__cell data-table__cell--actions" role="cell">
         <div class="row-actions" data-invoice-actions="${escapeHtml(input.invoice.id)}"></div>
       </span>
@@ -700,12 +716,12 @@ export function renderCardPanel(input: {
             <dd class="card-panel__nowrap">${escapeHtml(formatDateLabel(invoice.dueDate))}</dd>
           </div>
           <div class="card-panel__summary-item">
-            <dt>Valor</dt>
-            <dd class="card-panel__money money money--negative">${escapeHtml(formatCentsToBRL(invoice.amountCents))}</dd>
+            <dt>${invoiceHasCredit(invoice) ? "Saldo credor" : "Valor devido"}</dt>
+            <dd class="card-panel__money ${invoiceHasCredit(invoice) ? "money money--positive" : "money money--negative"}">${escapeHtml(formatCentsToBRL(invoiceHasCredit(invoice) ? (invoice.creditBalanceCents ?? 0) : invoiceDebtCents(invoice)))}</dd>
           </div>
           <div class="card-panel__summary-item">
             <dt>Status</dt>
-            <dd class="card-panel__status">${renderStatusChip(invoiceStatusLabel(invoice.status), invoice.status === "paid" ? "success" : "warning")}</dd>
+            <dd class="card-panel__status">${renderStatusChip(invoiceStatusLabel(invoice), invoiceHasCredit(invoice) || invoice.status === "paid" ? "success" : "warning")}</dd>
           </div>
         </dl>`
           : `<p class="card-panel__empty">Nenhuma fatura registrada para este cartão na competência.</p>`
@@ -723,7 +739,7 @@ export function sectionTotal(items: Transaction[]): number {
 }
 
 export function invoiceTotal(items: Invoice[]): number {
-  return sumCents(items.map((item) => item.amountCents));
+  return sumCents(items.map((item) => invoiceDebtCents(item)));
 }
 
 /** @deprecated */

@@ -218,6 +218,7 @@ export const PAGE_DESCRIPTIONS = {
   "/dashboard": "Visão consolidada da competência selecionada.",
   "/lancamentos": "Receitas e despesas da competência selecionada.",
   "/faturas": "Controle mensal por cartão de crédito.",
+  "/importar": "Importação local de extratos e faturas em JSON.",
   "/ajustes": "Cartões e preferências locais.",
 } as const;
 

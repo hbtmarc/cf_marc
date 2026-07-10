@@ -2,7 +2,30 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 10 de julho de 2026  
-**Etapa atual:** Etapa 3E — Diagramação, alinhamento e ritmo espacial final (fundação visual encerrada)
+**Etapa atual:** Etapa 4 — Importação local funcional
+
+---
+
+## Etapa 4 — concluída
+
+### Objetivo
+
+Permitir importação local de arquivos JSON `cfm.import.v1` com validação, revisão, confirmação e idempotência — sem alterar a fundação visual.
+
+### Entregas
+
+- Rota `#/importar` no grupo Operação.
+- Validação de schema, referências, centavos inteiros e `canonicalFingerprint`.
+- Revisão antes da gravação; confirmação explícita.
+- Idempotência por `sourceImportId` e fingerprint.
+- Integração com Dashboard, Lançamentos e Faturas.
+- Fatura credora com `creditBalanceCents` e status "Credora".
+- Modelo `cfm.local.v2` estendido minimamente (`importMeta`, campos opcionais).
+
+### Validação
+
+- `npm run typecheck`, `npm test` (50), `npm run build` — OK.
+- Screenshots em `docs/screenshots-etapa4/` (não versionados).
 
 ---
 

@@ -138,6 +138,19 @@ export function sumCents(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
 
+export function invoiceDebtCents(invoice: Invoice): number {
+  const due = invoice.amountDueCents ?? invoice.amountCents;
+  const credit = invoice.creditBalanceCents ?? 0;
+  if (credit > 0 && due === 0) {
+    return 0;
+  }
+  return due;
+}
+
+export function invoiceHasCredit(invoice: Invoice): boolean {
+  return (invoice.creditBalanceCents ?? 0) > 0 && invoiceDebtCents(invoice) === 0;
+}
+
 export function calculateCompetenceSummary(
   data: AppData,
   competenceMonth: string,
@@ -184,17 +197,17 @@ export function calculateCompetenceSummary(
   );
 
   const invoicePlannedCents = sumCents(
-    invoices.map((invoice) => invoice.amountCents),
+    invoices.map((invoice) => invoiceDebtCents(invoice)),
   );
   const invoicePaidCents = sumCents(
     invoices
       .filter((invoice) => invoice.status === "paid")
-      .map((invoice) => invoice.amountCents),
+      .map((invoice) => invoiceDebtCents(invoice)),
   );
   const invoiceOpenCents = sumCents(
     invoices
       .filter((invoice) => invoice.status === "open")
-      .map((invoice) => invoice.amountCents),
+      .map((invoice) => invoiceDebtCents(invoice)),
   );
 
   const expensePlannedCents = expenseTransactionsPlanned + invoicePlannedCents;
@@ -319,6 +332,9 @@ export function transactionStatusLabel(
   return status === "settled" ? "Pago" : "Pendente";
 }
 
-export function invoiceStatusLabel(status: Invoice["status"]): string {
-  return status === "paid" ? "Paga" : "Aberta";
+export function invoiceStatusLabel(invoice: Invoice): string {
+  if (invoiceHasCredit(invoice)) {
+    return "Credora";
+  }
+  return invoice.status === "paid" ? "Paga" : "Aberta";
 }

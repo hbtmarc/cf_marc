@@ -1,0 +1,210 @@
+{
+  "schemaVersion": "cfm.import.v1",
+  "source": {
+    "institution": "Banco Ficticio SA",
+    "documentType": "credit_card_bill",
+    "label": "Exportacao sintetica CFM",
+    "exportedAt": "2026-06-01T10:00:00.000Z",
+    "periodStart": "2026-06-01",
+    "periodEnd": "2026-06-30",
+    "rawHash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "externalRef": "demo-export-2026-06-001"
+  },
+  "accounts": [
+    {
+      "id": "acc_demo_corrente",
+      "name": "Conta Corrente Demo",
+      "type": "checking",
+      "institution": "Banco Ficticio SA",
+      "lastFour": "7890",
+      "currency": "BRL",
+      "isActive": true
+    }
+  ],
+  "cards": [
+    {
+      "id": "card_demo_visa",
+      "name": "Cartao Principal",
+      "brand": "visa",
+      "lastFour": "1234",
+      "closingDay": 5,
+      "dueDay": 12,
+      "limitCents": 1500000,
+      "accountId": "acc_demo_corrente",
+      "externalRef": "card_demo_visa",
+      "aliases": ["VISA PRINCIPAL"]
+    },
+    {
+      "id": "card_demo_master",
+      "name": "Cartao Reserva",
+      "brand": "mastercard",
+      "lastFour": "5678",
+      "closingDay": 15,
+      "dueDay": 22,
+      "limitCents": 800000,
+      "accountId": "acc_demo_corrente",
+      "externalRef": "card_demo_master"
+    }
+  ],
+  "cardSnapshots": [
+    {
+      "cardId": "card_demo_visa",
+      "snapshotMonth": "2026-06",
+      "snapshotDate": "2026-06-30",
+      "limitCents": 1500000,
+      "usedCents": 245000,
+      "availableCents": 1255000,
+      "source": "import_json",
+      "confidence": "high"
+    }
+  ],
+  "invoices": [
+    {
+      "id": "inv_2026_06_visa",
+      "externalRef": "inv_2026_06_visa",
+      "cardId": "card_demo_visa",
+      "competenceMonth": "2026-06",
+      "dueDate": "2026-06-12",
+      "totalCents": 245000,
+      "amountDueCents": 245000,
+      "status": "open"
+    },
+    {
+      "id": "inv_2026_06_mp_cred",
+      "externalRef": "inv_2026_06_mp_cred",
+      "cardId": "card_demo_master",
+      "competenceMonth": "2026-06",
+      "dueDate": "2026-06-22",
+      "totalCents": 0,
+      "amountDueCents": 0,
+      "creditBalanceCents": 3500,
+      "balanceDirection": "credit",
+      "creditBehavior": "applies_to_next_invoice",
+      "status": "closed"
+    },
+    {
+      "id": "inv_ref_stub",
+      "externalRef": "inv_ref_stub",
+      "cardId": "card_demo_visa",
+      "competenceMonth": "2026-05",
+      "referenceOnly": true,
+      "isStub": true,
+      "status": "pending"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "tx_salario_jun",
+      "externalRef": "tx_salario_jun",
+      "accountId": "acc_demo_corrente",
+      "description": "Salario Empresa Ficticia Ltda",
+      "categoryLabel": "renda",
+      "type": "income",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-05",
+      "amountCents": 850000,
+      "flow": "in"
+    },
+    {
+      "id": "tx_supermercado",
+      "externalRef": "tx_supermercado",
+      "cardId": "card_demo_visa",
+      "invoiceId": "inv_2026_06_visa",
+      "description": "Supermercado Central",
+      "categoryLabel": "alimentacao",
+      "type": "credit_card_purchase",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-08",
+      "amountCents": 45000,
+      "flow": "out",
+      "source": {
+        "rawHash": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+      }
+    },
+    {
+      "id": "tx_eletro_parcela",
+      "externalRef": "tx_eletro_parcela",
+      "cardId": "card_demo_visa",
+      "invoiceId": "inv_2026_06_visa",
+      "installmentPlanId": "plan_eletro_12x",
+      "description": "Eletronicos parcela 3/12",
+      "type": "credit_card_purchase",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-10",
+      "amountCents": 35000,
+      "flow": "out",
+      "installment": { "current": 3, "total": 12 }
+    },
+    {
+      "id": "tx_pagamento_fatura",
+      "externalRef": "tx_pagamento_fatura",
+      "cardId": "card_demo_visa",
+      "invoiceId": "inv_2026_06_visa",
+      "description": "Pagamento fatura cartao principal",
+      "type": "credit_card_payment",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-11",
+      "amountCents": 245000,
+      "flow": "out"
+    },
+    {
+      "id": "tx_conta_luz",
+      "externalRef": "tx_conta_luz",
+      "accountId": "acc_demo_corrente",
+      "description": "Conta de luz",
+      "categoryLabel": "moradia",
+      "type": "expense",
+      "competenceMonth": "2026-06",
+      "date": "2026-06-15",
+      "amountCents": 18990,
+      "flow": "out"
+    },
+    {
+      "id": "tx_conta_luz_jul",
+      "externalRef": "tx_conta_luz_jul",
+      "accountId": "acc_demo_corrente",
+      "description": "Conta de luz",
+      "categoryLabel": "moradia",
+      "type": "expense",
+      "competenceMonth": "2026-07",
+      "date": "2026-07-15",
+      "amountCents": 18990,
+      "flow": "out"
+    }
+  ],
+  "installmentPlans": [
+    {
+      "id": "plan_eletro_12x",
+      "externalRef": "plan_eletro_12x",
+      "cardId": "card_demo_visa",
+      "description": "Eletronicos 12 parcelas",
+      "kind": "purchase_installment",
+      "totalInstallments": 12,
+      "currentInstallment": 3,
+      "installmentAmountCents": 35000,
+      "startCompetenceMonth": "2026-04",
+      "flow": "out"
+    }
+  ],
+  "recurringRules": [
+    {
+      "externalRef": "rec_streaming",
+      "description": "Streaming Plano Padrao",
+      "type": "expense",
+      "flow": "out",
+      "frequency": "monthly",
+      "expectedAmountCents": 5590,
+      "categoryLabel": "lazer",
+      "startCompetenceMonth": "2026-01",
+      "sourcePattern": "STREAMING",
+      "sourceInstitution": "Banco Ficticio SA",
+      "accountId": "acc_demo_corrente",
+      "dayOfMonth": 20,
+      "isActive": true
+    }
+  ],
+  "review": {
+    "status": "approved",
+    "notes": "Fixture sintetica segura."
+  }
+}

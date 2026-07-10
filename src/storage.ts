@@ -113,6 +113,15 @@ export function validateAppData(value: unknown): value is AppData {
     return false;
   }
 
+  if (value.importMeta !== undefined) {
+    if (!isRecord(value.importMeta) || !Array.isArray(value.importMeta.fingerprints)) {
+      return false;
+    }
+    if (!value.importMeta.fingerprints.every((item) => typeof item === "string")) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -152,7 +161,12 @@ export function loadAppData(): StorageLoadResult {
     };
   }
 
-  return { ok: true, data: parsed };
+  const data = parsed as AppData;
+  if (!data.importMeta) {
+    data.importMeta = { fingerprints: [] };
+  }
+
+  return { ok: true, data };
 }
 
 export function saveAppData(data: AppData): boolean {
@@ -197,5 +211,10 @@ export function parseAppDataJson(raw: string): StorageLoadResult {
     };
   }
 
-  return { ok: true, data: parsed };
+  const data = parsed as AppData;
+  if (!data.importMeta) {
+    data.importMeta = { fingerprints: [] };
+  }
+
+  return { ok: true, data };
 }

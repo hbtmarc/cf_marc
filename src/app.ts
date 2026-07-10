@@ -1,6 +1,7 @@
 import { renderAjustes } from "./pages/ajustes";
 import { renderDashboard } from "./pages/dashboard";
 import { renderFaturas, renderFaturasHeaderActions } from "./pages/faturas";
+import { renderImportar, resetImportarPage } from "./pages/importar";
 import { renderLancamentos } from "./pages/lancamentos";
 import {
   navigate,
@@ -48,6 +49,7 @@ const PAGE_OVERLINE: Record<RoutePath, string> = {
   "/dashboard": "Competência",
   "/lancamentos": "Competência",
   "/faturas": "Competência",
+  "/importar": "Operação",
   "/ajustes": "Configurações",
 };
 
@@ -155,6 +157,14 @@ function renderMain(): void {
     case "/faturas":
       renderFaturas(mainHost, state.data, mutations, rerender);
       break;
+    case "/importar":
+      renderImportar(
+        mainHost,
+        () => state.data,
+        mutations,
+        rerender,
+      );
+      break;
     case "/ajustes":
       renderAjustes(mainHost, state.data, mutations, rerender, () => {
         state.data = emptyAppData();
@@ -183,11 +193,15 @@ function registerRoutes(): void {
     "/dashboard",
     "/lancamentos",
     "/faturas",
+    "/importar",
     "/ajustes",
   ];
 
   for (const route of routes) {
     registerRoute(route, () => {
+      if (state.route === "/importar" && route !== "/importar") {
+        resetImportarPage();
+      }
       state.route = route;
       render();
     });

@@ -4,16 +4,7 @@ import { renderDashboard } from "./pages/dashboard";
 import type { AppMutations } from "./forms";
 
 const noopMutations: AppMutations = {
-  addTransaction: () => {},
-  updateTransaction: () => {},
-  deleteTransaction: () => {},
-  addCard: () => {},
-  updateCard: () => {},
-  deleteCard: () => {},
-  addInvoice: () => {},
-  updateInvoice: () => {},
-  deleteInvoice: () => {},
-  setCompetenceMonth: () => {},
+  update: () => {},
 };
 
 describe("renderDashboard layout", () => {

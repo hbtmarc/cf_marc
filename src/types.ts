@@ -15,6 +15,8 @@ export interface Transaction {
   status: TransactionStatus;
   createdAt: string;
   updatedAt: string;
+  sourceImportId?: string;
+  canonicalFingerprint?: string;
 }
 
 export interface Card {
@@ -24,6 +26,7 @@ export interface Card {
   dueDay: number | null;
   createdAt: string;
   updatedAt: string;
+  sourceImportId?: string;
 }
 
 export interface Invoice {
@@ -35,6 +38,13 @@ export interface Invoice {
   status: InvoiceStatus;
   createdAt: string;
   updatedAt: string;
+  sourceImportId?: string;
+  amountDueCents?: number;
+  creditBalanceCents?: number;
+}
+
+export interface ImportMeta {
+  fingerprints: string[];
 }
 
 export interface AppData {
@@ -43,9 +53,15 @@ export interface AppData {
   transactions: Transaction[];
   cards: Card[];
   invoices: Invoice[];
+  importMeta?: ImportMeta;
 }
 
-export type RoutePath = "/dashboard" | "/lancamentos" | "/faturas" | "/ajustes";
+export type RoutePath =
+  | "/dashboard"
+  | "/lancamentos"
+  | "/faturas"
+  | "/importar"
+  | "/ajustes";
 
 export interface CompetenceSummary {
   competenceMonth: string;

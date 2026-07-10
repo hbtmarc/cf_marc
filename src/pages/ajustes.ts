@@ -91,6 +91,7 @@ export function renderAjustes(
         <div><dt>Lançamentos</dt><dd>${data.transactions.length}</dd></div>
         <div><dt>Cartões</dt><dd>${data.cards.length}</dd></div>
         <div><dt>Faturas</dt><dd>${data.invoices.length}</dd></div>
+        <div><dt>Fingerprints importados</dt><dd>${data.importMeta?.fingerprints.length ?? 0}</dd></div>
       </dl>
     </details>
   `;
