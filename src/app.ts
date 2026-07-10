@@ -1,6 +1,6 @@
 import { renderAjustes } from "./pages/ajustes";
 import { renderDashboard } from "./pages/dashboard";
-import { renderFaturas } from "./pages/faturas";
+import { renderFaturas, renderFaturasHeaderActions } from "./pages/faturas";
 import { renderLancamentos } from "./pages/lancamentos";
 import {
   navigate,
@@ -28,6 +28,7 @@ import {
   renderStorageError,
   setPageTitle,
 } from "./ui";
+import { currentCompetenceMonth } from "./finance";
 
 interface AppState {
   data: AppData;
@@ -38,6 +39,17 @@ interface AppState {
 let state: AppState;
 let mainHost: HTMLElement | null = null;
 let competenceHost: HTMLElement | null = null;
+let pageActionsHost: HTMLElement | null = null;
+let pageOverline: HTMLElement | null = null;
+
+const COMPETENCE_ROUTES: RoutePath[] = ["/dashboard", "/lancamentos", "/faturas"];
+
+const PAGE_OVERLINE: Record<RoutePath, string> = {
+  "/dashboard": "Competência",
+  "/lancamentos": "Competência",
+  "/faturas": "Competência",
+  "/ajustes": "Configurações",
+};
 
 const mutations: AppMutations = {
   update(mutator) {
@@ -65,10 +77,18 @@ function setCompetenceMonth(month: string): void {
 }
 
 function renderCompetence(): void {
+  if (pageOverline) {
+    pageOverline.textContent = PAGE_OVERLINE[state.route];
+  }
   if (!competenceHost) {
     return;
   }
   clearChildren(competenceHost);
+  if (!COMPETENCE_ROUTES.includes(state.route)) {
+    competenceHost.classList.add("is-hidden");
+    return;
+  }
+  competenceHost.classList.remove("is-hidden");
   const shortcuts = bindCompetenceShortcuts(
     state.data.selectedCompetenceMonth,
     setCompetenceMonth,
@@ -78,18 +98,33 @@ function renderCompetence(): void {
       competenceMonth: state.data.selectedCompetenceMonth,
       onPrevious: shortcuts.previous,
       onNext: shortcuts.next,
+      onToday: () => setCompetenceMonth(currentCompetenceMonth()),
+      onPick: (month) => setCompetenceMonth(month),
     }),
   );
+}
+
+function renderPageHeaderActions(rerender: () => void): void {
+  if (!pageActionsHost) {
+    return;
+  }
+  clearChildren(pageActionsHost);
+  if (state.storageError || state.route !== "/faturas") {
+    pageActionsHost.classList.add("is-hidden");
+    return;
+  }
+  pageActionsHost.classList.remove("is-hidden");
+  renderFaturasHeaderActions(pageActionsHost, state.data, mutations, rerender);
 }
 
 function renderNavigation(route: RoutePath): void {
   const sidebar = document.getElementById("sidebar-nav");
   const bottomNav = document.getElementById("bottom-nav");
   if (sidebar) {
-    sidebar.innerHTML = renderNav(route);
+    sidebar.innerHTML = renderNav(route, state.data);
   }
   if (bottomNav) {
-    bottomNav.innerHTML = renderNav(route);
+    bottomNav.innerHTML = renderNav(route, state.data);
   }
 }
 
@@ -134,8 +169,12 @@ function renderMain(): void {
 }
 
 function render(): void {
+  const rerender = (): void => {
+    render();
+  };
   renderCompetence();
   renderNavigation(state.route);
+  renderPageHeaderActions(rerender);
   renderMain();
 }
 
@@ -170,21 +209,36 @@ function buildShell(): void {
       <a class="skip-link" href="#main-content">Ir para o conteúdo</a>
       <aside class="sidebar" aria-label="Navegação principal">
         <div class="sidebar__brand">
-          <p class="sidebar__eyebrow">CFM</p>
-          <p class="sidebar__title">Controle Financeiro Mensal</p>
+          <span class="sidebar__mark" aria-hidden="true">CFM</span>
+          <p class="sidebar__eyebrow">Controle financeiro</p>
+          <p class="sidebar__title">Mensal</p>
         </div>
-        <nav id="sidebar-nav" class="sidebar__nav"></nav>
+        <nav id="sidebar-nav" class="sidebar__nav" aria-label="Seções"></nav>
+        <footer class="sidebar__footer">
+          <p class="sidebar__footnote">
+            <span class="sidebar__status" aria-hidden="true"></span>
+            Salvo neste dispositivo
+          </p>
+          <a class="sidebar__footnote-link" href="#/ajustes">Ajustes</a>
+        </footer>
       </aside>
       <div class="app-shell__main">
-        <header class="topbar">
-          <div class="topbar__titles">
-            <p class="topbar__eyebrow">Competência</p>
-            <h1 class="topbar__title" id="page-title">${ROUTE_LABELS["/dashboard"]}</h1>
-            <p class="topbar__subtitle" id="page-description"></p>
+        <header class="page-header">
+          <div class="page-header__inner">
+            <p class="page-header__overline">Competência</p>
+            <div class="page-header__row">
+              <div class="page-header__titles">
+                <h1 class="page-header__title" id="page-title">${ROUTE_LABELS["/dashboard"]}</h1>
+                <p class="page-header__desc" id="page-description"></p>
+              </div>
+              <div class="page-header__tools">
+                <div id="competence-host" class="page-header__competence"></div>
+                <div id="page-actions-host" class="page-header__actions is-hidden"></div>
+              </div>
+            </div>
           </div>
-          <div id="competence-host" class="topbar__competence"></div>
         </header>
-        <main id="main-content" class="main-content" tabindex="-1"></main>
+        <main id="main-content" class="main-content page-stack" tabindex="-1"></main>
       </div>
       <nav id="bottom-nav" class="bottom-nav" aria-label="Navegação mobile"></nav>
     </div>
@@ -192,6 +246,8 @@ function buildShell(): void {
 
   mainHost = document.getElementById("main-content");
   competenceHost = document.getElementById("competence-host");
+  pageActionsHost = document.getElementById("page-actions-host");
+  pageOverline = document.querySelector(".page-header__overline");
 }
 
 export function startApp(): void {

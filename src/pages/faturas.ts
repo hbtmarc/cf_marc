@@ -4,32 +4,31 @@ import type { AppMutations } from "../forms";
 import {
   cardNameById,
   deleteInvoice,
-  iconActionButton,
   openCardForm,
   openInvoiceForm,
   toggleInvoiceStatus,
 } from "../forms";
 import {
-  el,
-  openConfirmModal,
+  invoiceTotal,
+  renderCardPanel,
   renderEmptyState,
-  renderPageToolbar,
-  invoiceRowHtml,
-} from "../ui";
+  renderInvoiceTableHead,
+  renderInvoiceTableRow,
+  renderSectionHeader,
+} from "../presentation";
+import { createRowMenu, el, openConfirmModal } from "../ui";
+import { formatCardCount, formatInvoiceCount } from "../text";
 
-export function renderFaturas(
+export function renderFaturasHeaderActions(
   host: HTMLElement,
   data: AppData,
   mutations: AppMutations,
   rerender: () => void,
 ): void {
-  const month = data.selectedCompetenceMonth;
-  const invoices = filterInvoicesByCompetence(data.invoices, month);
-  const hasCards = data.cards.length > 0;
-
   host.innerHTML = "";
-
-  const actions = el("div", "page-toolbar__actions");
+  const month = data.selectedCompetenceMonth;
+  const hasCards = data.cards.length > 0;
+  const actions = el("div", "page-header__actions");
 
   if (!hasCards) {
     const registerCard = el("button", "btn btn--primary", "Cadastrar cartão");
@@ -42,119 +41,164 @@ export function renderFaturas(
     const newInvoice = el("button", "btn btn--primary", "Nova fatura");
     newInvoice.type = "button";
     newInvoice.addEventListener("click", () => {
-      openInvoiceForm({
-        mutations,
-        data,
-        competenceMonth: month,
-        onSaved: rerender,
-      });
+      openInvoiceForm({ mutations, data, competenceMonth: month, onSaved: rerender });
     });
-
-    const manageCards = el("a", "btn btn--ghost", "Gerenciar cartões");
+    const manageCards = el("a", "btn btn--secondary", "Gerenciar cartões");
     manageCards.href = "#/ajustes";
-
     actions.appendChild(newInvoice);
     actions.appendChild(manageCards);
   }
 
-  host.appendChild(renderPageToolbar(actions));
+  host.appendChild(actions);
+}
 
-  const cardsSection = el("section", "entity-section");
-  cardsSection.innerHTML = `<h2 class="entity-section__title">Cartões cadastrados</h2>`;
+export function renderFaturas(
+  host: HTMLElement,
+  data: AppData,
+  mutations: AppMutations,
+  rerender: () => void,
+): void {
+  const month = data.selectedCompetenceMonth;
+  const invoices = filterInvoicesByCompetence(data.invoices, month);
+  const hasCards = data.cards.length > 0;
+  const singleCard = data.cards.length === 1;
+
+  host.innerHTML = "";
+
+  const cardsSection = el("section", "cards-grid-section");
+  cardsSection.innerHTML = renderSectionHeader("Cartões e faturas", {
+    meta: formatCardCount(data.cards.length),
+  });
   if (!hasCards) {
     const empty = el("div");
-    empty.innerHTML = renderEmptyState(
-      "Nenhum cartão",
-      "Cadastre um cartão para registrar faturas mensais.",
-    );
+    empty.innerHTML = renderEmptyState({
+      title: "Nenhum cartão cadastrado",
+      description:
+        "Cadastre um cartão para registrar faturas mensais, vencimentos e acompanhar compromissos de crédito.",
+      ctaLabel: "Cadastrar cartão",
+      ctaAction: "register-card",
+    });
     cardsSection.appendChild(empty);
+    empty.querySelector<HTMLButtonElement>('[data-action="register-card"]')?.addEventListener(
+      "click",
+      () => openCardForm({ mutations, onSaved: rerender }),
+    );
   } else {
-    const list = el("ul", "chip-list");
+    const grid = el("div", `cards-grid${singleCard ? " cards-grid--single" : ""}`);
     for (const card of data.cards) {
-      const item = el("li", "chip-list__item");
-      const meta: string[] = [card.name];
-      if (card.closingDay !== null) {
-        meta.push(`Fecha dia ${card.closingDay}`);
+      const cardInvoices = data.invoices.filter((item) => item.cardId === card.id);
+      const currentInvoice = invoices.find((item) => item.cardId === card.id);
+      const panel = el("div");
+      panel.innerHTML = renderCardPanel({
+        card,
+        invoiceCount: cardInvoices.length,
+        single: singleCard,
+        ...(currentInvoice ? { invoice: currentInvoice } : {}),
+      });
+      const article = panel.firstElementChild;
+      if (article) {
+        grid.appendChild(article);
       }
-      if (card.dueDay !== null) {
-        meta.push(`Vence dia ${card.dueDay}`);
-      }
-      item.textContent = meta.join(" · ");
-      list.appendChild(item);
     }
-    cardsSection.appendChild(list);
+    cardsSection.appendChild(grid);
   }
   host.appendChild(cardsSection);
 
-  const invoiceSection = el("section", "entity-section");
-  const invoiceTitle = el(
-    "h2",
-    "entity-section__title",
-    "Faturas da competência",
-  );
-  invoiceSection.appendChild(invoiceTitle);
+  const invoiceSection = el("section", "data-table-panel");
+  invoiceSection.innerHTML = renderSectionHeader("Faturas da competência", {
+    count: invoices.length,
+    countLabel: formatInvoiceCount,
+    totalCents: invoiceTotal(invoices),
+    kind: "expense",
+  });
 
   if (invoices.length === 0) {
     const empty = el("div");
-    empty.innerHTML = renderEmptyState(
-      "Nenhuma fatura",
-      hasCards
-        ? "Registre o valor total da fatura do cartão para esta competência."
+    empty.innerHTML = renderEmptyState({
+      title: "Nenhuma fatura nesta competência",
+      description: hasCards
+        ? "Registre o valor total da fatura para acompanhar vencimento, status e impacto no fechamento projetado."
         : "Cadastre um cartão antes de registrar a primeira fatura.",
-    );
+      ...(hasCards ? { ctaLabel: "Nova fatura", ctaAction: "new-invoice" } : {}),
+    });
     invoiceSection.appendChild(empty);
+    empty.querySelector<HTMLButtonElement>('[data-action="new-invoice"]')?.addEventListener(
+      "click",
+      () => openInvoiceForm({ mutations, data, competenceMonth: month, onSaved: rerender }),
+    );
   } else {
-    const list = el("ul", "list");
-    for (const invoice of invoices) {
-      const row = el("li", "list-row list-row--actions");
-      const content = el("div", "list-row__content");
-      content.innerHTML = invoiceRowHtml({
-        cardName: cardNameById(data, invoice.cardId),
-        dueDate: invoice.dueDate,
-        amountCents: invoice.amountCents,
-        status: invoice.status,
-      });
-
-      const rowActions = el("div", "list-row__actions");
-      rowActions.appendChild(
-        iconActionButton(
-          invoice.status === "paid" ? "Marcar aberta" : "Marcar paga",
-          () => {
-            toggleInvoiceStatus(mutations, invoice, rerender);
-          },
-        ),
-      );
-      rowActions.appendChild(
-        iconActionButton("Editar", () => {
-          openInvoiceForm({
-            mutations,
-            data,
-            competenceMonth: month,
-            invoice,
-            onSaved: rerender,
-          });
-        }),
-      );
-      rowActions.appendChild(
-        iconActionButton("Excluir", () => {
-          openConfirmModal({
-            title: "Excluir fatura",
-            message: "Excluir esta fatura? Esta ação não pode ser desfeita.",
-            confirmLabel: "Excluir",
-            danger: true,
-            onConfirm: () => {
-              deleteInvoice(mutations, invoice.id, rerender);
-            },
-          });
-        }),
-      );
-
-      row.appendChild(content);
-      row.appendChild(rowActions);
-      list.appendChild(row);
-    }
-    invoiceSection.appendChild(list);
+    const table = el("div", "data-table data-table--invoice");
+    table.setAttribute("role", "table");
+    table.setAttribute("aria-label", "Faturas da competência");
+    table.innerHTML = `
+      ${renderInvoiceTableHead()}
+      <div class="data-table__body" role="rowgroup">
+        ${invoices
+          .map((invoice) =>
+            renderInvoiceTableRow({
+              invoice,
+              cardName: cardNameById(data, invoice.cardId),
+            }),
+          )
+          .join("")}
+      </div>
+    `;
+    invoiceSection.appendChild(table);
+    bindInvoiceActions(invoiceSection, invoices, data, mutations, month, rerender);
   }
 
   host.appendChild(invoiceSection);
+}
+
+function bindInvoiceActions(
+  host: HTMLElement,
+  invoices: AppData["invoices"],
+  data: AppData,
+  mutations: AppMutations,
+  month: string,
+  rerender: () => void,
+): void {
+  for (const invoice of invoices) {
+    const slot = host.querySelector<HTMLElement>(`[data-invoice-actions="${invoice.id}"]`);
+    if (!slot) {
+      continue;
+    }
+
+    const toggleLabel =
+      invoice.status === "paid" ? "Marcar como aberta" : "Marcar como paga";
+
+    slot.appendChild(
+      createRowMenu([
+        {
+          label: "Editar",
+          onClick: () => {
+            openInvoiceForm({
+              mutations,
+              data,
+              competenceMonth: month,
+              invoice,
+              onSaved: rerender,
+            });
+          },
+        },
+        {
+          label: toggleLabel,
+          onClick: () => toggleInvoiceStatus(mutations, invoice, rerender),
+        },
+        {
+          label: "Excluir",
+          variant: "danger",
+          onClick: () => {
+            openConfirmModal({
+              title: "Excluir fatura",
+              message: "Excluir esta fatura? Esta ação não pode ser desfeita.",
+              confirmLabel: "Excluir",
+              danger: true,
+              onConfirm: () => deleteInvoice(mutations, invoice.id, rerender),
+            });
+          },
+        },
+      ]),
+    );
+  }
 }

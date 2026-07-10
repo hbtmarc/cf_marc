@@ -1,4 +1,5 @@
 import {
+  filterTransactionsByCompetence,
   formatCentsToBRL,
   formatCompetenceLabel,
   formatDateLabel,
@@ -6,8 +7,14 @@ import {
   shiftCompetenceMonth,
   transactionStatusLabel,
 } from "./finance";
-import { PAGE_DESCRIPTIONS } from "./form-validation";
-import type { RoutePath } from "./types";
+import { navIconForRoute, overflowIcon } from "./icons";
+import {
+  formatCardCount,
+  formatInvoiceCount,
+  formatTransactionCount,
+  sentenceCase,
+} from "./text";
+import type { AppData, RoutePath } from "./types";
 import { ROUTE_LABELS } from "./router";
 
 let liveRegion: HTMLElement | null = null;
@@ -320,32 +327,209 @@ export function invoiceRowHtml(input: {
   `;
 }
 
+const MONTH_NAMES_LONG = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+];
+
+export function formatCompetenceLongLabel(competenceMonth: string): string {
+  const [yearStr, monthStr] = competenceMonth.split("-");
+  const monthIndex = Number(monthStr) - 1;
+  const monthName = MONTH_NAMES_LONG[monthIndex];
+  if (monthName === undefined) {
+    return formatCompetenceLabel(competenceMonth);
+  }
+  return sentenceCase(`${monthName} de ${yearStr}`);
+}
+
 export function renderCompetenceBar(options: {
   competenceMonth: string;
   onPrevious: () => void;
   onNext: () => void;
+  onToday: () => void;
+  onPick: (month: string) => void;
 }): HTMLElement {
-  const bar = el("div", "competence-bar");
-  const prev = el("button", "competence-bar__btn");
+  const bar = el("div", "competence-control");
+  bar.setAttribute("role", "group");
+  bar.setAttribute("aria-label", "Selecionar competência");
+
+  const longLabel = formatCompetenceLongLabel(options.competenceMonth);
+
+  const prev = el("button", "competence-control__btn");
   prev.type = "button";
   prev.setAttribute("aria-label", "Competência anterior");
   prev.textContent = "‹";
 
-  const label = el("p", "competence-bar__label");
-  label.textContent = formatCompetenceLabel(options.competenceMonth);
+  const picker = el("input", "competence-control__picker") as HTMLInputElement;
+  picker.type = "month";
+  picker.value = options.competenceMonth;
+  picker.setAttribute("aria-label", "Escolher competência");
+  picker.tabIndex = -1;
 
-  const next = el("button", "competence-bar__btn");
+  const current = el("button", "competence-control__current");
+  current.type = "button";
+  current.setAttribute(
+    "aria-label",
+    `Competência ${longLabel}. Clique para escolher outro mês.`,
+  );
+  current.textContent = longLabel;
+
+  const today = el("button", "competence-control__today");
+  today.type = "button";
+  today.textContent = "Atual";
+  today.setAttribute("aria-label", "Voltar para a competência atual");
+
+  const next = el("button", "competence-control__btn");
   next.type = "button";
   next.setAttribute("aria-label", "Próxima competência");
   next.textContent = "›";
 
   prev.addEventListener("click", options.onPrevious);
   next.addEventListener("click", options.onNext);
+  today.addEventListener("click", options.onToday);
+  current.addEventListener("click", () => {
+    if (typeof picker.showPicker === "function") {
+      picker.showPicker();
+      return;
+    }
+    picker.click();
+  });
+  picker.addEventListener("change", () => {
+    if (picker.value) {
+      options.onPick(picker.value);
+    }
+  });
 
   bar.appendChild(prev);
-  bar.appendChild(label);
+  bar.appendChild(current);
+  bar.appendChild(picker);
+  bar.appendChild(today);
   bar.appendChild(next);
   return bar;
+}
+
+export interface RowMenuItem {
+  label: string;
+  variant?: "default" | "danger";
+  onClick: () => void;
+}
+
+export function createRowMenu(items: RowMenuItem[]): HTMLElement {
+  const wrapper = el("div", "row-menu");
+  const trigger = el("button", "row-menu__trigger");
+  trigger.type = "button";
+  trigger.setAttribute("aria-label", "Ações da linha");
+  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.innerHTML = overflowIcon();
+
+  const panel = el("div", "row-menu__panel");
+  panel.setAttribute("role", "menu");
+  panel.hidden = true;
+
+  const closeMenu = (): void => {
+    panel.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+    panel.style.position = "";
+    panel.style.top = "";
+    panel.style.left = "";
+    panel.style.zIndex = "";
+    document.removeEventListener("click", onDocumentClick);
+    document.removeEventListener("keydown", onKeydown);
+  };
+
+  const openMenu = (): void => {
+    panel.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    panel.style.position = "fixed";
+    panel.style.zIndex = "40";
+    const rect = trigger.getBoundingClientRect();
+    const panelWidth = panel.offsetWidth || 176;
+    const left = Math.max(
+      8,
+      Math.min(rect.right - panelWidth, window.innerWidth - panelWidth - 8),
+    );
+    const top = rect.bottom + 4;
+    const fitsBelow = top + panel.offsetHeight <= window.innerHeight - 8;
+    panel.style.left = `${left}px`;
+    panel.style.top = fitsBelow
+      ? `${top}px`
+      : `${Math.max(8, rect.top - panel.offsetHeight - 4)}px`;
+
+    document.addEventListener("click", onDocumentClick);
+    document.addEventListener("keydown", onKeydown);
+    const firstItem = panel.querySelector<HTMLElement>('[role="menuitem"]');
+    firstItem?.focus();
+  };
+
+  const onDocumentClick = (event: MouseEvent): void => {
+    if (!wrapper.contains(event.target as Node)) {
+      closeMenu();
+    }
+  };
+
+  const onKeydown = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu();
+      trigger.focus();
+      return;
+    }
+
+    const items = Array.from(
+      panel.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    );
+    const activeIndex = items.findIndex((item) => item === document.activeElement);
+    if (event.key === "ArrowDown" && items.length > 0) {
+      event.preventDefault();
+      const next = items[(activeIndex + 1) % items.length];
+      next?.focus();
+    }
+    if (event.key === "ArrowUp" && items.length > 0) {
+      event.preventDefault();
+      const prev = items[(activeIndex - 1 + items.length) % items.length];
+      prev?.focus();
+    }
+  };
+
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (panel.hidden) {
+      openMenu();
+    } else {
+      closeMenu();
+    }
+  });
+
+  for (const item of items) {
+    const button = el(
+      "button",
+      `row-menu__item${item.variant === "danger" ? " row-menu__item--danger" : ""}`,
+      item.label,
+    );
+    button.type = "button";
+    button.setAttribute("role", "menuitem");
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeMenu();
+      item.onClick();
+    });
+    panel.appendChild(button);
+  }
+
+  wrapper.appendChild(trigger);
+  wrapper.appendChild(panel);
+  return wrapper;
 }
 
 export function bindCompetenceShortcuts(
@@ -361,25 +545,101 @@ export function bindCompetenceShortcuts(
   return { previous, next };
 }
 
-export function renderNav(currentRoute: RoutePath): string {
-  const items: RoutePath[] = [
-    "/dashboard",
-    "/lancamentos",
-    "/faturas",
-    "/ajustes",
-  ];
+const NAV_SHORT_LABELS: Record<RoutePath, string> = {
+  "/dashboard": "Início",
+  "/lancamentos": "Lanç.",
+  "/faturas": "Faturas",
+  "/ajustes": "Ajustes",
+};
 
-  return items
-    .map((route) => {
-      const active = route === currentRoute ? ' aria-current="page"' : "";
-      return `<a class="nav-link" href="#${route}" data-route="${route}"${active}>${ROUTE_LABELS[route]}</a>`;
-    })
-    .join("");
+const NAV_LABELS: Record<RoutePath, string> = {
+  "/dashboard": "Visão geral",
+  "/lancamentos": "Lançamentos",
+  "/faturas": "Cartões e faturas",
+  "/ajustes": "Ajustes",
+};
+
+const NAV_GROUPS: Array<{ label: string; routes: RoutePath[] }> = [
+  { label: "Principal", routes: ["/dashboard"] },
+  { label: "Operação", routes: ["/lancamentos"] },
+  { label: "Crédito", routes: ["/faturas"] },
+  { label: "Sistema", routes: ["/ajustes"] },
+];
+
+const PAGE_DESC_EXTENDED: Record<RoutePath, string> = {
+  "/dashboard": "Situação atual, compromissos e fechamento projetado da competência.",
+  "/lancamentos": "Ledger operacional com busca, filtros e ações sobre receitas e despesas.",
+  "/faturas": "Cartões, faturas da competência e compromissos de crédito.",
+  "/ajustes": "Cartões, dados locais e preferências do dispositivo.",
+};
+
+function navBadgeForRoute(
+  route: RoutePath,
+  data: AppData,
+): { count: number; label: string } | null {
+  const month = data.selectedCompetenceMonth;
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (route === "/lancamentos") {
+    const count = filterTransactionsByCompetence(data.transactions, month).filter(
+      (item) => item.status === "pending",
+    ).length;
+    if (count === 0) {
+      return null;
+    }
+    return {
+      count,
+      label: `${formatTransactionCount(count)} pendente${count === 1 ? "" : "s"}`,
+    };
+  }
+
+  if (route === "/faturas") {
+    const overdue = data.invoices.filter(
+      (item) =>
+        item.competenceMonth === month &&
+        item.status === "open" &&
+        item.dueDate < today,
+    ).length;
+    const incompleteCards = data.cards.filter(
+      (card) => card.closingDay === null || card.dueDay === null,
+    ).length;
+    const count = overdue + incompleteCards;
+    if (count === 0) {
+      return null;
+    }
+    const parts: string[] = [];
+    if (overdue > 0) {
+      parts.push(`${formatInvoiceCount(overdue)} vencida${overdue === 1 ? "" : "s"}`);
+    }
+    if (incompleteCards > 0) {
+      parts.push(`${formatCardCount(incompleteCards)} incompleto${incompleteCards === 1 ? "" : "s"}`);
+    }
+    return { count, label: parts.join(", ") };
+  }
+
+  return null;
+}
+
+export function renderNav(currentRoute: RoutePath, data: AppData): string {
+  return NAV_GROUPS.map((group) => {
+    const links = group.routes
+      .map((route) => {
+        const active = route === currentRoute ? ' aria-current="page"' : "";
+        const badge = navBadgeForRoute(route, data);
+        return `<a class="nav-link" href="#${route}" data-route="${route}"${active}>
+          ${navIconForRoute(route)}
+          <span class="nav-link__full">${NAV_LABELS[route]}</span>
+          <span class="nav-link__short">${NAV_SHORT_LABELS[route]}</span>
+          ${badge ? `<span class="nav-link__badge" aria-label="${escapeHtml(badge.label)}">${badge.count > 9 ? "9+" : badge.count}</span>` : ""}
+        </a>`;
+      })
+      .join("");
+    return `<div class="nav-group"><p class="nav-group__label">${group.label}</p>${links}</div>`;
+  }).join("");
 }
 
 export function setPageTitle(route: RoutePath): void {
   const title = ROUTE_LABELS[route];
-  const description = PAGE_DESCRIPTIONS[route];
   const heading = document.getElementById("page-title");
   const descriptionNode = document.getElementById("page-description");
 
@@ -387,7 +647,7 @@ export function setPageTitle(route: RoutePath): void {
     heading.textContent = title;
   }
   if (descriptionNode) {
-    descriptionNode.textContent = description;
+    descriptionNode.textContent = PAGE_DESC_EXTENDED[route];
   }
 
   document.title = `${title} — Controle Financeiro Mensal`;

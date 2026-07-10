@@ -71,6 +71,7 @@ export function openTransactionForm(options: {
   amount.inputMode = "decimal";
   amount.placeholder = "0,00";
   amount.value = transaction ? centsToInputValue(transaction.amountCents) : "";
+  amount.classList.add("field__control--money");
 
   const date = el("input") as HTMLInputElement;
   date.type = "date";
@@ -405,6 +406,7 @@ export function openInvoiceForm(options: {
   amount.inputMode = "decimal";
   amount.placeholder = "0,00";
   amount.value = invoice ? centsToInputValue(invoice.amountCents) : "";
+  amount.classList.add("field__control--money");
 
   const dueDate = el("input") as HTMLInputElement;
   dueDate.type = "date";
@@ -645,12 +647,75 @@ export function cardNameById(data: AppData, cardId: string): string {
   return card?.name ?? "Cartão removido";
 }
 
+export function openTransactionChoiceModal(options: {
+  mutations: AppMutations;
+  competenceMonth: string;
+  onSaved: () => void;
+}): void {
+  const content = el("div", "choice-modal");
+  const intro = el(
+    "p",
+    "choice-modal__intro",
+    "Escolha o tipo de lançamento que deseja registrar.",
+  );
+
+  const actions = el("div", "choice-modal__actions");
+
+  const incomeButton = el("button", "btn btn--secondary choice-modal__option", "Receita");
+  incomeButton.type = "button";
+  incomeButton.addEventListener("click", () => {
+    closeModal();
+    openTransactionForm({
+      mutations: options.mutations,
+      competenceMonth: options.competenceMonth,
+      kind: "income",
+      onSaved: options.onSaved,
+    });
+  });
+
+  const expenseButton = el("button", "btn btn--secondary choice-modal__option", "Despesa");
+  expenseButton.type = "button";
+  expenseButton.addEventListener("click", () => {
+    closeModal();
+    openTransactionForm({
+      mutations: options.mutations,
+      competenceMonth: options.competenceMonth,
+      kind: "expense",
+      onSaved: options.onSaved,
+    });
+  });
+
+  actions.appendChild(incomeButton);
+  actions.appendChild(expenseButton);
+  content.appendChild(intro);
+  content.appendChild(actions);
+
+  openModal({
+    title: "Novo lançamento",
+    content,
+    initialFocus: incomeButton,
+  });
+}
+
+export function ledgerActionButton(
+  label: string,
+  variant: "context" | "secondary" | "danger",
+  onClick: () => void,
+): HTMLButtonElement {
+  const classMap = {
+    context: "btn btn--context btn--small",
+    secondary: "btn btn--secondary btn--small",
+    danger: "btn btn--danger-text btn--small",
+  };
+  const button = el("button", classMap[variant], label);
+  button.type = "button";
+  button.addEventListener("click", onClick);
+  return button;
+}
+
 export function iconActionButton(
   label: string,
   onClick: () => void,
 ): HTMLButtonElement {
-  const button = el("button", "btn btn--ghost btn--small", label);
-  button.type = "button";
-  button.addEventListener("click", onClick);
-  return button;
+  return ledgerActionButton(label, "secondary", onClick);
 }

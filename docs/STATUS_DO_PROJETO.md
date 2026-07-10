@@ -2,59 +2,65 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 10 de julho de 2026  
-**Etapa atual:** MVP financeiro mensal local concluído
+**Etapa atual:** Etapa 3E — Diagramação, alinhamento e ritmo espacial final (fundação visual encerrada)
 
 ---
 
+## Etapa 3E — concluída
+
+### Objetivo
+
+Acabamento geométrico da fundação visual: alinhamento, espaçamento, eixos, baselines e ritmo vertical/horizontal entre páginas — sem redesign, novas cores, tipografia ou funcionalidades.
+
+### Sistema de espaçamento
+
+Escala consolidada em múltiplos de 4 px via tokens existentes (`--space-1` … `--space-16`):
+
+| Token | Valor | Uso principal |
+|-------|-------|---------------|
+| `--space-2` | 8 px | Label → campo; overline → H1; itens íntimos |
+| `--space-3` | 12 px | Cabeçalho de seção → conteúdo; título → tabela |
+| `--space-4` | 16 px | Padding interno; painéis na mesma coluna |
+| `--space-5` | 20 px | Grupos intermediários; subseções contextuais |
+| `--space-6` | 24 px | Toolbar → listagem; colunas do dashboard |
+| `--space-8` | 32 px | Grandes seções (Ajustes, cards → faturas) |
+
+### Regras de propriedade do gap
+
+- **Página:** gutter, largura máxima, distância header → conteúdo (`page-stack`, `main-content`).
+- **Seção:** distância cabeçalho → conteúdo interno (`section-header`, `list-panel`).
+- **Componente:** padding e gap internos (`panel`, `card-panel`, `toolbar-panel`).
+- **Elementos:** sem margens externas arbitrárias para corrigir fluxo.
+
+### Principais correções
+
+- **Dashboard:** colunas independentes — transações recentes dentro de `dashboard-grid__primary` (elimina faixa vazia sob Ritmo do mês).
+- **Lançamentos:** toolbar separada da listagem (`list-panel`); 24 px entre grupos; contador na baseline do título.
+- **Faturas:** ritmo cards → faturas (32 px); cabeçalhos e tabela com eixos compartilhados.
+- **Ajustes:** ritmo entre seções (32 px); details com padding uniforme; texto com largura de leitura.
+- **Sidebar:** espaçamento previsível entre marca, grupos e rodapé.
+- **Global:** baselines em headers, contadores, toolbars e ações; campos com mesma altura na mesma linha.
+
+### Fundação visual
+
+Etapas 3B–3D estabeleceram identidade, componentes e hierarquia. A Etapa 3E encerra definitivamente a fundação visual. Próximos trabalhos devem avançar o roadmap funcional (Firebase, domínio), não novo reskin nem ajustes cosméticos ad hoc.
+
+### Validação
+
+- Viewports: 1920×1080 a 320×568; zoom 100–200%.
+- `npm run typecheck`, `npm test` (34), `npm run build` — OK.
+- Screenshots em `docs/screenshots-etapa3e/` (não versionados).
+- Playwright executado em diretório temporário fora do repositório (sem alterar manifests).
+
+### Limitações conscientes
+
+Sem rotas Contas/Importação/Balanço; sem limites de cartão, parcelas ou conciliação no schema.
+
 ## Projeto legado
 
-O frontend anterior foi encerrado. O código legado permanece acessível pela tag `legacy-v0.6.0` (commit `bebde71`).
+Tag `legacy-v0.6.0` (commit `bebde71`).
 
-## Etapa 2 — concluída
+## Etapas anteriores
 
-MVP local implementado com:
-
-- receitas e despesas manuais por competência;
-- cartões de crédito e faturas mensais;
-- dashboard consolidado;
-- hash routing (`#/dashboard`, `#/lancamentos`, `#/faturas`, `#/ajustes`);
-- persistência em `cfm:v2:appData`;
-- testes unitários para cálculos e storage.
-
-Passe final de aceite da Etapa 2 concluído:
-
-- validação progressiva dos formulários;
-- hierarquia de títulos corrigida;
-- modais validados por teclado e foco;
-- gerenciamento de cartões centralizado em Ajustes.
-
-## Decisões técnicas
-
-- Valores em centavos inteiros — nunca float.
-- Fatura mensal representa o cartão; sem compras individuais.
-- Funções de cálculo puras em `finance.ts`.
-- `localStorage` centralizado em `storage.ts`.
-- Sem framework, sem store global complexo.
-
-## Riscos
-
-- Dados locais podem ser perdidos ao limpar o navegador.
-- Sem backup automático ou sincronização entre dispositivos.
-- Schema `cfm.local.v2` não migra dados do legado `cfm:v1:appData`.
-
-## Próximo marco
-
-Integração Firebase (Auth + RTDB) e publicação no GitHub Pages.
-
-## Funcionalidades adiadas
-
-- Firebase e autenticação
-- Sincronização em nuvem
-- Importação bancária (JSON, OFX, CSV)
-- Compras individuais de cartão
-- Parcelamentos
-- Recorrências automáticas
-- Categorias inteligentes
-- Relatórios avançados e gráficos
-- Exportação de dados
-- GitHub Actions
+- **Etapa 2:** MVP financeiro local.
+- **Etapa 3B–3D:** Identidade, componentes, hierarquia e polimento sistêmico (base desta fundação).
