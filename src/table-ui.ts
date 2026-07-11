@@ -11,13 +11,26 @@ export interface SortableColumnOption<C extends string = string> {
   sortable?: boolean;
 }
 
+export const TABLE_IDS = {
+  lancamentos: "lancamentos",
+  invoices: "invoices",
+  invoiceDetail: "invoice-detail",
+} as const;
+
+export function tableColumnHeaderId(tableId: string, columnId: string): string {
+  return `${tableId}-col-${columnId}`;
+}
+
 export function renderSortableTh<C extends string>(
   column: SortableColumnOption<C>,
   state: TableSortState<C>,
   className = "",
+  headerId = "",
 ): string {
+  const idAttr = headerId ? ` id="${escapeHtml(headerId)}"` : "";
+
   if (column.sortable === false) {
-    return `<th scope="col" class="${className}">${escapeHtml(column.label)}</th>`;
+    return `<th scope="col"${idAttr} class="${className}">${escapeHtml(column.label)}</th>`;
   }
 
   const isActive = state.column === column.id;
@@ -26,8 +39,8 @@ export function renderSortableTh<C extends string>(
     ? `<span class="table-sort-indicator" aria-hidden="true">${state.direction === "asc" ? "↑" : "↓"}</span>`
     : `<span class="table-sort-indicator table-sort-indicator--idle" aria-hidden="true">↕</span>`;
 
-  return `<th scope="col" class="${className} table-sort-th">
-    <button type="button" class="table-sort-btn" data-sort-column="${escapeHtml(column.id)}"${ariaSort}>
+  return `<th scope="col"${idAttr} class="${className} table-sort-th"${ariaSort}>
+    <button type="button" class="table-sort-btn" data-sort-column="${escapeHtml(column.id)}" aria-label="${escapeHtml(`Ordenar por ${column.label}`)}">
       <span class="table-sort-btn__label">${escapeHtml(column.label)}</span>
       ${indicator}
     </button>
@@ -40,6 +53,9 @@ export function renderMobileSortControl<C extends string>(
   controlId: string,
 ): string {
   const sortable = columns.filter((column) => column.sortable !== false);
+  const activeColumn = sortable.find((column) => column.id === state.column)?.label ?? "";
+  const directionLabel = state.direction === "asc" ? "crescente" : "decrescente";
+  const selectLabel = `Ordenar por: ${activeColumn}, ${directionLabel}`;
   const options = sortable.flatMap((column) => [
     `<option value="${escapeHtml(column.id)}:asc" ${state.column === column.id && state.direction === "asc" ? "selected" : ""}>${escapeHtml(column.label)} (crescente)</option>`,
     `<option value="${escapeHtml(column.id)}:desc" ${state.column === column.id && state.direction === "desc" ? "selected" : ""}>${escapeHtml(column.label)} (decrescente)</option>`,
@@ -48,7 +64,7 @@ export function renderMobileSortControl<C extends string>(
   return `
     <label class="field field--inline table-sort-mobile" for="${escapeHtml(controlId)}">
       <span class="field__label">Ordenar por</span>
-      <select class="field__control" id="${escapeHtml(controlId)}" data-table-mobile-sort>
+      <select class="field__control" id="${escapeHtml(controlId)}" data-table-mobile-sort aria-label="${escapeHtml(selectLabel)}">
         ${options.join("")}
       </select>
     </label>`;

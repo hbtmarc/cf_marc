@@ -4,6 +4,7 @@ import {
   invoiceStatusLabel,
   invoiceTotalCentsValue,
   invoiceOpenCents,
+  transactionDisplayedAmountCents,
   transactionsForInvoice,
 } from "../finance";
 import type { AppData, Invoice, Transaction } from "../types";
@@ -140,7 +141,7 @@ export const invoiceDetailSortAccessors: Record<
   },
   category: { kind: "text", getValue: (item) => item.category },
   type: { kind: "text", getValue: (item) => transactionTypeLabel(item) },
-  amount: { kind: "number", getValue: (item) => item.amountCents },
+  amount: { kind: "number", getValue: (item) => transactionDisplayedAmountCents(item) },
 };
 
 export function renderFaturasHeaderActions(

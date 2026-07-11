@@ -15,6 +15,7 @@ import {
   isInvoiceLinkedExpense,
   sumCents,
   transactionStatusLabel,
+  transactionDisplayedAmountCents,
 } from "./finance";
 import type {
   AppData,
@@ -25,7 +26,7 @@ import type {
   Transaction,
 } from "./types";
 import { escapeHtml, renderMoney, renderStatusChip } from "./ui";
-import { renderSortableTh, type SortableColumnOption } from "./table-ui";
+import { renderSortableTh, tableColumnHeaderId, TABLE_IDS, type SortableColumnOption } from "./table-ui";
 import type { TableSortState } from "./table-sort";
 import {
   formatCardCount,
@@ -599,9 +600,17 @@ export function renderSortableTableHead<C extends string>(
   columns: SortableColumnOption<C>[],
   state: TableSortState<C>,
   extraHeadCells = "",
+  tableId = "table",
 ): string {
   return `<thead><tr>${columns
-    .map((column) => renderSortableTh(column, state, `cfm-table__cell--${column.id}`))
+    .map((column) =>
+      renderSortableTh(
+        column,
+        state,
+        `cfm-table__cell--${column.id}`,
+        tableColumnHeaderId(tableId, column.id),
+      ),
+    )
     .join("")}${extraHeadCells}</tr></thead>`;
 }
 
@@ -613,6 +622,7 @@ export function renderInvoiceTableHead<C extends string>(
     columns,
     state,
     `${renderInvoiceTableViewHead()}${renderInvoiceTableActionsHead()}`,
+    TABLE_IDS.invoices,
   );
 }
 
@@ -623,7 +633,8 @@ export function renderLancamentosTableHead<C extends string>(
   return renderSortableTableHead(
     columns,
     state,
-    `<th scope="col" class="cfm-table__cell--actions"><span class="sr-only">Ações</span></th>`,
+    `<th scope="col" id="${tableColumnHeaderId(TABLE_IDS.lancamentos, "actions")}" class="cfm-table__cell--actions"><span class="sr-only">Ações</span></th>`,
+    TABLE_IDS.lancamentos,
   );
 }
 
@@ -631,7 +642,11 @@ export function renderInvoiceTransactionTableHead<C extends string>(
   columns: SortableColumnOption<C>[],
   state: TableSortState<C>,
 ): string {
-  return renderSortableTableHead(columns, state);
+  return renderSortableTableHead(columns, state, "", TABLE_IDS.invoiceDetail);
+}
+
+function tableCellHeaders(tableId: string, columnId: string): string {
+  return `headers="${escapeHtml(tableColumnHeaderId(tableId, columnId))}"`;
 }
 
 export function transactionTypeLabel(item: Transaction): string {
@@ -664,7 +679,10 @@ function transactionTypeChipClass(item: Transaction): string {
   }
 }
 
-export function renderTransactionTableRow(item: Transaction): string {
+export function renderTransactionTableRow(
+  item: Transaction,
+  tableId: string = TABLE_IDS.lancamentos,
+): string {
   const statusLabel = transactionStatusLabel(item.kind, item.status, item.ledgerStatus);
   const statusVariant =
     item.ledgerStatus === "in_invoice"
@@ -677,28 +695,24 @@ export function renderTransactionTableRow(item: Transaction): string {
   const installmentLabel = item.installment
     ? ` <span class="data-table__meta">${item.installment.current}/${item.installment.total}</span>`
     : "";
-  const signedAmount =
-    item.kind === "expense" && item.expenseKind !== "refund"
-      ? -item.amountCents
-      : item.expenseKind === "refund"
-        ? item.amountCents
-        : item.amountCents;
+  const signedAmount = transactionDisplayedAmountCents(item);
+  const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
 
   return `
     <tr data-transaction-id="${escapeHtml(item.id)}">
-      <td class="cfm-table__cell--date" data-label="Data">${escapeHtml(formatDateLabel(item.date))}</td>
-      <td class="cfm-table__cell--desc" data-label="Descrição">
+      <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatDateLabel(item.date))}</td>
+      <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
         <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>${installmentLabel}
       </td>
-      <td class="cfm-table__cell--category" data-label="Categoria">${escapeHtml(item.category)}</td>
-      <td class="cfm-table__cell--type" data-label="Tipo">
+      <td class="cfm-table__cell--category" ${h("category")} data-label="Categoria">${escapeHtml(item.category)}</td>
+      <td class="cfm-table__cell--type" ${h("type")} data-label="Tipo">
         <span class="type-chip type-chip--${typeChipClass}">${typeLabel}</span>
       </td>
-      <td class="cfm-table__cell--status" data-label="Status">${renderStatusChip(statusLabel, statusVariant)}</td>
-      <td class="cfm-table__cell--amount" data-label="Valor">
+      <td class="cfm-table__cell--status" ${h("status")} data-label="Status">${renderStatusChip(statusLabel, statusVariant)}</td>
+      <td class="cfm-table__cell--amount" ${h("amount")} data-label="Valor">
         ${renderMoney(signedAmount)}
       </td>
-      <td class="cfm-table__cell--actions" data-label="Ações">
+      <td class="cfm-table__cell--actions" ${h("actions")} data-label="Ações">
         <div class="row-actions" data-row-actions="${escapeHtml(item.id)}"></div>
       </td>
     </tr>
@@ -786,28 +800,30 @@ export function renderInvoiceTableRow(input: {
   cardName: string;
   expanded?: boolean;
   detailPanelId?: string;
+  tableId?: string;
 }): string {
-  const { invoice, cardName, expanded = false, detailPanelId = "" } = input;
+  const { invoice, cardName, expanded = false, detailPanelId = "", tableId = TABLE_IDS.invoices } = input;
   const statusLabel = invoiceStatusLabel(invoice);
   const statusVariant = invoiceStatusVariant(invoice);
   const total = invoiceTotalCentsValue(invoice);
   const controlsAttr =
     detailPanelId.length > 0 ? ` aria-controls="${escapeHtml(detailPanelId)}"` : "";
+  const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
 
   return `
     <tr class="cfm-table__row--invoice" data-invoice-row="${escapeHtml(invoice.id)}">
-      <td class="cfm-table__cell--dueDate" data-label="Vencimento">${escapeHtml(formatDateLabel(invoice.dueDate))}</td>
-      <td class="cfm-table__cell--fatura" data-label="Fatura">
+      <td class="cfm-table__cell--dueDate" ${h("dueDate")} data-label="Vencimento">${escapeHtml(formatDateLabel(invoice.dueDate))}</td>
+      <td class="cfm-table__cell--fatura" ${h("fatura")} data-label="Fatura">
         <span class="data-table__primary">Fatura ${escapeHtml(formatCompetenceLabel(invoice.competenceMonth))}</span>
       </td>
-      <td class="cfm-table__cell--card" data-label="Cartão">
+      <td class="cfm-table__cell--card" ${h("card")} data-label="Cartão">
         <span class="data-table__primary"${cardName.length > 24 ? ` title="${escapeHtml(cardName)}"` : ""}>${escapeHtml(cardName)}</span>
       </td>
-      <td class="cfm-table__cell--competence" data-label="Competência">${escapeHtml(formatCompetenceLabel(invoice.competenceMonth))}</td>
-      <td class="cfm-table__cell--status" data-label="Status">${renderStatusChip(statusLabel, statusVariant)}</td>
-      <td class="cfm-table__cell--total" data-label="Total">${renderNominalMoney(total)}</td>
-      <td class="cfm-table__cell--open" data-label="Em aberto">${renderInvoiceOpenCell(invoice)}</td>
-      <td class="cfm-table__cell--view" data-label="Ação">
+      <td class="cfm-table__cell--competence" ${h("competence")} data-label="Competência">${escapeHtml(formatCompetenceLabel(invoice.competenceMonth))}</td>
+      <td class="cfm-table__cell--status" ${h("status")} data-label="Status">${renderStatusChip(statusLabel, statusVariant)}</td>
+      <td class="cfm-table__cell--total" ${h("total")} data-label="Total">${renderNominalMoney(total)}</td>
+      <td class="cfm-table__cell--open" ${h("open")} data-label="Em aberto">${renderInvoiceOpenCell(invoice)}</td>
+      <td class="cfm-table__cell--view" ${h("view")} data-label="Ação">
         <button
           type="button"
           class="btn btn--ghost btn--compact invoice-view-btn"
@@ -816,41 +832,45 @@ export function renderInvoiceTableRow(input: {
           ${controlsAttr}
         >Ver fatura</button>
       </td>
-      <td class="cfm-table__cell--actions" data-label="Mais ações">
+      <td class="cfm-table__cell--actions" ${h("actions")} data-label="Mais ações">
         <div class="row-actions" data-invoice-actions="${escapeHtml(invoice.id)}"></div>
       </td>
     </tr>
   `;
 }
 
-export function renderInvoiceTableActionsHead(): string {
-  return `<th scope="col" class="cfm-table__cell--actions"><span class="sr-only">Mais ações</span></th>`;
+export function renderInvoiceTableActionsHead(tableId: string = TABLE_IDS.invoices): string {
+  return `<th scope="col" id="${tableColumnHeaderId(tableId, "actions")}" class="cfm-table__cell--actions"><span class="sr-only">Mais ações</span></th>`;
 }
 
-export function renderInvoiceTableViewHead(): string {
-  return `<th scope="col" class="cfm-table__cell--view">Ação</th>`;
+export function renderInvoiceTableViewHead(tableId: string = TABLE_IDS.invoices): string {
+  return `<th scope="col" id="${tableColumnHeaderId(tableId, "view")}" class="cfm-table__cell--view">Ação</th>`;
 }
 
-export function renderInvoiceTransactionRow(item: Transaction): string {
+export function renderInvoiceTransactionRow(
+  item: Transaction,
+  tableId: string = TABLE_IDS.invoiceDetail,
+): string {
   const typeLabel = transactionTypeLabel(item);
   const typeChipClass = transactionTypeChipClass(item);
   const installment = item.installment
     ? `${item.installment.current}/${item.installment.total}`
     : "—";
   const amountVariant = item.expenseKind === "refund" ? "positive" : "neutral";
+  const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
 
   return `
     <tr class="cfm-table__row--invoice-line">
-      <td class="cfm-table__cell--date" data-label="Data">${escapeHtml(formatDateLabel(item.date))}</td>
-      <td class="cfm-table__cell--desc" data-label="Descrição">
+      <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatDateLabel(item.date))}</td>
+      <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
         <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>
       </td>
-      <td class="cfm-table__cell--installment" data-label="Parcela">${escapeHtml(installment)}</td>
-      <td class="cfm-table__cell--category" data-label="Categoria">${escapeHtml(item.category)}</td>
-      <td class="cfm-table__cell--type" data-label="Tipo">
+      <td class="cfm-table__cell--installment" ${h("installment")} data-label="Parcela">${escapeHtml(installment)}</td>
+      <td class="cfm-table__cell--category" ${h("category")} data-label="Categoria">${escapeHtml(item.category)}</td>
+      <td class="cfm-table__cell--type" ${h("type")} data-label="Tipo">
         <span class="type-chip type-chip--${typeChipClass}">${typeLabel}</span>
       </td>
-      <td class="cfm-table__cell--amount" data-label="Valor">${renderNominalMoney(item.amountCents, amountVariant)}</td>
+      <td class="cfm-table__cell--amount" ${h("amount")} data-label="Valor">${renderNominalMoney(item.amountCents, amountVariant)}</td>
     </tr>
   `;
 }

@@ -13,6 +13,8 @@ import {
   getLancamentosTableSort,
   lancamentosSortAccessors,
 } from "./pages/lancamentos";
+import { invoiceDetailSortAccessors } from "./pages/faturas";
+import { filterTransactionsByCompetence, transactionDisplayedAmountCents } from "./finance";
 import type { Transaction } from "./types";
 
 function tx(partial: Partial<Transaction> & Pick<Transaction, "id">): Transaction {
@@ -50,6 +52,57 @@ describe("table-sort helper", () => {
     ];
     const sorted = sortTableItems(items, { column: "date", direction: "asc" }, lancamentosSortAccessors);
     expect(sorted.map((item) => item.id)).toEqual(["b", "a"]);
+  });
+
+  it("sorts mixed financial amounts by displayed sign ascending and descending", () => {
+    const items = [
+      tx({ id: "income", kind: "income", amountCents: 500_000 }),
+      tx({ id: "refund", kind: "expense", expenseKind: "refund", amountCents: 11_223 }),
+      tx({ id: "expense-small", kind: "expense", amountCents: 1_000 }),
+      tx({ id: "fee", kind: "expense", expenseKind: "fee", amountCents: 2_000 }),
+      tx({ id: "expense-large", kind: "expense", amountCents: 112_185 }),
+    ];
+
+    const asc = sortTableItems(items, { column: "amount", direction: "asc" }, lancamentosSortAccessors);
+    expect(asc.map((item) => item.id)).toEqual([
+      "expense-large",
+      "fee",
+      "expense-small",
+      "refund",
+      "income",
+    ]);
+
+    const desc = sortTableItems(items, { column: "amount", direction: "desc" }, lancamentosSortAccessors);
+    expect(desc.map((item) => item.id)).toEqual([
+      "income",
+      "refund",
+      "expense-small",
+      "fee",
+      "expense-large",
+    ]);
+  });
+
+  it("treats refund as positive and fee as negative for sorting", () => {
+    expect(transactionDisplayedAmountCents(tx({ id: "r", expenseKind: "refund", amountCents: 500 }))).toBe(
+      500,
+    );
+    expect(
+      transactionDisplayedAmountCents(tx({ id: "f", expenseKind: "fee", amountCents: 500 })),
+    ).toBe(-500);
+  });
+
+  it("sorts invoice detail amounts by financial sign", () => {
+    const items = [
+      tx({ id: "purchase", kind: "expense", amountCents: 10_000 }),
+      tx({ id: "credit", kind: "expense", expenseKind: "refund", amountCents: 2_000 }),
+      tx({ id: "tariff", kind: "expense", expenseKind: "fee", amountCents: 500 }),
+    ];
+    const sorted = sortTableItems(
+      items,
+      { column: "amount", direction: "asc" },
+      invoiceDetailSortAccessors,
+    );
+    expect(sorted.map((item) => item.id)).toEqual(["purchase", "tariff", "credit"]);
   });
 
   it("sorts amounts numerically", () => {
@@ -104,11 +157,12 @@ describe("table-sort helper", () => {
     expect(items).toEqual(copy);
   });
 
-  it("renders aria-sort only on active header", () => {
+  it("renders aria-sort only on active header th", () => {
     const state: TableSortState<"date" | "amount"> = { column: "date", direction: "desc" };
     const active = renderSortableTh({ id: "date", label: "Data" }, state);
     const inactive = renderSortableTh({ id: "amount", label: "Valor" }, state);
-    expect(active).toContain('aria-sort="descending"');
+    expect(active).toMatch(/<th[^>]*aria-sort="descending"/);
+    expect(active).not.toMatch(/<button[^>]*aria-sort/);
     expect(inactive).not.toContain("aria-sort");
   });
 });
@@ -124,5 +178,21 @@ describe("lancamentos sort persistence", () => {
     expect(sorted).toHaveLength(1);
     expect(sorted[0]?.id).toBe("a");
     expect(getLancamentosTableSort()).toEqual({ column: "date", direction: "desc" });
+  });
+
+  it("keeps table sort after competence filtering and search", () => {
+    const items = [
+      tx({ id: "jul", competenceMonth: "2026-07", description: "Julho Alpha", amountCents: 100 }),
+      tx({ id: "jun", competenceMonth: "2026-06", description: "Junho Beta", amountCents: 200 }),
+      tx({ id: "jul-b", competenceMonth: "2026-07", description: "Julho Beta", amountCents: 300 }),
+    ];
+    const inCompetence = filterTransactionsByCompetence(items, "2026-07");
+    const filtered = applyFilters(inCompetence, { search: "Alpha", kind: "all", status: "all" });
+    const sorted = sortTableItems(
+      filtered,
+      { column: "amount", direction: "asc" },
+      lancamentosSortAccessors,
+    );
+    expect(sorted.map((item) => item.id)).toEqual(["jul"]);
   });
 });

@@ -163,6 +163,20 @@ export function ledgerExpenseCents(transaction: Transaction): number {
   return transaction.amountCents;
 }
 
+/** Signed amount as shown in lançamentos and used for amount-column sorting. */
+export function transactionDisplayedAmountCents(transaction: Transaction): number {
+  if (transaction.kind === "income") {
+    return transaction.amountCents;
+  }
+  if (transaction.expenseKind === "refund") {
+    return transaction.amountCents;
+  }
+  if (transaction.kind === "expense") {
+    return -transaction.amountCents;
+  }
+  return transaction.amountCents;
+}
+
 export function invoiceTotalCentsValue(invoice: Invoice): number {
   return invoice.invoiceTotalCents ?? invoice.amountCents;
 }

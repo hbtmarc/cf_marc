@@ -1,4 +1,8 @@
-import { filterTransactionsByCompetence, transactionStatusLabel } from "../finance";
+import {
+  filterTransactionsByCompetence,
+  transactionDisplayedAmountCents,
+  transactionStatusLabel,
+} from "../finance";
 import type { AppData, Transaction } from "../types";
 import type { AppMutations } from "../forms";
 import {
@@ -70,10 +74,7 @@ export const lancamentosSortAccessors: Record<
   },
   amount: {
     kind: "number",
-    getValue: (item) =>
-      item.kind === "expense" && item.expenseKind !== "refund"
-        ? -item.amountCents
-        : item.amountCents,
+    getValue: (item) => transactionDisplayedAmountCents(item),
   },
 };
 
