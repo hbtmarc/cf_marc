@@ -26,11 +26,11 @@ import {
   renderSectionHeader,
   transactionTypeLabel,
 } from "../presentation";
+import { installmentSortValue } from "../installment-label";
 import {
   INVOICE_STATUS_SORT_ORDER,
   sortTableItems,
   toggleTableSort,
-  type InstallmentSortValue,
   type SortColumnAccessor,
   type TableSortState,
 } from "../table-sort";
@@ -134,10 +134,7 @@ export const invoiceDetailSortAccessors: Record<
   description: { kind: "text", getValue: (item) => item.description },
   installment: {
     kind: "installment",
-    getValue: (item): InstallmentSortValue =>
-      item.installment
-        ? { current: item.installment.current, total: item.installment.total }
-        : { current: null, total: null },
+    getValue: (item) => installmentSortValue(item),
   },
   category: { kind: "text", getValue: (item) => item.category },
   type: { kind: "text", getValue: (item) => transactionTypeLabel(item) },

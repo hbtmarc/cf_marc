@@ -32,6 +32,7 @@ import type {
   Transaction,
 } from "./types";
 import { escapeHtml, renderMoney, renderStatusChip } from "./ui";
+import { installmentDisplayLabel } from "./installment-label";
 import { renderSortableTh, tableColumnHeaderId, TABLE_IDS, type SortableColumnOption } from "./table-ui";
 import type { TableSortState } from "./table-sort";
 import {
@@ -680,6 +681,78 @@ export function renderCompactTableHead(): string {
   `;
 }
 
+export type DashboardRecentSortColumn =
+  | "date"
+  | "description"
+  | "type"
+  | "status"
+  | "amount";
+
+export const DASHBOARD_RECENT_SORT_COLUMNS: SortableColumnOption<DashboardRecentSortColumn>[] = [
+  { id: "date", label: "Data" },
+  { id: "description", label: "Descrição" },
+  { id: "type", label: "Tipo" },
+  { id: "status", label: "Status" },
+  { id: "amount", label: "Valor" },
+];
+
+export function renderDashboardRecentTableHead(
+  state: TableSortState<DashboardRecentSortColumn>,
+): string {
+  return renderSortableTableHead(
+    DASHBOARD_RECENT_SORT_COLUMNS,
+    state,
+    "",
+    TABLE_IDS.dashboardRecent,
+  );
+}
+
+export function renderDashboardRecentHeader(summary: CompetenceSummary): string {
+  return `
+    <header class="section-header dashboard-recent__header">
+      <div>
+        <h2 class="section-header__title">Transações recentes</h2>
+        <p class="section-header__meta">
+          Receitas do mês:
+          <span class="money money--positive">${escapeHtml(formatCentsToBRL(summary.incomeSettledCents))}</span>
+          · Despesas do mês:
+          <span class="money money--negative">${escapeHtml(formatCentsToBRL(summary.expensePaidCents))}</span>
+        </p>
+      </div>
+      <a class="btn btn--ghost btn--compact" href="#/lancamentos">Ver lançamentos</a>
+    </header>`;
+}
+
+export function renderDashboardRecentRow(item: Transaction): string {
+  const statusLabel = transactionStatusLabel(item.kind, item.status, item.ledgerStatus);
+  const statusVariant =
+    item.ledgerStatus === "in_invoice"
+      ? "warning"
+      : item.status === "settled"
+        ? "success"
+        : "warning";
+  const typeLabel = transactionTypeLabel(item);
+  const typeChipClass = transactionTypeChipClass(item);
+  const signedAmount = transactionDisplayedAmountCents(item);
+  const tableId = TABLE_IDS.dashboardRecent;
+  const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
+
+  return `
+    <tr data-transaction-id="${escapeHtml(item.id)}">
+      <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatDateLabel(item.date))}</td>
+      <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
+        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>
+        <span class="data-table__secondary">${escapeHtml(item.category)}</span>
+      </td>
+      <td class="cfm-table__cell--type" ${h("type")} data-label="Tipo">
+        <span class="type-chip type-chip--${typeChipClass}">${typeLabel}</span>
+      </td>
+      <td class="cfm-table__cell--status" ${h("status")} data-label="Status">${renderStatusChip(statusLabel, statusVariant)}</td>
+      <td class="cfm-table__cell--amount" ${h("amount")} data-label="Valor">${renderMoney(signedAmount)}</td>
+    </tr>
+  `;
+}
+
 export function renderSortableTableHead<C extends string>(
   columns: SortableColumnOption<C>[],
   state: TableSortState<C>,
@@ -967,9 +1040,7 @@ export function renderInvoiceTransactionRow(
 ): string {
   const typeLabel = transactionTypeLabel(item);
   const typeChipClass = transactionTypeChipClass(item);
-  const installment = item.installment
-    ? `${item.installment.current}/${item.installment.total}`
-    : "—";
+  const installment = installmentDisplayLabel(item);
   const amountVariant = item.expenseKind === "refund" ? "positive" : "neutral";
   const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
 

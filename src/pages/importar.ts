@@ -2,6 +2,14 @@ import type { AppData } from "../types";
 import type { AppMutations } from "../forms";
 import { applyImportPlan, buildImportPlan, cloneAppData } from "../import";
 import type { ImportPlan, ImportResult } from "../import-types";
+import {
+  applyCardCompletionsToPayload,
+  buildCardCompletionFields,
+  canConfirmImportWithCompletions,
+  renderCardCompletionSection,
+  validateCardCompletionDrafts,
+  type CardCompletionDraft,
+} from "../import-card-review";
 import { parseImportJson, validateImportDocument, formatGeneratedAtLabel } from "../import-validate";
 import { announce, escapeHtml } from "../ui";
 
@@ -12,6 +20,7 @@ interface ImportPageState {
   fileName: string;
   plan: ImportPlan | null;
   result: ImportResult | null;
+  cardDrafts: Record<string, CardCompletionDraft>;
 }
 
 let pageState: ImportPageState = {
@@ -19,6 +28,7 @@ let pageState: ImportPageState = {
   fileName: "",
   plan: null,
   result: null,
+  cardDrafts: {},
 };
 
 function resetState(): void {
@@ -27,6 +37,7 @@ function resetState(): void {
     fileName: "",
     plan: null,
     result: null,
+    cardDrafts: {},
   };
 }
 
@@ -37,9 +48,17 @@ function renderCompetenceList(months: string[]): string {
   return months.map((item) => escapeHtml(item)).join(", ");
 }
 
-function renderReview(plan: ImportPlan): string {
+function renderReview(plan: ImportPlan, localData: AppData): string {
   const { summary } = plan;
   const { counts, planCounts } = summary;
+  const completionFields = buildCardCompletionFields(plan.payload, localData);
+  const completionErrors = validateCardCompletionDrafts(completionFields, pageState.cardDrafts);
+  const canImport =
+    plan.canImport && canConfirmImportWithCompletions(completionFields, pageState.cardDrafts);
+  const nonCardWarnings = summary.warnings.filter(
+    (item) => !item.includes("closingDay ausente") && !item.includes("dueDay ausente"),
+  );
+
   return `
     <section class="import-review" aria-live="polite">
       <header class="section-header">
@@ -68,9 +87,10 @@ function renderReview(plan: ImportPlan): string {
         <div><dt>Já existentes</dt><dd>${planCounts.existing}</dd></div>
         <div><dt>Conflitos</dt><dd>${planCounts.conflicts}</dd></div>
       </dl>
+      ${renderCardCompletionSection(completionFields, pageState.cardDrafts, completionErrors)}
       ${
-        summary.warnings.length > 0
-          ? `<div class="import-message import-message--warning" role="status"><strong>Avisos</strong><ul>${summary.warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+        nonCardWarnings.length > 0
+          ? `<div class="import-message import-message--warning" role="status"><strong>Avisos</strong><ul>${nonCardWarnings.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
           : ""
       }
       ${
@@ -80,7 +100,7 @@ function renderReview(plan: ImportPlan): string {
       }
       <div class="import-review__actions">
         <button type="button" class="btn btn--secondary" id="import-cancel-review">Trocar arquivo</button>
-        <button type="button" class="btn btn--primary" id="import-confirm" ${plan.canImport ? "" : "disabled"}>Importar dados</button>
+        <button type="button" class="btn btn--primary" id="import-confirm" ${canImport ? "" : "disabled"}>Importar dados</button>
       </div>
     </section>
   `;
@@ -131,10 +151,10 @@ function renderEmpty(): string {
   `;
 }
 
-function renderPage(host: HTMLElement): void {
+function renderPage(host: HTMLElement, localData: AppData): void {
   host.innerHTML = "";
   if (pageState.view === "review" && pageState.plan) {
-    host.innerHTML = renderReview(pageState.plan);
+    host.innerHTML = renderReview(pageState.plan, localData);
   } else if (pageState.view === "result" && pageState.result) {
     host.innerHTML = renderResult(pageState.result);
   } else {
@@ -155,6 +175,7 @@ async function handleFile(
       fileName: file.name,
       plan: null,
       result: null,
+      cardDrafts: {},
     };
     const host = document.getElementById("main-content");
     if (host) {
@@ -195,6 +216,7 @@ async function handleFile(
         canImport: false,
       },
       result: null,
+      cardDrafts: {},
     };
     rerender();
     announce("Arquivo inválido. Revise os erros antes de importar.");
@@ -211,6 +233,7 @@ async function handleFile(
     fileName: file.name,
     plan,
     result: null,
+    cardDrafts: {},
   };
   rerender();
   announce("Arquivo analisado. Revise o resumo antes de confirmar.");
@@ -272,12 +295,32 @@ function bindDropzone(
   });
 }
 
+function bindCardCompletionInputs(host: HTMLElement, rerender: () => void): void {
+  host.querySelectorAll<HTMLInputElement>("[data-card-completion]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const importId = input.dataset.cardCompletion;
+      const field = input.dataset.cardCompletionField as "closingDay" | "dueDay" | undefined;
+      if (!importId || !field) {
+        return;
+      }
+      const current = pageState.cardDrafts[importId] ?? { closingDay: "", dueDay: "" };
+      pageState.cardDrafts[importId] = {
+        ...current,
+        [field]: input.value,
+      };
+      rerender();
+    });
+  });
+}
+
 function bindReviewActions(
   host: HTMLElement,
   mutations: AppMutations,
   getData: () => AppData,
   rerender: () => void,
 ): void {
+  bindCardCompletionInputs(host, rerender);
+
   host.querySelector<HTMLButtonElement>("#import-cancel-review")?.addEventListener("click", () => {
     resetState();
     rerender();
@@ -287,8 +330,25 @@ function bindReviewActions(
     if (!pageState.plan?.canImport) {
       return;
     }
-    const snapshot = cloneAppData(getData());
-    const result = applyImportPlan(snapshot, pageState.plan);
+    const localData = getData();
+    const completionFields = buildCardCompletionFields(pageState.plan.payload, localData);
+    if (!canConfirmImportWithCompletions(completionFields, pageState.cardDrafts)) {
+      rerender();
+      announce("Complete os dados dos cartões antes de importar.");
+      return;
+    }
+
+    const payload = applyCardCompletionsToPayload(
+      pageState.plan.payload,
+      completionFields,
+      pageState.cardDrafts,
+    );
+    const plan = {
+      ...pageState.plan,
+      payload,
+    };
+    const snapshot = cloneAppData(localData);
+    const result = applyImportPlan(snapshot, plan);
     if (result.errors.length > 0) {
       announce(result.errors[0] ?? "Falha na importação.");
       return;
@@ -299,8 +359,9 @@ function bindReviewActions(
     pageState = {
       view: "result",
       fileName: pageState.fileName,
-      plan: pageState.plan,
+      plan,
       result,
+      cardDrafts: {},
     };
     rerender();
     announce("Importação concluída com sucesso.");
@@ -320,10 +381,11 @@ export function renderImportar(
   mutations: AppMutations,
   rerender: () => void,
 ): void {
-  renderPage(host);
+  const localData = getData();
+  renderPage(host, localData);
 
   if (pageState.view === "empty") {
-    bindDropzone(host, getData(), rerender);
+    bindDropzone(host, localData, rerender);
   } else if (pageState.view === "review") {
     bindReviewActions(host, mutations, getData, rerender);
     bindResultActions(rerender);
@@ -334,4 +396,12 @@ export function renderImportar(
 
 export function resetImportarPage(): void {
   resetState();
+}
+
+export function getImportPageStateForTests(): ImportPageState {
+  return pageState;
+}
+
+export function setImportCardDraftsForTests(drafts: Record<string, CardCompletionDraft>): void {
+  pageState.cardDrafts = drafts;
 }

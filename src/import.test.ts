@@ -142,12 +142,10 @@ describe("cfm.import.v1 validation", () => {
     );
   });
 
-  it("warns about missing card cycle fields", () => {
+  it("does not warn about missing card cycle fields in validation summary", () => {
     const validated = loadSyntheticPayload();
-    expect(validated.summary.warnings).toContain("Ourocard Platinum: closingDay ausente.");
-    expect(validated.summary.warnings).toContain("Ourocard Platinum: dueDay ausente.");
-    expect(validated.summary.warnings).toContain("Porto Seguro Visa: closingDay ausente.");
-    expect(validated.summary.warnings).toContain("Mercado Pago: dueDay ausente.");
+    expect(validated.summary.warnings.some((item) => item.includes("closingDay"))).toBe(false);
+    expect(validated.summary.warnings.some((item) => item.includes("dueDay"))).toBe(false);
   });
 
   it("rejects missing required contract fields", () => {

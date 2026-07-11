@@ -97,7 +97,7 @@ function validateIncome(items: unknown[], errors: string[], warnings: string[]):
   return result;
 }
 
-function validateCards(items: unknown[], errors: string[], warnings: string[]): ImportCard[] {
+function validateCards(items: unknown[], errors: string[]): ImportCard[] {
   const ids = new Set<string>();
   const result: ImportCard[] = [];
   for (const [index, item] of items.entries()) {
@@ -124,18 +124,12 @@ function validateCards(items: unknown[], errors: string[], warnings: string[]): 
     if (item.aliasesLast4 !== undefined && !isStringArray(item.aliasesLast4)) {
       errors.push(`cards[${index}].aliasesLast4 deve ser um array de strings.`);
     }
+    const cardName = typeof item.name === "string" ? item.name : `cards[${index}]`;
     if (item.closingDay !== undefined && !isValidDay(item.closingDay)) {
-      errors.push(`cards[${index}].closingDay inválido.`);
+      errors.push(`${cardName}: dia de fechamento inválido.`);
     }
     if (item.dueDay !== undefined && !isValidDay(item.dueDay)) {
-      errors.push(`cards[${index}].dueDay inválido.`);
-    }
-    const cardName = typeof item.name === "string" ? item.name : `cards[${index}]`;
-    if (!item.closingDay) {
-      warnings.push(`${cardName}: closingDay ausente.`);
-    }
-    if (!item.dueDay) {
-      warnings.push(`${cardName}: dueDay ausente.`);
+      errors.push(`${cardName}: dia de vencimento inválido.`);
     }
     result.push(item as unknown as ImportCard);
   }
@@ -435,7 +429,7 @@ export function validateImportDocument(
   }
 
   const incomes = validateIncome(validateRequiredArray(value, "incomes", errors), errors, warnings);
-  const cards = validateCards(validateRequiredArray(value, "cards", errors), errors, warnings);
+  const cards = validateCards(validateRequiredArray(value, "cards", errors), errors);
   const cardIds = new Set(cards.map((item) => item.id));
   const invoices = validateInvoices(
     validateRequiredArray(value, "invoices", errors),

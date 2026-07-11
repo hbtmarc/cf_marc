@@ -93,6 +93,7 @@ docs/screenshots-etapa5/_invalid-temp.json
 docs/screenshots-etapa5/_storage-temp.json
 docs/screenshots-etapa6/_storage-temp.json
 docs/screenshots-etapa7/_storage-temp.json
+docs/screenshots-etapa7-final/_storage-temp.json
 
 # Regras pessoais de classificação — nunca versionar
 src/config/classification-rules.local.js

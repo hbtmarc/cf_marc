@@ -1,3 +1,4 @@
+import { mergeImportCardDays } from "./import-card-review";
 import { createId, isValidDate, nowIso } from "./finance";
 import { ensureImportMeta, hasFingerprint, rememberFingerprint } from "./import-meta";
 import type {
@@ -29,15 +30,16 @@ function findTransactionByFingerprint(data: AppData, fingerprint: string): Trans
   return data.transactions.find((item) => item.canonicalFingerprint === fingerprint);
 }
 
-function mapImportCard(card: ImportCard): Omit<Card, "id"> {
+function mapImportCard(card: ImportCard, existing?: Card): Omit<Card, "id"> {
   const timestamp = nowIso();
+  const mergedDays = mergeImportCardDays(card, existing);
   return {
     name: card.name.trim(),
     ...(card.issuer?.trim() ? { issuer: card.issuer.trim() } : {}),
     ...(card.last4?.trim() ? { last4: card.last4.trim() } : {}),
     ...(card.aliasesLast4?.length ? { aliasesLast4: [...card.aliasesLast4] } : {}),
-    closingDay: card.closingDay ?? null,
-    dueDay: card.dueDay ?? null,
+    closingDay: mergedDays.closingDay ?? null,
+    dueDay: mergedDays.dueDay ?? null,
     createdAt: timestamp,
     updatedAt: timestamp,
     sourceImportId: card.id,
@@ -207,8 +209,8 @@ export function buildImportPlan(
   const cardActions = new Map<string, ImportPlanItem["action"]>();
 
   for (const card of payload.cards) {
-    const mapped = mapImportCard(card);
     const existing = findCardByImportId(data, card.id);
+    const mapped = mapImportCard(card, existing);
     if (existing) {
       cardIdMap.set(card.id, existing.id);
       if (isManualRecord(existing)) {
@@ -482,8 +484,8 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
     if (!planItem) {
       continue;
     }
-    const mapped = mapImportCard(card);
     const current = findCardByImportId(nextData, card.id);
+    const mapped = mapImportCard(card, current);
     if (planItem.action === "create") {
       const localId = createId();
       nextData.cards.push({ id: localId, ...mapped });

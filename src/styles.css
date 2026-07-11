@@ -2726,3 +2726,74 @@ body.modal-open {
   gap: var(--space-3);
 }
 
+.import-card-completion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.import-card-completion__title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.import-card-completion__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.import-card-completion__name {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.import-card-completion__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.import-card-field {
+  min-width: 10rem;
+}
+
+.dashboard-recent__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.cfm-table-wrap--dashboard-recent {
+  overflow-x: auto;
+}
+
+.cfm-table--dashboard-recent th,
+.cfm-table--dashboard-recent td {
+  padding: var(--space-2) var(--space-3);
+}
+
+.cfm-table--dashboard-recent .data-table__secondary {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 56rem) {
+  .import-card-completion__fields {
+    flex-direction: column;
+  }
+
+  .import-card-field {
+    width: 100%;
+  }
+}

@@ -15,6 +15,7 @@ export const TABLE_IDS = {
   lancamentos: "lancamentos",
   invoices: "invoices",
   invoiceDetail: "invoice-detail",
+  dashboardRecent: "dashboard-recent",
 } as const;
 
 export function tableColumnHeaderId(tableId: string, columnId: string): string {
