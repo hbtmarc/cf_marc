@@ -1,4 +1,4 @@
-import { filterTransactionsByCompetence } from "../finance";
+import { filterTransactionsByCompetence, transactionStatusLabel } from "../finance";
 import type { AppData, Transaction } from "../types";
 import type { AppMutations } from "../forms";
 import {
@@ -8,36 +8,91 @@ import {
   toggleTransactionStatus,
 } from "../forms";
 import {
-  renderDataTableHead,
   renderEmptyState,
   renderFilterChip,
+  renderLancamentosTableHead,
   renderSectionHeader,
   renderTransactionTableRow,
   sectionTotal,
+  transactionTypeLabel,
 } from "../presentation";
+import {
+  sortTableItems,
+  toggleTableSort,
+  TRANSACTION_STATUS_SORT_ORDER,
+  type SortColumnAccessor,
+  type TableSortState,
+} from "../table-sort";
+import { bindTableSortControls, renderMobileSortControl, type SortableColumnOption } from "../table-ui";
 import { announce, createRowMenu, el, escapeHtml, openConfirmModal } from "../ui";
 
 type KindFilter = "all" | "income" | "expense" | "fee" | "refund";
 type StatusFilter = "all" | "pending" | "settled";
-type SortKey = "date-desc" | "date-asc" | "amount-desc" | "amount-asc";
+
+export type LancamentosSortColumn =
+  | "date"
+  | "description"
+  | "category"
+  | "type"
+  | "status"
+  | "amount";
 
 interface LancamentosFilters {
   search: string;
   kind: KindFilter;
   status: StatusFilter;
-  sort: SortKey;
 }
 
 const SEARCH_DEBOUNCE_MS = 175;
+const LANCAMENTOS_MOBILE_SORT_ID = "lancamentos-mobile-sort";
+
+export const LANCAMENTOS_SORT_COLUMNS: SortableColumnOption<LancamentosSortColumn>[] = [
+  { id: "date", label: "Data" },
+  { id: "description", label: "Descrição" },
+  { id: "category", label: "Categoria" },
+  { id: "type", label: "Tipo" },
+  { id: "status", label: "Status" },
+  { id: "amount", label: "Valor" },
+];
+
+export const lancamentosSortAccessors: Record<
+  LancamentosSortColumn,
+  SortColumnAccessor<Transaction>
+> = {
+  date: { kind: "date", getValue: (item) => item.date },
+  description: { kind: "text", getValue: (item) => item.description },
+  category: { kind: "text", getValue: (item) => item.category },
+  type: { kind: "text", getValue: (item) => transactionTypeLabel(item) },
+  status: {
+    kind: "status",
+    getValue: (item) => transactionStatusLabel(item.kind, item.status, item.ledgerStatus),
+    statusOrder: TRANSACTION_STATUS_SORT_ORDER,
+  },
+  amount: {
+    kind: "number",
+    getValue: (item) =>
+      item.kind === "expense" && item.expenseKind !== "refund"
+        ? -item.amountCents
+        : item.amountCents,
+  },
+};
 
 let filters: LancamentosFilters = {
   search: "",
   kind: "all",
   status: "all",
-  sort: "date-desc",
+};
+
+let tableSort: TableSortState<LancamentosSortColumn> = {
+  column: "date",
+  direction: "desc",
 };
 
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function getLancamentosTableSort(): TableSortState<LancamentosSortColumn> {
+  return tableSort;
+}
 
 export function renderLancamentos(
   host: HTMLElement,
@@ -94,15 +149,6 @@ function renderToolbarControlsMarkup(): string {
             <option value="settled" ${filters.status === "settled" ? "selected" : ""}>Quitados</option>
           </select>
         </label>
-        <label class="field field--inline">
-          <span class="field__label">Ordenar</span>
-          <select class="field__control" id="tx-sort">
-            <option value="date-desc" ${filters.sort === "date-desc" ? "selected" : ""}>Data mais recente</option>
-            <option value="date-asc" ${filters.sort === "date-asc" ? "selected" : ""}>Data mais antiga</option>
-            <option value="amount-desc" ${filters.sort === "amount-desc" ? "selected" : ""}>Maior valor</option>
-            <option value="amount-asc" ${filters.sort === "amount-asc" ? "selected" : ""}>Menor valor</option>
-          </select>
-        </label>
       </div>
       <div class="toolbar-panel__actions">
         <button type="button" class="btn btn--primary" id="tx-new-transaction">Novo lançamento</button>
@@ -156,7 +202,7 @@ function matchesKindFilter(item: Transaction, kind: KindFilter): boolean {
   }
 }
 
-function applyFilters(items: Transaction[], state: LancamentosFilters): Transaction[] {
+export function applyFilters(items: Transaction[], state: LancamentosFilters): Transaction[] {
   let result = [...items];
   const query = state.search.trim().toLowerCase();
   if (query.length > 0) {
@@ -172,19 +218,6 @@ function applyFilters(items: Transaction[], state: LancamentosFilters): Transact
   if (state.status !== "all") {
     result = result.filter((item) => item.status === state.status);
   }
-  result.sort((a, b) => {
-    switch (state.sort) {
-      case "date-asc":
-        return a.date.localeCompare(b.date);
-      case "amount-desc":
-        return b.amountCents - a.amountCents;
-      case "amount-asc":
-        return a.amountCents - b.amountCents;
-      case "date-desc":
-      default:
-        return b.date.localeCompare(a.date);
-    }
-  });
   return result;
 }
 
@@ -196,7 +229,11 @@ function refreshLancamentosList(
 ): void {
   const month = data.selectedCompetenceMonth;
   const allTransactions = filterTransactionsByCompetence(data.transactions, month);
-  const filtered = applyFilters(allTransactions, filters);
+  const filtered = sortTableItems(
+    applyFilters(allTransactions, filters),
+    tableSort,
+    lancamentosSortAccessors,
+  );
 
   const chipsSlot = host.querySelector<HTMLElement>(".filter-chips-slot");
   if (chipsSlot) {
@@ -237,13 +274,26 @@ function refreshLancamentosList(
       );
     } else {
       tableSection.innerHTML = `
-        <div class="data-table" role="table" aria-label="Lançamentos">
-          ${renderDataTableHead()}
-          <div class="data-table__body" role="rowgroup">
+        ${renderMobileSortControl(LANCAMENTOS_SORT_COLUMNS, tableSort, LANCAMENTOS_MOBILE_SORT_ID)}
+        <table class="cfm-table cfm-table--lancamentos" aria-label="Lançamentos" data-sort-table="${LANCAMENTOS_MOBILE_SORT_ID}">
+          ${renderLancamentosTableHead(LANCAMENTOS_SORT_COLUMNS, tableSort)}
+          <tbody>
             ${filtered.map((item) => renderTransactionTableRow(item)).join("")}
-          </div>
-        </div>
+          </tbody>
+        </table>
       `;
+
+      bindTableSortControls<LancamentosSortColumn>(tableSection, {
+        mobileControlId: LANCAMENTOS_MOBILE_SORT_ID,
+        onColumnActivate: (column) => {
+          tableSort = toggleTableSort(tableSort, column, "asc");
+          refreshLancamentosList(host, data, mutations, rerender);
+        },
+        onMobileSort: (column, direction) => {
+          tableSort = { column, direction };
+          refreshLancamentosList(host, data, mutations, rerender);
+        },
+      });
     }
   }
 
@@ -281,10 +331,6 @@ function bindToolbar(
   });
   host.querySelector<HTMLSelectElement>("#tx-status-filter")?.addEventListener("change", (event) => {
     filters.status = (event.target as HTMLSelectElement).value as StatusFilter;
-    rerender();
-  });
-  host.querySelector<HTMLSelectElement>("#tx-sort")?.addEventListener("change", (event) => {
-    filters.sort = (event.target as HTMLSelectElement).value as SortKey;
     rerender();
   });
 
@@ -386,4 +432,4 @@ function bindRowActions(
   }
 }
 
-export { applyFilters, filters, SEARCH_DEBOUNCE_MS };
+export { filters, SEARCH_DEBOUNCE_MS, tableSort };

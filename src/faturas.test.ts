@@ -8,6 +8,8 @@ import {
 } from "./finance";
 import {
   getExpandedInvoiceId,
+  getInvoiceDetailSort,
+  INVOICE_DETAIL_SORT_COLUMNS,
   renderFaturas,
   resetFaturasUiState,
 } from "./pages/faturas";
@@ -17,6 +19,7 @@ import {
   renderInvoiceTableRow,
   renderNominalMoney,
 } from "./presentation";
+import { renderMobileSortControl } from "./table-ui";
 import { renderNav } from "./ui";
 import type { AppData, Invoice, Transaction } from "./types";
 import type { AppMutations } from "./forms";
@@ -260,6 +263,14 @@ describe("invoice detail and lines", () => {
       cardName: "Mercado Pago",
       transactions: transactionsForInvoice(sampleTransactions, "inv-mp-jun"),
       panelId: "invoice-detail-inv-mp-jun",
+      sortColumns: INVOICE_DETAIL_SORT_COLUMNS,
+      sortState: getInvoiceDetailSort(),
+      mobileSortControlId: "invoice-detail-mobile-sort",
+      mobileSortMarkup: renderMobileSortControl(
+        INVOICE_DETAIL_SORT_COLUMNS,
+        getInvoiceDetailSort(),
+        "invoice-detail-mobile-sort",
+      ),
     });
     expect(html).toContain("Tarifa");
     expect(html).toContain("Estorno");

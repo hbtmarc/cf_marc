@@ -198,9 +198,9 @@ export function transactionsForInvoice(
   transactions: Transaction[],
   invoiceId: string,
 ): Transaction[] {
-  return transactions
-    .filter((item) => item.invoiceId === invoiceId && isInvoiceLinkedExpense(item))
-    .sort((a, b) => b.date.localeCompare(a.date));
+  return transactions.filter(
+    (item) => item.invoiceId === invoiceId && isInvoiceLinkedExpense(item),
+  );
 }
 
 export function invoiceRealizedCents(invoice: Invoice): number {

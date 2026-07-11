@@ -2,7 +2,21 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 10 de julho de 2026  
-**Etapa atual:** Etapa 5 — Importador definitivo `cfm.import.v1` (correção final)
+**Etapa atual:** Etapa 6 — Ordenação global das tabelas
+
+---
+
+## Etapa 6 — concluída
+
+### Ordenação por coluna
+
+Tabelas nativas (`<table>`) com cabeçalhos ordenáveis via botão, `aria-sort` no `th` ativo, indicador de direção e controle mobile **Ordenar por** compartilhando o mesmo estado.
+
+**Padrões iniciais:** Lançamentos data desc · Faturas vencimento asc · Detalhe da fatura data desc.
+
+**Ordem de status documentada em** `src/table-sort.ts`: lançamentos (Na fatura → Pendente → Pago/Recebido); faturas (Aberta → Parcial → Paga → Credora).
+
+Screenshots: `docs/screenshots-etapa6/`.
 
 ---
 

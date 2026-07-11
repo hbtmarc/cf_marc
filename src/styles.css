@@ -1916,6 +1916,116 @@ body.modal-open {
   font-size: var(--text-micro);
 }
 
+/* ── Native sortable tables ──────────────────────────────── */
+
+.cfm-table-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cfm-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+  overflow: hidden;
+}
+
+.cfm-table thead {
+  background: var(--color-bg-accent);
+}
+
+.cfm-table th,
+.cfm-table td {
+  padding: var(--space-3) var(--space-4);
+  min-width: 0;
+  vertical-align: middle;
+  text-align: left;
+}
+
+.cfm-table th {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.cfm-table tbody tr + tr td {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.cfm-table tbody tr:hover {
+  background: var(--color-bg-accent);
+}
+
+.cfm-table__cell--amount,
+.cfm-table__cell--total,
+.cfm-table__cell--open {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-sort-th {
+  padding: 0;
+}
+
+.table-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.table-sort-btn:focus-visible {
+  outline: 2px solid var(--color-action);
+  outline-offset: -2px;
+}
+
+.cfm-table__cell--amount .table-sort-btn,
+.cfm-table__cell--total .table-sort-btn,
+.cfm-table__cell--open .table-sort-btn {
+  justify-content: flex-end;
+}
+
+.table-sort-indicator {
+  font-size: var(--text-overline);
+  color: var(--color-action);
+}
+
+.table-sort-indicator--idle {
+  color: var(--color-text-secondary);
+  opacity: 0.65;
+}
+
+.table-sort-mobile {
+  display: none;
+}
+
+.cfm-table--lancamentos .cfm-table__cell--date { width: 6.5rem; }
+.cfm-table--lancamentos .cfm-table__cell--amount { width: 7.5rem; }
+.cfm-table--lancamentos .cfm-table__cell--actions { width: 3rem; }
+
+.cfm-table--invoice .cfm-table__cell--dueDate { width: 6.5rem; }
+.cfm-table--invoice .cfm-table__cell--total,
+.cfm-table--invoice .cfm-table__cell--open { width: 6.5rem; }
+.cfm-table--invoice .cfm-table__cell--view { width: 5.5rem; }
+.cfm-table--invoice .cfm-table__cell--actions { width: 3rem; }
+
+.cfm-table--invoice-lines .cfm-table__cell--date { width: 6.5rem; }
+.cfm-table--invoice-lines .cfm-table__cell--installment { width: 4.5rem; }
+.cfm-table--invoice-lines .cfm-table__cell--amount { width: 6.5rem; }
+
 .row-menu {
   position: relative;
   display: inline-flex;
@@ -2339,6 +2449,47 @@ body.modal-open {
 
   .data-table__head {
     display: none;
+  }
+
+  .table-sort-mobile {
+    display: flex;
+  }
+
+  .cfm-table thead {
+    display: none;
+  }
+
+  .cfm-table tbody tr {
+    display: block;
+    padding: var(--space-3) var(--space-4);
+    border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .cfm-table tbody tr:first-child {
+    border-top: 0;
+  }
+
+  .cfm-table tbody td {
+    display: block;
+    padding: var(--space-1) 0;
+    border: 0;
+    text-align: left;
+  }
+
+  .cfm-table tbody td::before {
+    display: block;
+    margin-bottom: var(--space-1);
+    font-size: var(--text-overline);
+    font-weight: var(--weight-semibold);
+    color: var(--color-text-secondary);
+    text-transform: none;
+    content: attr(data-label);
+  }
+
+  .cfm-table__cell--amount,
+  .cfm-table__cell--total,
+  .cfm-table__cell--open {
+    text-align: left;
   }
 
   .data-table__row {

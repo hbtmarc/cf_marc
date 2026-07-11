@@ -1,5 +1,12 @@
-import { filterInvoicesByCompetence, transactionsForInvoice } from "../finance";
-import type { AppData } from "../types";
+import {
+  filterInvoicesByCompetence,
+  formatCompetenceLabel,
+  invoiceStatusLabel,
+  invoiceTotalCentsValue,
+  invoiceOpenCents,
+  transactionsForInvoice,
+} from "../finance";
+import type { AppData, Invoice, Transaction } from "../types";
 import type { AppMutations } from "../forms";
 import {
   cardNameById,
@@ -16,11 +23,70 @@ import {
   renderInvoiceTableHead,
   renderInvoiceTableRow,
   renderSectionHeader,
+  transactionTypeLabel,
 } from "../presentation";
+import {
+  INVOICE_STATUS_SORT_ORDER,
+  sortTableItems,
+  toggleTableSort,
+  type InstallmentSortValue,
+  type SortColumnAccessor,
+  type TableSortState,
+} from "../table-sort";
+import { bindTableSortControls, renderMobileSortControl, type SortableColumnOption } from "../table-ui";
 import { createRowMenu, el, openConfirmModal } from "../ui";
 import { formatCardCount, formatInvoiceCount } from "../text";
 
 let expandedInvoiceId: string | null = null;
+
+const INVOICES_MOBILE_SORT_ID = "invoices-mobile-sort";
+const INVOICE_DETAIL_MOBILE_SORT_ID = "invoice-detail-mobile-sort";
+
+export type InvoiceSortColumn =
+  | "dueDate"
+  | "fatura"
+  | "card"
+  | "competence"
+  | "status"
+  | "total"
+  | "open";
+
+export type InvoiceDetailSortColumn =
+  | "date"
+  | "description"
+  | "installment"
+  | "category"
+  | "type"
+  | "amount";
+
+export const INVOICE_SORT_COLUMNS: SortableColumnOption<InvoiceSortColumn>[] = [
+  { id: "dueDate", label: "Vencimento" },
+  { id: "fatura", label: "Fatura" },
+  { id: "card", label: "Cartão" },
+  { id: "competence", label: "Competência" },
+  { id: "status", label: "Status" },
+  { id: "total", label: "Total" },
+  { id: "open", label: "Em aberto" },
+];
+
+export const INVOICE_DETAIL_SORT_COLUMNS: SortableColumnOption<InvoiceDetailSortColumn>[] = [
+  { id: "date", label: "Data" },
+  { id: "description", label: "Descrição" },
+  { id: "installment", label: "Parcela" },
+  { id: "category", label: "Categoria" },
+  { id: "type", label: "Tipo" },
+  { id: "amount", label: "Valor" },
+];
+
+let invoiceTableSort: TableSortState<InvoiceSortColumn> = {
+  column: "dueDate",
+  direction: "asc",
+};
+
+let invoiceDetailSort: TableSortState<InvoiceDetailSortColumn> = {
+  column: "date",
+  direction: "desc",
+};
 
 export function resetFaturasUiState(): void {
   expandedInvoiceId = null;
@@ -29,6 +95,53 @@ export function resetFaturasUiState(): void {
 export function getExpandedInvoiceId(): string | null {
   return expandedInvoiceId;
 }
+
+export function getInvoiceTableSort(): TableSortState<InvoiceSortColumn> {
+  return invoiceTableSort;
+}
+
+export function getInvoiceDetailSort(): TableSortState<InvoiceDetailSortColumn> {
+  return invoiceDetailSort;
+}
+
+export function buildInvoiceSortAccessors(
+  cardNameFor: (invoice: Invoice) => string,
+): Record<InvoiceSortColumn, SortColumnAccessor<Invoice>> {
+  return {
+    dueDate: { kind: "date", getValue: (item) => item.dueDate },
+    fatura: {
+      kind: "text",
+      getValue: (item) => `Fatura ${formatCompetenceLabel(item.competenceMonth)}`,
+    },
+    card: { kind: "text", getValue: (item) => cardNameFor(item) },
+    competence: { kind: "date", getValue: (item) => item.competenceMonth },
+    status: {
+      kind: "status",
+      getValue: (item) => invoiceStatusLabel(item),
+      statusOrder: INVOICE_STATUS_SORT_ORDER,
+    },
+    total: { kind: "number", getValue: (item) => invoiceTotalCentsValue(item) },
+    open: { kind: "number", getValue: (item) => invoiceOpenCents(item) },
+  };
+}
+
+export const invoiceDetailSortAccessors: Record<
+  InvoiceDetailSortColumn,
+  SortColumnAccessor<Transaction>
+> = {
+  date: { kind: "date", getValue: (item) => item.date },
+  description: { kind: "text", getValue: (item) => item.description },
+  installment: {
+    kind: "installment",
+    getValue: (item): InstallmentSortValue =>
+      item.installment
+        ? { current: item.installment.current, total: item.installment.total }
+        : { current: null, total: null },
+  },
+  category: { kind: "text", getValue: (item) => item.category },
+  type: { kind: "text", getValue: (item) => transactionTypeLabel(item) },
+  amount: { kind: "number", getValue: (item) => item.amountCents },
+};
 
 export function renderFaturasHeaderActions(
   host: HTMLElement,
@@ -70,7 +183,11 @@ export function renderFaturas(
   rerender: () => void,
 ): void {
   const month = data.selectedCompetenceMonth;
-  const invoices = filterInvoicesByCompetence(data.invoices, month);
+  const invoices = sortTableItems(
+    filterInvoicesByCompetence(data.invoices, month),
+    invoiceTableSort,
+    buildInvoiceSortAccessors((invoice) => cardNameById(data, invoice.cardId)),
+  );
   const hasCards = data.cards.length > 0;
   const singleCard = data.cards.length === 1;
 
@@ -145,38 +262,76 @@ export function renderFaturas(
       () => openInvoiceForm({ mutations, data, competenceMonth: month, onSaved: rerender }),
     );
   } else {
-    const table = el("div", "data-table data-table--invoice");
-    table.setAttribute("role", "table");
-    table.setAttribute("aria-label", "Faturas da competência");
-    table.innerHTML = `
-      ${renderInvoiceTableHead()}
-      <div class="data-table__body" role="rowgroup">
-        ${invoices
-          .map((invoice) => {
-            const panelId = `invoice-detail-${invoice.id}`;
-            return renderInvoiceTableRow({
-              invoice,
-              cardName: cardNameById(data, invoice.cardId),
-              expanded: expandedInvoiceId === invoice.id,
-              detailPanelId: panelId,
-            });
-          })
-          .join("")}
-      </div>
+    const tableWrap = el("div", "cfm-table-wrap");
+    tableWrap.innerHTML = `
+      ${renderMobileSortControl(INVOICE_SORT_COLUMNS, invoiceTableSort, INVOICES_MOBILE_SORT_ID)}
+      <table class="cfm-table cfm-table--invoice" aria-label="Faturas da competência" data-sort-table="${INVOICES_MOBILE_SORT_ID}">
+        ${renderInvoiceTableHead(INVOICE_SORT_COLUMNS, invoiceTableSort)}
+        <tbody>
+          ${invoices
+            .map((invoice) => {
+              const panelId = `invoice-detail-${invoice.id}`;
+              return renderInvoiceTableRow({
+                invoice,
+                cardName: cardNameById(data, invoice.cardId),
+                expanded: expandedInvoiceId === invoice.id,
+                detailPanelId: panelId,
+              });
+            })
+            .join("")}
+        </tbody>
+      </table>
     `;
-    invoiceSection.appendChild(table);
+    invoiceSection.appendChild(tableWrap);
+
+    bindTableSortControls<InvoiceSortColumn>(tableWrap, {
+      mobileControlId: INVOICES_MOBILE_SORT_ID,
+      onColumnActivate: (column) => {
+        invoiceTableSort = toggleTableSort(invoiceTableSort, column, "asc");
+        rerender();
+      },
+      onMobileSort: (column, direction) => {
+        invoiceTableSort = { column, direction };
+        rerender();
+      },
+    });
 
     if (expandedInvoiceId !== null) {
       const invoice = invoices.find((item) => item.id === expandedInvoiceId);
       if (invoice) {
+        const detailTransactions = sortTableItems(
+          transactionsForInvoice(data.transactions, invoice.id),
+          invoiceDetailSort,
+          invoiceDetailSortAccessors,
+        );
         const detailHost = el("div", "invoice-detail-host");
         detailHost.innerHTML = renderInvoiceDetailPanel({
           invoice,
           cardName: cardNameById(data, invoice.cardId),
-          transactions: transactionsForInvoice(data.transactions, invoice.id),
+          transactions: detailTransactions,
           panelId: `invoice-detail-${invoice.id}`,
+          sortColumns: INVOICE_DETAIL_SORT_COLUMNS,
+          sortState: invoiceDetailSort,
+          mobileSortControlId: INVOICE_DETAIL_MOBILE_SORT_ID,
+          mobileSortMarkup: renderMobileSortControl(
+            INVOICE_DETAIL_SORT_COLUMNS,
+            invoiceDetailSort,
+            INVOICE_DETAIL_MOBILE_SORT_ID,
+          ),
         });
         invoiceSection.appendChild(detailHost);
+
+        bindTableSortControls<InvoiceDetailSortColumn>(detailHost, {
+          mobileControlId: INVOICE_DETAIL_MOBILE_SORT_ID,
+          onColumnActivate: (column) => {
+            invoiceDetailSort = toggleTableSort(invoiceDetailSort, column, "asc");
+            rerender();
+          },
+          onMobileSort: (column, direction) => {
+            invoiceDetailSort = { column, direction };
+            rerender();
+          },
+        });
       }
     }
 

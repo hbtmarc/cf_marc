@@ -23,7 +23,6 @@ describe("lancamentos search", () => {
     filters.search = "";
     filters.kind = "all";
     filters.status = "all";
-    filters.sort = "date-desc";
   });
 
   afterEach(() => {
