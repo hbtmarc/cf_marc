@@ -2,7 +2,31 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 11 de julho de 2026  
-**Etapa atual:** Etapa 7 — Projeção de parcelas futuras
+**Etapa atual:** Etapa 7 — Projeção de parcelas futuras e organização de Lançamentos
+
+---
+
+## Regra permanente — campos interativos
+
+Campos interativos não podem estar dentro de subárvores substituídas a cada evento de input. Durante digitação, atualizar somente o estado e os elementos dependentes, preservando o nó DOM, o foco e a posição do cursor.
+
+Aplicada na revisão de importação (dias de cartão) e na busca de Lançamentos.
+
+---
+
+## Etapa 7 — organização de Lançamentos
+
+A página **Lançamentos** está dividida em três seções:
+
+1. **Receitas** — transações reais `kind: income` da competência.
+2. **Despesas** — despesas diretas (sem `ledgerStatus: in_invoice` e sem `invoiceId`).
+3. **Faturas e cartões** — blocos por cartão com fatura real ou projeção quando não há fatura.
+
+**Fatura real:** usa totais oficiais da entidade `Invoice`; linhas internas listadas somente no detalhe expandido.
+
+**Projeção:** exibida quando não há fatura real para `cardId + competenceMonth`; badge `PROJETADA`; não persiste entidade Invoice.
+
+Cada seção possui ordenação independente. Busca e filtros atuam nas três seções.
 
 ---
 

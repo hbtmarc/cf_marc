@@ -6,6 +6,7 @@ import {
   hasConfiguredClosingDay,
   mergeImportCardDays,
   renderCardCompletionSection,
+  syncCardCompletionValidation,
   validateCardCompletionDrafts,
   validateCardDayInput,
 } from "./import-card-review";
@@ -170,5 +171,24 @@ describe("import card completion review", () => {
     expect(errors.card_ourocard?.dueDay).toBeDefined();
     const html = renderCardCompletionSection(fields, { card_ourocard: { closingDay: "40", dueDay: "abc" } }, errors);
     expect(html).toContain("field__error");
+  });
+
+  it("syncs validation without replacing inputs", () => {
+    const fields = buildCardCompletionFields(payload, emptyAppData()).slice(0, 1);
+    document.body.innerHTML = renderCardCompletionSection(fields, {}, {});
+    const root = document.body;
+    const input = root.querySelector<HTMLInputElement>("[data-card-completion-field='closingDay']")!;
+    const nodeRef = input;
+    input.value = "40";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    syncCardCompletionValidation(
+      root,
+      fields,
+      { card_ourocard: { closingDay: "40", dueDay: "" } },
+      true,
+    );
+    expect(root.querySelector("[data-card-completion-field='closingDay']")).toBe(nodeRef);
+    expect(input.getAttribute("aria-invalid")).toBe("true");
+    expect(root.querySelector(".field__error")).not.toBeNull();
   });
 });

@@ -786,12 +786,13 @@ export function renderInvoiceTableHead<C extends string>(
 export function renderLancamentosTableHead<C extends string>(
   columns: SortableColumnOption<C>[],
   state: TableSortState<C>,
+  tableId: string = TABLE_IDS.lancamentos,
 ): string {
   return renderSortableTableHead(
     columns,
     state,
-    `<th scope="col" id="${tableColumnHeaderId(TABLE_IDS.lancamentos, "actions")}" class="cfm-table__cell--actions"><span class="sr-only">Ações</span></th>`,
-    TABLE_IDS.lancamentos,
+    `<th scope="col" id="${tableColumnHeaderId(tableId, "actions")}" class="cfm-table__cell--actions"><span class="sr-only">Ações</span></th>`,
+    tableId,
   );
 }
 
@@ -839,7 +840,9 @@ function transactionTypeChipClass(item: Transaction): string {
 export function renderTransactionTableRow(
   item: Transaction,
   tableId: string = TABLE_IDS.lancamentos,
+  options?: { includeType?: boolean },
 ): string {
+  const includeType = options?.includeType !== false;
   const statusLabel = transactionStatusLabel(item.kind, item.status, item.ledgerStatus);
   const statusVariant =
     item.ledgerStatus === "in_invoice"
@@ -854,6 +857,11 @@ export function renderTransactionTableRow(
     : "";
   const signedAmount = transactionDisplayedAmountCents(item);
   const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
+  const typeCell = includeType
+    ? `<td class="cfm-table__cell--type" ${h("type")} data-label="Tipo">
+        <span class="type-chip type-chip--${typeChipClass}">${typeLabel}</span>
+      </td>`
+    : "";
 
   return `
     <tr data-transaction-id="${escapeHtml(item.id)}">
@@ -862,9 +870,7 @@ export function renderTransactionTableRow(
         <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>${installmentLabel}
       </td>
       <td class="cfm-table__cell--category" ${h("category")} data-label="Categoria">${escapeHtml(item.category)}</td>
-      <td class="cfm-table__cell--type" ${h("type")} data-label="Tipo">
-        <span class="type-chip type-chip--${typeChipClass}">${typeLabel}</span>
-      </td>
+      ${typeCell}
       <td class="cfm-table__cell--status" ${h("status")} data-label="Status">${renderStatusChip(statusLabel, statusVariant)}</td>
       <td class="cfm-table__cell--amount" ${h("amount")} data-label="Valor">
         ${renderMoney(signedAmount)}
@@ -874,6 +880,13 @@ export function renderTransactionTableRow(
       </td>
     </tr>
   `;
+}
+
+export function renderIncomeTransactionTableRow(
+  item: Transaction,
+  tableId: string = TABLE_IDS.lancamentosIncome,
+): string {
+  return renderTransactionTableRow(item, tableId, { includeType: false });
 }
 
 export function renderProjectedInstallmentRow(
@@ -1253,4 +1266,77 @@ export function renderCardSummaryBody(card: Card): string {
     <span class="data-table__primary">${escapeHtml(card.name)}</span>
     <span class="data-table__secondary">${escapeHtml(details.join(" · ") || "Sem dias configurados")}</span>
   `;
+}
+
+export function renderLedgerCardBlock(input: {
+  groupKey: string;
+  cardName: string;
+  competenceMonth: string;
+  mode: "real" | "projected";
+  statusLabel: string;
+  totalCents: number;
+  paidCents: number;
+  openCents: number;
+  lineCount: number;
+  expanded: boolean;
+  detailPanelId: string;
+}): string {
+  const title =
+    input.mode === "real"
+      ? `${escapeHtml(input.cardName)} · Fatura ${escapeHtml(formatCompetenceLabel(input.competenceMonth))}`
+      : `${escapeHtml(input.cardName)} · Projeção de fatura`;
+  const statusChip =
+    input.mode === "projected"
+      ? `<span class="status-chip status-chip--projected">${escapeHtml(PROJECTED_STATUS_LABEL.toUpperCase())}</span>`
+      : renderStatusChip(input.statusLabel, input.openCents > 0 ? "warning" : "success");
+  const expandLabel = input.expanded ? "Ocultar detalhes" : "Ver detalhes";
+
+  return `
+    <article class="ledger-card-block" data-ledger-key="${escapeHtml(input.groupKey)}">
+      <div class="ledger-card-block__summary">
+        <div class="ledger-card-block__heading">
+          <h3 class="ledger-card-block__title">${title}</h3>
+          <p class="ledger-card-block__meta">${escapeHtml(formatCompetenceLabel(input.competenceMonth))} · ${input.lineCount} lançamento${input.lineCount === 1 ? "" : "s"}</p>
+        </div>
+        <dl class="ledger-card-block__metrics">
+          <div><dt>Status</dt><dd>${statusChip}</dd></div>
+          <div><dt>Total</dt><dd>${renderNominalMoney(input.totalCents)}</dd></div>
+          <div><dt>Pago</dt><dd>${renderNominalMoney(input.paidCents)}</dd></div>
+          <div><dt>Em aberto</dt><dd>${renderNominalMoney(input.openCents, input.openCents > 0 ? "negative" : "neutral")}</dd></div>
+        </dl>
+        <button
+          type="button"
+          class="btn btn--ghost btn--compact ledger-card-block__toggle"
+          data-ledger-toggle="${escapeHtml(input.groupKey)}"
+          aria-expanded="${input.expanded ? "true" : "false"}"
+          aria-controls="${escapeHtml(input.detailPanelId)}"
+        >${expandLabel}</button>
+      </div>
+      <div
+        class="ledger-card-block__detail${input.expanded ? "" : " ledger-card-block__detail--hidden"}"
+        id="${escapeHtml(input.detailPanelId)}"
+        ${input.expanded ? "" : "hidden"}
+      ></div>
+    </article>`;
+}
+
+export function renderLedgerProjectedDetailRow(
+  item: ProjectedInstallment,
+  tableId: string = TABLE_IDS.lancamentosCardsDetail,
+): string {
+  const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
+  return `
+    <tr class="cfm-table__row--projected" data-projected-id="${escapeHtml(item.id)}">
+      <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatCompetenceLabel(item.competenceMonth))}</td>
+      <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
+        <span class="data-table__primary">${escapeHtml(item.description)}</span>
+        <span class="status-chip status-chip--projected">${escapeHtml(PROJECTED_STATUS_LABEL.toUpperCase())}</span>
+      </td>
+      <td class="cfm-table__cell--installment" ${h("installment")} data-label="Parcela">${item.installment.current}/${item.installment.total}</td>
+      <td class="cfm-table__cell--category" ${h("category")} data-label="Categoria">${escapeHtml(item.category)}</td>
+      <td class="cfm-table__cell--type" ${h("type")} data-label="Tipo">
+        <span class="type-chip type-chip--expense">Despesa</span>
+      </td>
+      <td class="cfm-table__cell--amount" ${h("amount")} data-label="Valor">${renderMoney(-item.amountCents)}</td>
+    </tr>`;
 }

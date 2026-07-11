@@ -214,6 +214,71 @@ function escapeAttr(value: string): string {
   return value
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+function fieldErrorElement(label: ParentNode): HTMLElement | null {
+  return label.querySelector(".field__error");
+}
+
+function setFieldError(label: ParentNode, message: string | null): void {
+  const input = label.querySelector<HTMLInputElement>("[data-card-completion-field]");
+  if (!input) {
+    return;
+  }
+  input.setAttribute("aria-invalid", message ? "true" : "false");
+  input.classList.toggle("field__control--invalid", Boolean(message));
+  const existing = fieldErrorElement(label);
+  if (message) {
+    if (existing) {
+      existing.textContent = message;
+    } else {
+      const error = document.createElement("span");
+      error.className = "field__error";
+      error.textContent = message;
+      label.appendChild(error);
+    }
+  } else if (existing) {
+    existing.remove();
+  }
+}
+
+/** Atualiza validação visual sem recriar inputs (preserva foco e cursor). */
+export function syncCardCompletionValidation(
+  root: ParentNode,
+  fields: CardCompletionField[],
+  drafts: Record<string, CardCompletionDraft>,
+  planCanImport: boolean,
+): boolean {
+  const errors = validateCardCompletionDrafts(fields, drafts);
+  const canImport = planCanImport && canConfirmImportWithCompletions(fields, drafts);
+
+  for (const field of fields) {
+    const fieldErrors = errors[field.importId] ?? {};
+    if (field.needsClosingDay) {
+      const label = root.querySelector(
+        `[data-card-completion="${field.importId}"][data-card-completion-field="closingDay"]`,
+      )?.closest("label");
+      if (label) {
+        setFieldError(label, fieldErrors.closingDay ?? null);
+      }
+    }
+    if (field.needsDueDay) {
+      const label = root.querySelector(
+        `[data-card-completion="${field.importId}"][data-card-completion-field="dueDay"]`,
+      )?.closest("label");
+      if (label) {
+        setFieldError(label, fieldErrors.dueDay ?? null);
+      }
+    }
+  }
+
+  const confirmButton = root.querySelector<HTMLButtonElement>("#import-confirm");
+  if (confirmButton) {
+    confirmButton.disabled = !canImport;
+  }
+
+  return canImport;
 }

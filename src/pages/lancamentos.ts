@@ -1,15 +1,33 @@
+
 import {
-  filterTransactionsByCompetence,
   transactionDisplayedAmountCents,
   transactionStatusLabel,
 } from "../finance";
 import {
-  isProjectedInstallmentRow,
   lancamentoRowStatusLabel,
   LANCAMENTOS_STATUS_SORT_ORDER,
-  projectedInstallmentsForMonth,
   type LancamentoRow,
 } from "../installments";
+import {
+  buildDirectExpenseTransactions,
+  buildIncomeTransactions,
+  buildLedgerCardGroups,
+  directExpenseRowStatusLabel,
+  expenseSectionSubtotalCents,
+  filterDirectExpenseTransactions,
+  filterIncomeTransactions,
+  filterLedgerCardGroups,
+  groupDetailLines,
+  groupDetailProjections,
+  incomeRowStatusLabel,
+  incomeSectionSubtotalCents,
+  ledgerGroupOpenCents,
+  ledgerGroupPaidCents,
+  ledgerGroupStatusLabel,
+  ledgerGroupTotalCents,
+  type LancamentosFilterState,
+  type LedgerCardGroup,
+} from "../lancamentos-sections";
 import type { AppData, Transaction } from "../types";
 import type { AppMutations } from "../forms";
 import {
@@ -19,10 +37,19 @@ import {
   toggleTransactionStatus,
 } from "../forms";
 import {
+  INVOICE_DETAIL_SORT_COLUMNS,
+  invoiceDetailSortAccessors,
+  type InvoiceDetailSortColumn,
+} from "./faturas";
+import { installmentSortValue } from "../installment-label";
+import {
   renderEmptyState,
   renderFilterChip,
+  renderIncomeTransactionTableRow,
+  renderInvoiceTransactionRow,
   renderLancamentosTableHead,
-  renderProjectedInstallmentRow,
+  renderLedgerCardBlock,
+  renderLedgerProjectedDetailRow,
   renderSectionHeader,
   renderTransactionTableRow,
   transactionTypeLabel,
@@ -33,11 +60,11 @@ import {
   type SortColumnAccessor,
   type TableSortState,
 } from "../table-sort";
-import { bindTableSortControls, renderMobileSortControl, type SortableColumnOption } from "../table-ui";
+import { bindTableSortControls, renderMobileSortControl, TABLE_IDS, type SortableColumnOption } from "../table-ui";
 import { announce, createRowMenu, el, escapeHtml, openConfirmModal } from "../ui";
 
-type KindFilter = "all" | "income" | "expense" | "fee" | "refund";
-type StatusFilter = "all" | "pending" | "settled" | "projected";
+type KindFilter = LancamentosFilterState["kind"];
+type StatusFilter = LancamentosFilterState["status"];
 
 export type LancamentosSortColumn =
   | "date"
@@ -47,14 +74,30 @@ export type LancamentosSortColumn =
   | "status"
   | "amount";
 
-interface LancamentosFilters {
-  search: string;
-  kind: KindFilter;
-  status: StatusFilter;
-}
+export type IncomeSortColumn = "date" | "description" | "category" | "status" | "amount";
+
+export type CardGroupSortColumn = "dueDate" | "card" | "total" | "open";
 
 const SEARCH_DEBOUNCE_MS = 175;
-const LANCAMENTOS_MOBILE_SORT_ID = "lancamentos-mobile-sort";
+const INCOME_MOBILE_SORT_ID = "lancamentos-income-mobile-sort";
+const EXPENSE_MOBILE_SORT_ID = "lancamentos-expense-mobile-sort";
+const CARD_DETAIL_MOBILE_SORT_ID = "lancamentos-card-detail-mobile-sort";
+
+function ledgerDetailPanelId(groupKey: string): string {
+  return `ledger-detail-${groupKey.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+function ledgerDetailMobileSortId(groupKey: string): string {
+  return `${CARD_DETAIL_MOBILE_SORT_ID}-${groupKey.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
+export const INCOME_SORT_COLUMNS: SortableColumnOption<IncomeSortColumn>[] = [
+  { id: "date", label: "Data" },
+  { id: "description", label: "Descrição" },
+  { id: "category", label: "Categoria" },
+  { id: "status", label: "Status" },
+  { id: "amount", label: "Valor" },
+];
 
 export const LANCAMENTOS_SORT_COLUMNS: SortableColumnOption<LancamentosSortColumn>[] = [
   { id: "date", label: "Data" },
@@ -65,6 +108,18 @@ export const LANCAMENTOS_SORT_COLUMNS: SortableColumnOption<LancamentosSortColum
   { id: "amount", label: "Valor" },
 ];
 
+export const incomeSortAccessors: Record<IncomeSortColumn, SortColumnAccessor<Transaction>> = {
+  date: { kind: "date", getValue: (item) => item.date },
+  description: { kind: "text", getValue: (item) => item.description },
+  category: { kind: "text", getValue: (item) => item.category },
+  status: {
+    kind: "status",
+    getValue: (item) => incomeRowStatusLabel(item),
+    statusOrder: ["Recebido", "Pendente"],
+  },
+  amount: { kind: "number", getValue: (item) => transactionDisplayedAmountCents(item) },
+};
+
 export const lancamentosRowSortAccessors: Record<
   LancamentosSortColumn,
   SortColumnAccessor<LancamentoRow>
@@ -74,14 +129,8 @@ export const lancamentosRowSortAccessors: Record<
     getValue: (row) =>
       row.rowKind === "projected" ? `${row.data.competenceMonth}-01` : row.data.date,
   },
-  description: {
-    kind: "text",
-    getValue: (row) => row.data.description,
-  },
-  category: {
-    kind: "text",
-    getValue: (row) => row.data.category,
-  },
+  description: { kind: "text", getValue: (row) => row.data.description },
+  category: { kind: "text", getValue: (row) => row.data.category },
   type: {
     kind: "text",
     getValue: (row) =>
@@ -101,6 +150,26 @@ export const lancamentosRowSortAccessors: Record<
   },
 };
 
+export const expenseSortAccessors: Record<LancamentosSortColumn, SortColumnAccessor<Transaction>> = {
+  date: { kind: "date", getValue: (item) => item.date },
+  description: { kind: "text", getValue: (item) => item.description },
+  category: { kind: "text", getValue: (item) => item.category },
+  type: { kind: "text", getValue: (item) => transactionTypeLabel(item) },
+  status: {
+    kind: "status",
+    getValue: (item) => directExpenseRowStatusLabel(item),
+    statusOrder: ["Pago", "Pendente"],
+  },
+  amount: { kind: "number", getValue: (item) => transactionDisplayedAmountCents(item) },
+};
+
+export const cardGroupSortAccessors: Record<CardGroupSortColumn, SortColumnAccessor<LedgerCardGroup>> = {
+  dueDate: { kind: "date", getValue: (item) => item.dueDate },
+  card: { kind: "text", getValue: (item) => item.cardName },
+  total: { kind: "number", getValue: (item) => ledgerGroupTotalCents(item) },
+  open: { kind: "number", getValue: (item) => ledgerGroupOpenCents(item) },
+};
+
 /** @deprecated Use lancamentosRowSortAccessors in new code paths. */
 export const lancamentosSortAccessors: Record<
   LancamentosSortColumn,
@@ -115,88 +184,65 @@ export const lancamentosSortAccessors: Record<
     getValue: (item) => transactionStatusLabel(item.kind, item.status, item.ledgerStatus),
     statusOrder: LANCAMENTOS_STATUS_SORT_ORDER,
   },
-  amount: {
-    kind: "number",
-    getValue: (item) => transactionDisplayedAmountCents(item),
-  },
+  amount: { kind: "number", getValue: (item) => transactionDisplayedAmountCents(item) },
 };
 
-let filters: LancamentosFilters = {
+const filters: LancamentosFilterState = {
   search: "",
   kind: "all",
   status: "all",
 };
 
-let tableSort: TableSortState<LancamentosSortColumn> = {
-  column: "date",
-  direction: "desc",
-};
+let incomeSort: TableSortState<IncomeSortColumn> = { column: "date", direction: "desc" };
+let expenseSort: TableSortState<LancamentosSortColumn> = { column: "date", direction: "desc" };
+let cardGroupSort: TableSortState<CardGroupSortColumn> = { column: "dueDate", direction: "asc" };
+let cardDetailSort: TableSortState<InvoiceDetailSortColumn> = { column: "date", direction: "desc" };
 
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let expandedLedgerKey: string | null = null;
+let lastCompetenceMonth: string | null = null;
 
 export function getLancamentosTableSort(): TableSortState<LancamentosSortColumn> {
-  return tableSort;
+  return expenseSort;
 }
 
-function buildLancamentoRows(data: AppData, competenceMonth: string): LancamentoRow[] {
-  const transactions = filterTransactionsByCompetence(data.transactions, competenceMonth);
-  const projections = projectedInstallmentsForMonth(data, competenceMonth);
-  return [
-    ...transactions.map((item) => ({ rowKind: "transaction" as const, data: item })),
-    ...projections.map((item) => ({ rowKind: "projected" as const, data: item })),
-  ];
+export function getIncomeTableSort(): TableSortState<IncomeSortColumn> {
+  return incomeSort;
 }
 
-function lancamentosSectionTotal(rows: LancamentoRow[]): number {
-  return rows.reduce((total, row) => {
-    if (row.rowKind === "projected") {
-      return total + row.data.amountCents;
-    }
-    return total + row.data.amountCents;
-  }, 0);
+export function getCardGroupSort(): TableSortState<CardGroupSortColumn> {
+  return cardGroupSort;
 }
 
-function renderLancamentoRow(row: LancamentoRow): string {
-  return row.rowKind === "projected"
-    ? renderProjectedInstallmentRow(row.data)
-    : renderTransactionTableRow(row.data);
+export function getCardDetailSort(): TableSortState<InvoiceDetailSortColumn> {
+  return cardDetailSort;
 }
 
-export function renderLancamentos(
-  host: HTMLElement,
-  data: AppData,
-  mutations: AppMutations,
-  rerender: () => void,
-): void {
-  host.innerHTML = "";
+export function getExpandedLedgerKey(): string | null {
+  return expandedLedgerKey;
+}
 
-  const toolbar = el("section", "toolbar-panel");
-  const toolbarRow = el("div", "toolbar-panel__row");
-  toolbarRow.innerHTML = renderToolbarControlsMarkup();
-  toolbar.appendChild(toolbarRow);
+export function resetLancamentosUiStateForTests(): void {
+  filters.search = "";
+  filters.kind = "all";
+  filters.status = "all";
+  incomeSort = { column: "date", direction: "desc" };
+  expenseSort = { column: "date", direction: "desc" };
+  cardGroupSort = { column: "dueDate", direction: "asc" };
+  cardDetailSort = { column: "date", direction: "desc" };
+  expandedLedgerKey = null;
+  lastCompetenceMonth = null;
+}
 
-  const chipsSlot = el("div", "filter-chips-slot");
-  toolbar.appendChild(chipsSlot);
-  host.appendChild(toolbar);
-
-  const listPanel = el("section", "list-panel");
-  const listHeader = el("div", "list-header-panel");
-  listHeader.setAttribute("aria-live", "polite");
-  listPanel.appendChild(listHeader);
-
-  const tableSection = el("div", "data-table-panel");
-  listPanel.appendChild(tableSection);
-  host.appendChild(listPanel);
-
-  bindToolbar(host, data, mutations, rerender);
-  refreshLancamentosList(host, data, mutations, rerender);
+function filtersActive(): boolean {
+  return filters.search.trim().length > 0 || filters.kind !== "all" || filters.status !== "all";
 }
 
 function renderToolbarControlsMarkup(): string {
   return `
       <label class="field field--inline field--search">
         <span class="field__label">Buscar</span>
-        <input class="field__control" type="search" id="tx-search" placeholder="Descrição ou categoria" value="${escapeHtml(filters.search)}" autocomplete="off" />
+        <input class="field__control" type="search" id="tx-search" placeholder="Descrição, categoria ou cartão" value="${escapeHtml(filters.search)}" autocomplete="off" />
       </label>
       <div class="toolbar-panel__filters">
         <label class="field field--inline">
@@ -215,6 +261,7 @@ function renderToolbarControlsMarkup(): string {
             <option value="all" ${filters.status === "all" ? "selected" : ""}>Todos</option>
             <option value="pending" ${filters.status === "pending" ? "selected" : ""}>Pendentes</option>
             <option value="settled" ${filters.status === "settled" ? "selected" : ""}>Quitados</option>
+            <option value="in_invoice" ${filters.status === "in_invoice" ? "selected" : ""}>Na fatura</option>
             <option value="projected" ${filters.status === "projected" ? "selected" : ""}>Projetado</option>
           </select>
         </label>
@@ -226,7 +273,7 @@ function renderToolbarControlsMarkup(): string {
 }
 
 function renderFilterChipsMarkup(): string {
-  if (!filters.search && filters.kind === "all" && filters.status === "all") {
+  if (!filtersActive()) {
     return "";
   }
   const chips = [
@@ -255,6 +302,8 @@ function kindFilterLabel(kind: Exclude<KindFilter, "all">): string {
 
 function statusFilterLabel(status: Exclude<StatusFilter, "all">): string {
   switch (status) {
+    case "in_invoice":
+      return "Na fatura";
     case "projected":
       return "Projetado";
     case "settled":
@@ -265,88 +314,151 @@ function statusFilterLabel(status: Exclude<StatusFilter, "all">): string {
   }
 }
 
-function matchesKindFilter(row: LancamentoRow, kind: KindFilter): boolean {
-  if (row.rowKind === "projected") {
-    return kind === "all" || kind === "expense";
-  }
-  switch (kind) {
-    case "income":
-      return row.data.kind === "income";
-    case "expense":
-      return (
-        row.data.kind === "expense" &&
-        (row.data.expenseKind === "expense" || row.data.expenseKind === undefined)
-      );
-    case "fee":
-      return row.data.kind === "expense" && row.data.expenseKind === "fee";
-    case "refund":
-      return row.data.kind === "expense" && row.data.expenseKind === "refund";
-    case "all":
-    default:
-      return true;
-  }
+function renderSectionTable<C extends string>(
+  columns: SortableColumnOption<C>[],
+  sortState: TableSortState<C>,
+  tableId: string,
+  mobileSortId: string,
+  bodyHtml: string,
+): string {
+  return `
+    ${renderMobileSortControl(columns, sortState, mobileSortId)}
+    <table class="cfm-table cfm-table--lancamentos" aria-label="Lançamentos" data-sort-table="${mobileSortId}">
+      ${renderLancamentosTableHead(columns, sortState, tableId)}
+      <tbody>${bodyHtml}</tbody>
+    </table>`;
 }
 
-export function applyFilters(items: Transaction[], state: LancamentosFilters): Transaction[] {
-  let result = [...items];
-  const query = state.search.trim().toLowerCase();
-  if (query.length > 0) {
-    result = result.filter(
-      (item) =>
-        item.description.toLowerCase().includes(query) ||
-        item.category.toLowerCase().includes(query),
-    );
-  }
-  if (state.kind !== "all") {
-    result = result.filter((item) => matchesKindFilter({ rowKind: "transaction", data: item }, state.kind));
-  }
-  if (state.status !== "all" && state.status !== "projected") {
-    result = result.filter((item) => item.status === state.status);
-  }
-  if (state.status === "projected") {
-    return [];
-  }
-  return result;
+function buildProjectedDetailSortAccessors(): Record<
+  InvoiceDetailSortColumn,
+  SortColumnAccessor<import("../installments").ProjectedInstallment>
+> {
+  return {
+    date: { kind: "date", getValue: (item) => `${item.competenceMonth}-01` },
+    description: { kind: "text", getValue: (item) => item.description },
+    installment: {
+      kind: "installment",
+      getValue: (item) => installmentSortValue({
+        id: item.id,
+        kind: "expense",
+        description: item.description,
+        amountCents: item.amountCents,
+        date: `${item.competenceMonth}-01`,
+        competenceMonth: item.competenceMonth,
+        category: item.category,
+        status: "pending",
+        installment: item.installment,
+        createdAt: "",
+        updatedAt: "",
+      }),
+    },
+    category: { kind: "text", getValue: (item) => item.category },
+    type: { kind: "text", getValue: () => "Despesa" },
+    amount: { kind: "number", getValue: (item) => -item.amountCents },
+  };
 }
 
-export function applyLancamentoFilters(
-  rows: LancamentoRow[],
-  state: LancamentosFilters,
-): LancamentoRow[] {
-  let result = [...rows];
-  const query = state.search.trim().toLowerCase();
-  if (query.length > 0) {
-    result = result.filter(
-      (row) =>
-        row.data.description.toLowerCase().includes(query) ||
-        row.data.category.toLowerCase().includes(query),
+const projectedDetailSortAccessors = buildProjectedDetailSortAccessors();
+
+function renderCardDetailPanelFixed(group: LedgerCardGroup, data: AppData): string {
+  if (group.mode === "real") {
+    const lines = sortTableItems(
+      groupDetailLines(group, data),
+      cardDetailSort,
+      invoiceDetailSortAccessors,
+    );
+    return renderSectionTable(
+      INVOICE_DETAIL_SORT_COLUMNS,
+      cardDetailSort,
+      TABLE_IDS.lancamentosCardsDetail,
+      `${ledgerDetailMobileSortId(group.key)}`,
+      lines.map((item) => renderInvoiceTransactionRow(item, TABLE_IDS.lancamentosCardsDetail)).join(""),
     );
   }
-  if (state.kind !== "all") {
-    result = result.filter((row) => matchesKindFilter(row, state.kind));
-  }
-  if (state.status === "projected") {
-    result = result.filter((row) => row.rowKind === "projected");
-  } else if (state.status !== "all") {
-    result = result.filter(
-      (row) => row.rowKind === "transaction" && row.data.status === state.status,
-    );
-  }
-  return result;
+
+  const projections = sortTableItems(
+    groupDetailProjections(group),
+    cardDetailSort,
+    projectedDetailSortAccessors,
+  );
+  return renderSectionTable(
+    INVOICE_DETAIL_SORT_COLUMNS,
+    cardDetailSort,
+    TABLE_IDS.lancamentosCardsDetail,
+    `${ledgerDetailMobileSortId(group.key)}`,
+    projections
+      .map((item) => renderLedgerProjectedDetailRow(item, TABLE_IDS.lancamentosCardsDetail))
+      .join(""),
+  );
 }
 
-function refreshLancamentosList(
+function sectionVisibility(poolCount: number, filteredCount: number): "show" | "hide" | "empty" {
+  if (filteredCount > 0) {
+    return "show";
+  }
+  if (filtersActive() && poolCount > 0) {
+    return "hide";
+  }
+  if (poolCount === 0) {
+    return "empty";
+  }
+  return "hide";
+}
+
+export function renderLancamentos(
+  host: HTMLElement,
+  data: AppData,
+  mutations: AppMutations,
+  rerender: () => void,
+): void {
+  host.innerHTML = "";
+
+  const toolbar = el("section", "toolbar-panel");
+  const toolbarRow = el("div", "toolbar-panel__row");
+  toolbarRow.innerHTML = renderToolbarControlsMarkup();
+  toolbar.appendChild(toolbarRow);
+
+  const chipsSlot = el("div", "filter-chips-slot");
+  toolbar.appendChild(chipsSlot);
+  host.appendChild(toolbar);
+
+  const sectionsHost = el("div", "lancamentos-sections");
+  host.appendChild(sectionsHost);
+
+  bindToolbar(host, data, mutations, rerender);
+  refreshLancamentosSections(host, data, mutations, rerender);
+}
+
+function refreshLancamentosSections(
   host: HTMLElement,
   data: AppData,
   mutations: AppMutations,
   rerender: () => void,
 ): void {
   const month = data.selectedCompetenceMonth;
-  const allRows = buildLancamentoRows(data, month);
-  const filtered = sortTableItems(
-    applyLancamentoFilters(allRows, filters),
-    tableSort,
-    lancamentosRowSortAccessors,
+  if (lastCompetenceMonth !== month) {
+    expandedLedgerKey = null;
+    lastCompetenceMonth = month;
+  }
+
+  const incomePool = buildIncomeTransactions(data, month);
+  const expensePool = buildDirectExpenseTransactions(data, month);
+  const cardPool = buildLedgerCardGroups(data, month);
+
+  const filteredIncomes = sortTableItems(
+    filterIncomeTransactions(incomePool, filters, data),
+    incomeSort,
+    incomeSortAccessors,
+  );
+  const filteredExpenses = sortTableItems(
+    filterDirectExpenseTransactions(expensePool, filters, data),
+    expenseSort,
+    expenseSortAccessors,
+  );
+  const filteredCards = sortTableItems(
+    filterLedgerCardGroups(cardPool, filters, data),
+    cardGroupSort,
+    cardGroupSortAccessors,
   );
 
   const chipsSlot = host.querySelector<HTMLElement>(".filter-chips-slot");
@@ -355,67 +467,231 @@ function refreshLancamentosList(
     bindFilterChips(host, rerender);
   }
 
-  const listHeader = host.querySelector<HTMLElement>(".list-header-panel");
-  if (listHeader) {
-    listHeader.innerHTML = renderSectionHeader("Lançamentos da competência", {
-      count: filtered.length,
-      totalCents: lancamentosSectionTotal(filtered),
-    });
+  const sectionsHost = host.querySelector<HTMLElement>(".lancamentos-sections");
+  if (!sectionsHost) {
+    return;
   }
 
-  const tableSection = host.querySelector<HTMLElement>(".data-table-panel");
-  if (tableSection) {
-    if (filtered.length === 0) {
-      tableSection.innerHTML = renderEmptyState({
-        title: allRows.length === 0 ? "Nenhum lançamento nesta competência" : "Nenhum resultado para os filtros",
-        description:
-          allRows.length === 0
-            ? "Adicione receitas e despesas para construir o histórico operacional do mês."
-            : "Ajuste a busca ou remova filtros para ampliar os resultados.",
-        ...(allRows.length === 0
-          ? { ctaLabel: "Novo lançamento", ctaAction: "new-transaction-empty" }
-          : {}),
-      });
-      host.querySelector<HTMLButtonElement>('[data-action="new-transaction-empty"]')?.addEventListener(
-        "click",
-        () => {
-          openTransactionChoiceModal({
-            mutations,
-            competenceMonth: data.selectedCompetenceMonth,
-            onSaved: rerender,
-          });
-        },
-      );
-    } else {
-      tableSection.innerHTML = `
-        ${renderMobileSortControl(LANCAMENTOS_SORT_COLUMNS, tableSort, LANCAMENTOS_MOBILE_SORT_ID)}
-        <table class="cfm-table cfm-table--lancamentos" aria-label="Lançamentos" data-sort-table="${LANCAMENTOS_MOBILE_SORT_ID}">
-          ${renderLancamentosTableHead(LANCAMENTOS_SORT_COLUMNS, tableSort)}
-          <tbody>
-            ${filtered.map((item) => renderLancamentoRow(item)).join("")}
-          </tbody>
-        </table>
-      `;
+  const incomeVisibility = sectionVisibility(incomePool.length, filteredIncomes.length);
+  const expenseVisibility = sectionVisibility(expensePool.length, filteredExpenses.length);
+  const cardsVisibility = sectionVisibility(cardPool.length, filteredCards.length);
 
-      bindTableSortControls<LancamentosSortColumn>(tableSection, {
-        mobileControlId: LANCAMENTOS_MOBILE_SORT_ID,
+  const sections: string[] = [];
+
+  if (incomeVisibility === "show") {
+    sections.push(`
+      <section class="lancamentos-section lancamentos-section--income">
+        ${renderSectionHeader("Receitas", {
+          count: filteredIncomes.length,
+          totalCents: incomeSectionSubtotalCents(filteredIncomes),
+          kind: "income",
+          countLabel: (count) => `${count} receita${count === 1 ? "" : "s"}`,
+        })}
+        <div class="data-table-panel" data-section-table="income">
+          ${renderSectionTable(
+            INCOME_SORT_COLUMNS,
+            incomeSort,
+            TABLE_IDS.lancamentosIncome,
+            INCOME_MOBILE_SORT_ID,
+            filteredIncomes.map((item) => renderIncomeTransactionTableRow(item)).join(""),
+          )}
+        </div>
+      </section>`);
+  } else if (incomeVisibility === "empty") {
+    sections.push(`
+      <section class="lancamentos-section lancamentos-section--income">
+        ${renderSectionHeader("Receitas")}
+        <p class="lancamentos-section__empty">Nenhuma receita nesta competência.</p>
+      </section>`);
+  }
+
+  if (expenseVisibility === "show") {
+    sections.push(`
+      <section class="lancamentos-section lancamentos-section--expense">
+        ${renderSectionHeader("Despesas", {
+          count: filteredExpenses.length,
+          totalCents: expenseSectionSubtotalCents(filteredExpenses),
+          kind: "expense",
+          countLabel: (count) => `${count} despesa${count === 1 ? "" : "s"}`,
+        })}
+        <div class="data-table-panel" data-section-table="expense">
+          ${renderSectionTable(
+            LANCAMENTOS_SORT_COLUMNS,
+            expenseSort,
+            TABLE_IDS.lancamentosExpense,
+            EXPENSE_MOBILE_SORT_ID,
+            filteredExpenses
+              .map((item) =>
+                renderTransactionTableRow(item, TABLE_IDS.lancamentosExpense),
+              )
+              .join(""),
+          )}
+        </div>
+      </section>`);
+  } else if (expenseVisibility === "empty") {
+    sections.push(`
+      <section class="lancamentos-section lancamentos-section--expense">
+        ${renderSectionHeader("Despesas")}
+        <p class="lancamentos-section__empty">Nenhuma despesa direta nesta competência.</p>
+      </section>`);
+  }
+
+  if (cardsVisibility === "show") {
+    sections.push(`
+      <section class="lancamentos-section lancamentos-section--cards">
+        ${renderSectionHeader("Faturas e cartões", {
+          count: filteredCards.length,
+          countLabel: (count) => `${count} bloco${count === 1 ? "" : "s"}`,
+        })}
+        <div class="ledger-card-groups">
+          ${filteredCards
+            .map((group) => {
+              const detailPanelId = ledgerDetailPanelId(group.key);
+              const expanded = expandedLedgerKey === group.key;
+              return `${renderLedgerCardBlock({
+                groupKey: group.key,
+                cardName: group.cardName,
+                competenceMonth: group.competenceMonth,
+                mode: group.mode,
+                statusLabel: ledgerGroupStatusLabel(group),
+                totalCents: ledgerGroupTotalCents(group),
+                paidCents: ledgerGroupPaidCents(group),
+                openCents: ledgerGroupOpenCents(group),
+                lineCount: group.lineCount,
+                expanded,
+                detailPanelId,
+              })}`;
+            })
+            .join("")}
+        </div>
+      </section>`);
+  } else if (cardsVisibility === "empty") {
+    sections.push(`
+      <section class="lancamentos-section lancamentos-section--cards">
+        ${renderSectionHeader("Faturas e cartões")}
+        <p class="lancamentos-section__empty">Nenhuma fatura ou projeção nesta competência.</p>
+      </section>`);
+  }
+
+  if (
+    incomeVisibility !== "show" &&
+    expenseVisibility !== "show" &&
+    cardsVisibility !== "show" &&
+    filtersActive()
+  ) {
+    sectionsHost.innerHTML = renderEmptyState({
+      title: "Nenhum resultado para os filtros",
+      description: "Ajuste a busca ou remova filtros para ampliar os resultados.",
+    });
+  } else {
+    sectionsHost.innerHTML = sections.join("");
+  }
+
+  for (const group of filteredCards) {
+    if (expandedLedgerKey !== group.key) {
+      continue;
+    }
+    const detailPanelId = ledgerDetailPanelId(group.key);
+    const detailHost = sectionsHost.querySelector<HTMLElement>(`#${detailPanelId}`);
+    if (detailHost) {
+      detailHost.innerHTML = renderCardDetailPanelFixed(group, data);
+      detailHost.hidden = false;
+      detailHost.classList.remove("ledger-card-block__detail--hidden");
+      bindTableSortControls<InvoiceDetailSortColumn>(detailHost, {
+        mobileControlId: ledgerDetailMobileSortId(group.key),
         onColumnActivate: (column) => {
-          tableSort = toggleTableSort(tableSort, column, "asc");
-          refreshLancamentosList(host, data, mutations, rerender);
+          cardDetailSort = toggleTableSort(cardDetailSort, column, "asc");
+          refreshLancamentosSections(host, data, mutations, rerender);
         },
         onMobileSort: (column, direction) => {
-          tableSort = { column, direction };
-          refreshLancamentosList(host, data, mutations, rerender);
+          cardDetailSort = { column, direction };
+          refreshLancamentosSections(host, data, mutations, rerender);
         },
       });
     }
   }
 
-  if (filters.search || filters.kind !== "all" || filters.status !== "all") {
-    announce(`${filtered.length} de ${allRows.length} lançamentos exibidos.`);
-  }
+  bindIncomeSort(host, data, mutations, rerender);
+  bindExpenseSort(host, data, mutations, rerender);
+  bindLedgerToggles(host, data, mutations, rerender);
+  bindRowActions(host, filteredIncomes, filteredExpenses, data, mutations, rerender);
 
-  bindRowActions(host, filtered, data, mutations, rerender);
+  const totalVisible = filteredIncomes.length + filteredExpenses.length + filteredCards.length;
+  const totalPool = incomePool.length + expensePool.length + cardPool.length;
+  if (filtersActive()) {
+    announce(`${totalVisible} de ${totalPool} resultados exibidos.`);
+  }
+}
+
+function bindIncomeSort(
+  host: HTMLElement,
+  data: AppData,
+  mutations: AppMutations,
+  rerender: () => void,
+): void {
+  const panel = host.querySelector<HTMLElement>('[data-section-table="income"]');
+  if (!panel) {
+    return;
+  }
+  bindTableSortControls<IncomeSortColumn>(panel, {
+    mobileControlId: INCOME_MOBILE_SORT_ID,
+    onColumnActivate: (column) => {
+      incomeSort = toggleTableSort(incomeSort, column, "asc");
+      refreshLancamentosSections(host, data, mutations, rerender);
+    },
+    onMobileSort: (column, direction) => {
+      incomeSort = { column, direction };
+      refreshLancamentosSections(host, data, mutations, rerender);
+    },
+  });
+}
+
+function bindExpenseSort(
+  host: HTMLElement,
+  data: AppData,
+  mutations: AppMutations,
+  rerender: () => void,
+): void {
+  const panel = host.querySelector<HTMLElement>('[data-section-table="expense"]');
+  if (!panel) {
+    return;
+  }
+  bindTableSortControls<LancamentosSortColumn>(panel, {
+    mobileControlId: EXPENSE_MOBILE_SORT_ID,
+    onColumnActivate: (column) => {
+      expenseSort = toggleTableSort(expenseSort, column, "asc");
+      refreshLancamentosSections(host, data, mutations, rerender);
+    },
+    onMobileSort: (column, direction) => {
+      expenseSort = { column, direction };
+      refreshLancamentosSections(host, data, mutations, rerender);
+    },
+  });
+}
+
+function bindLedgerToggles(
+  host: HTMLElement,
+  data: AppData,
+  mutations: AppMutations,
+  rerender: () => void,
+): void {
+  host.querySelectorAll<HTMLButtonElement>("[data-ledger-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.ledgerToggle;
+      if (!key) {
+        return;
+      }
+      expandedLedgerKey = expandedLedgerKey === key ? null : key;
+      refreshLancamentosSections(host, data, mutations, rerender);
+    });
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      event.preventDefault();
+      button.click();
+    });
+  });
 }
 
 function bindToolbar(
@@ -425,7 +701,7 @@ function bindToolbar(
   rerender: () => void,
 ): void {
   const refresh = (): void => {
-    refreshLancamentosList(host, data, mutations, rerender);
+    refreshLancamentosSections(host, data, mutations, rerender);
   };
 
   host.querySelector<HTMLInputElement>("#tx-search")?.addEventListener("input", (event) => {
@@ -448,15 +724,13 @@ function bindToolbar(
     rerender();
   });
 
-  const openNew = (): void => {
+  host.querySelector<HTMLButtonElement>("#tx-new-transaction")?.addEventListener("click", () => {
     openTransactionChoiceModal({
       mutations,
       competenceMonth: data.selectedCompetenceMonth,
       onSaved: rerender,
     });
-  };
-
-  host.querySelector<HTMLButtonElement>("#tx-new-transaction")?.addEventListener("click", openNew);
+  });
   bindFilterChips(host, rerender);
 }
 
@@ -484,23 +758,18 @@ function bindFilterChips(host: HTMLElement, rerender: () => void): void {
 
 function bindRowActions(
   host: HTMLElement,
-  items: LancamentoRow[],
+  incomes: Transaction[],
+  expenses: Transaction[],
   data: AppData,
   mutations: AppMutations,
   rerender: () => void,
 ): void {
-  for (const row of items) {
-    if (isProjectedInstallmentRow(row)) {
-      continue;
-    }
-    const item = row.data;
+  for (const item of [...incomes, ...expenses]) {
     const slot = host.querySelector<HTMLElement>(`[data-row-actions="${item.id}"]`);
     if (!slot) {
       continue;
     }
-
     slot.replaceChildren();
-
     const toggleLabel =
       item.kind === "income"
         ? item.status === "settled"
@@ -550,4 +819,89 @@ function bindRowActions(
   }
 }
 
-export { filters, SEARCH_DEBOUNCE_MS, tableSort };
+/** @deprecated Legacy unified list filter for tests. */
+export function applyFilters(items: Transaction[], state: LancamentosFilterState): Transaction[] {
+  let result = [...items];
+  const query = state.search.trim().toLowerCase();
+  if (query.length > 0) {
+    result = result.filter(
+      (item) =>
+        item.description.toLowerCase().includes(query) ||
+        item.category.toLowerCase().includes(query),
+    );
+  }
+  if (state.kind !== "all") {
+    result = result.filter((item) => {
+      if (state.kind === "income") {
+        return item.kind === "income";
+      }
+      if (item.kind !== "expense") {
+        return false;
+      }
+      if (state.kind === "expense") {
+        return item.expenseKind === "expense" || item.expenseKind === undefined;
+      }
+      if (state.kind === "fee") {
+        return item.expenseKind === "fee";
+      }
+      return item.expenseKind === "refund";
+    });
+  }
+  if (state.status !== "all" && state.status !== "projected" && state.status !== "in_invoice") {
+    result = result.filter((item) => item.status === state.status);
+  }
+  if (state.status === "projected" || state.status === "in_invoice") {
+    return [];
+  }
+  return result;
+}
+
+/** @deprecated Legacy unified list filter for tests. */
+export function applyLancamentoFilters(
+  rows: LancamentoRow[],
+  state: LancamentosFilterState,
+): LancamentoRow[] {
+  let result = [...rows];
+  const query = state.search.trim().toLowerCase();
+  if (query.length > 0) {
+    result = result.filter(
+      (row) =>
+        row.data.description.toLowerCase().includes(query) ||
+        row.data.category.toLowerCase().includes(query),
+    );
+  }
+  if (state.kind !== "all") {
+    result = result.filter((row) => {
+      if (row.rowKind === "projected") {
+        return state.kind === "all" || state.kind === "expense";
+      }
+      if (state.kind === "income") {
+        return row.data.kind === "income";
+      }
+      if (row.data.kind !== "expense") {
+        return false;
+      }
+      if (state.kind === "expense") {
+        return row.data.expenseKind === "expense" || row.data.expenseKind === undefined;
+      }
+      if (state.kind === "fee") {
+        return row.data.expenseKind === "fee";
+      }
+      return row.data.expenseKind === "refund";
+    });
+  }
+  if (state.status === "projected") {
+    result = result.filter((row) => row.rowKind === "projected");
+  } else if (state.status !== "all" && state.status !== "in_invoice") {
+    result = result.filter(
+      (row) => row.rowKind === "transaction" && row.data.status === state.status,
+    );
+  } else if (state.status === "in_invoice") {
+    result = result.filter(
+      (row) => row.rowKind === "transaction" && row.data.ledgerStatus === "in_invoice",
+    );
+  }
+  return result;
+}
+
+export { filters, SEARCH_DEBOUNCE_MS, expenseSort as tableSort };

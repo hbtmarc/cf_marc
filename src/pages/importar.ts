@@ -7,6 +7,7 @@ import {
   buildCardCompletionFields,
   canConfirmImportWithCompletions,
   renderCardCompletionSection,
+  syncCardCompletionValidation,
   validateCardCompletionDrafts,
   type CardCompletionDraft,
 } from "../import-card-review";
@@ -31,7 +32,15 @@ let pageState: ImportPageState = {
   cardDrafts: {},
 };
 
+let reviewSessionAbort: AbortController | null = null;
+
+function disposeReviewSession(): void {
+  reviewSessionAbort?.abort();
+  reviewSessionAbort = null;
+}
+
 function resetState(): void {
+  disposeReviewSession();
   pageState = {
     view: "empty",
     fileName: "",
@@ -295,12 +304,21 @@ function bindDropzone(
   });
 }
 
-function bindCardCompletionInputs(host: HTMLElement, rerender: () => void): void {
-  host.querySelectorAll<HTMLInputElement>("[data-card-completion]").forEach((input) => {
-    input.addEventListener("input", () => {
+function bindCardCompletionInputs(host: HTMLElement, getData: () => AppData): void {
+  disposeReviewSession();
+  reviewSessionAbort = new AbortController();
+  const { signal } = reviewSessionAbort;
+
+  host.addEventListener(
+    "input",
+    (event) => {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement) || !input.matches("[data-card-completion]")) {
+        return;
+      }
       const importId = input.dataset.cardCompletion;
       const field = input.dataset.cardCompletionField as "closingDay" | "dueDay" | undefined;
-      if (!importId || !field) {
+      if (!importId || !field || !pageState.plan) {
         return;
       }
       const current = pageState.cardDrafts[importId] ?? { closingDay: "", dueDay: "" };
@@ -308,9 +326,16 @@ function bindCardCompletionInputs(host: HTMLElement, rerender: () => void): void
         ...current,
         [field]: input.value,
       };
-      rerender();
-    });
-  });
+      const completionFields = buildCardCompletionFields(pageState.plan.payload, getData());
+      syncCardCompletionValidation(
+        host,
+        completionFields,
+        pageState.cardDrafts,
+        pageState.plan.canImport,
+      );
+    },
+    { signal },
+  );
 }
 
 function bindReviewActions(
@@ -319,7 +344,7 @@ function bindReviewActions(
   getData: () => AppData,
   rerender: () => void,
 ): void {
-  bindCardCompletionInputs(host, rerender);
+  bindCardCompletionInputs(host, getData);
 
   host.querySelector<HTMLButtonElement>("#import-cancel-review")?.addEventListener("click", () => {
     resetState();
@@ -333,7 +358,12 @@ function bindReviewActions(
     const localData = getData();
     const completionFields = buildCardCompletionFields(pageState.plan.payload, localData);
     if (!canConfirmImportWithCompletions(completionFields, pageState.cardDrafts)) {
-      rerender();
+      syncCardCompletionValidation(
+        host,
+        completionFields,
+        pageState.cardDrafts,
+        pageState.plan.canImport,
+      );
       announce("Complete os dados dos cartões antes de importar.");
       return;
     }

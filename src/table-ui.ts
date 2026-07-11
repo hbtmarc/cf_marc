@@ -13,6 +13,9 @@ export interface SortableColumnOption<C extends string = string> {
 
 export const TABLE_IDS = {
   lancamentos: "lancamentos",
+  lancamentosIncome: "lancamentos-income",
+  lancamentosExpense: "lancamentos-expense",
+  lancamentosCardsDetail: "lancamentos-cards-detail",
   invoices: "invoices",
   invoiceDetail: "invoice-detail",
   dashboardRecent: "dashboard-recent",
