@@ -1,4 +1,4 @@
-import { filterInvoicesByCompetence } from "../finance";
+import { filterInvoicesByCompetence, transactionsForInvoice } from "../finance";
 import type { AppData } from "../types";
 import type { AppMutations } from "../forms";
 import {
@@ -12,12 +12,23 @@ import {
   invoiceTotal,
   renderCardPanel,
   renderEmptyState,
+  renderInvoiceDetailPanel,
   renderInvoiceTableHead,
   renderInvoiceTableRow,
   renderSectionHeader,
 } from "../presentation";
 import { createRowMenu, el, openConfirmModal } from "../ui";
 import { formatCardCount, formatInvoiceCount } from "../text";
+
+let expandedInvoiceId: string | null = null;
+
+export function resetFaturasUiState(): void {
+  expandedInvoiceId = null;
+}
+
+export function getExpandedInvoiceId(): string | null {
+  return expandedInvoiceId;
+}
 
 export function renderFaturasHeaderActions(
   host: HTMLElement,
@@ -62,6 +73,13 @@ export function renderFaturas(
   const invoices = filterInvoicesByCompetence(data.invoices, month);
   const hasCards = data.cards.length > 0;
   const singleCard = data.cards.length === 1;
+
+  if (
+    expandedInvoiceId !== null &&
+    !invoices.some((item) => item.id === expandedInvoiceId)
+  ) {
+    expandedInvoiceId = null;
+  }
 
   host.innerHTML = "";
 
@@ -134,20 +152,60 @@ export function renderFaturas(
       ${renderInvoiceTableHead()}
       <div class="data-table__body" role="rowgroup">
         ${invoices
-          .map((invoice) =>
-            renderInvoiceTableRow({
+          .map((invoice) => {
+            const panelId = `invoice-detail-${invoice.id}`;
+            return renderInvoiceTableRow({
               invoice,
               cardName: cardNameById(data, invoice.cardId),
-            }),
-          )
+              expanded: expandedInvoiceId === invoice.id,
+              detailPanelId: panelId,
+            });
+          })
           .join("")}
       </div>
     `;
     invoiceSection.appendChild(table);
+
+    if (expandedInvoiceId !== null) {
+      const invoice = invoices.find((item) => item.id === expandedInvoiceId);
+      if (invoice) {
+        const detailHost = el("div", "invoice-detail-host");
+        detailHost.innerHTML = renderInvoiceDetailPanel({
+          invoice,
+          cardName: cardNameById(data, invoice.cardId),
+          transactions: transactionsForInvoice(data.transactions, invoice.id),
+          panelId: `invoice-detail-${invoice.id}`,
+        });
+        invoiceSection.appendChild(detailHost);
+      }
+    }
+
+    bindInvoiceViewActions(invoiceSection, rerender);
     bindInvoiceActions(invoiceSection, invoices, data, mutations, month, rerender);
   }
 
   host.appendChild(invoiceSection);
+}
+
+function bindInvoiceViewActions(host: HTMLElement, rerender: () => void): void {
+  host.querySelectorAll<HTMLButtonElement>("[data-invoice-view]").forEach((button) => {
+    const toggle = (): void => {
+      const invoiceId = button.dataset.invoiceView;
+      if (!invoiceId) {
+        return;
+      }
+      expandedInvoiceId = expandedInvoiceId === invoiceId ? null : invoiceId;
+      rerender();
+    };
+
+    button.addEventListener("click", toggle);
+    button.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggle();
+      }
+    });
+  });
 }
 
 function bindInvoiceActions(
@@ -163,6 +221,8 @@ function bindInvoiceActions(
     if (!slot) {
       continue;
     }
+
+    slot.replaceChildren();
 
     const toggleLabel =
       invoice.status === "paid" ? "Marcar como aberta" : "Marcar como paga";
@@ -194,7 +254,12 @@ function bindInvoiceActions(
               message: "Excluir esta fatura? Esta ação não pode ser desfeita.",
               confirmLabel: "Excluir",
               danger: true,
-              onConfirm: () => deleteInvoice(mutations, invoice.id, rerender),
+              onConfirm: () => {
+                if (expandedInvoiceId === invoice.id) {
+                  expandedInvoiceId = null;
+                }
+                deleteInvoice(mutations, invoice.id, rerender);
+              },
             });
           },
         },

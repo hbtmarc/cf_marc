@@ -179,18 +179,23 @@ describe("presentation", () => {
     expect(html).not.toContain("-R$&nbsp;0,00");
   });
 
-  it("uses neutral money class for zero due invoice cards", () => {
+  it("uses neutral money class for zero open invoice cards", () => {
     const html = renderCardPanel({
       card: sampleData.cards[0]!,
       invoice: {
         ...sampleData.invoices[0]!,
         status: "paid",
+        invoiceTotalCents: 80_000,
+        amountPaidCents: 80_000,
         amountDueCents: 0,
         creditBalanceCents: 0,
       },
       invoiceCount: 1,
     });
-    expect(html).toContain('class="card-panel__money money"');
+    expect(html).toContain("Total da fatura");
+    expect(html).toContain("Em aberto");
+    expect(html).toContain('class="card-panel__money"><span class="money">');
     expect(html).not.toContain("money--negative");
+    expect(html).not.toContain("-R$");
   });
 });

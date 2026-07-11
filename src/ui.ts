@@ -3,13 +3,14 @@ import {
   formatCentsToBRL,
   formatCompetenceLabel,
   formatDateLabel,
+  invoiceNeedsFinancialAction,
   invoiceStatusLabel,
   shiftCompetenceMonth,
   transactionStatusLabel,
+  filterInvoicesByCompetence,
 } from "./finance";
 import { navIconForRoute, overflowIcon } from "./icons";
 import {
-  formatCardCount,
   formatInvoiceCount,
   formatTransactionCount,
   sentenceCase,
@@ -611,27 +612,16 @@ function navBadgeForRoute(
   }
 
   if (route === "/faturas") {
-    const overdue = data.invoices.filter(
-      (item) =>
-        item.competenceMonth === month &&
-        item.status === "open" &&
-        item.dueDate < today,
+    const count = filterInvoicesByCompetence(data.invoices, month).filter((item) =>
+      invoiceNeedsFinancialAction(item, today),
     ).length;
-    const incompleteCards = data.cards.filter(
-      (card) => card.closingDay === null || card.dueDay === null,
-    ).length;
-    const count = overdue + incompleteCards;
     if (count === 0) {
       return null;
     }
-    const parts: string[] = [];
-    if (overdue > 0) {
-      parts.push(`${formatInvoiceCount(overdue)} vencida${overdue === 1 ? "" : "s"}`);
-    }
-    if (incompleteCards > 0) {
-      parts.push(`${formatCardCount(incompleteCards)} incompleto${incompleteCards === 1 ? "" : "s"}`);
-    }
-    return { count, label: parts.join(", ") };
+    return {
+      count,
+      label: `${formatInvoiceCount(count)} exig${count === 1 ? "e" : "em"} ação`,
+    };
   }
 
   return null;

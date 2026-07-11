@@ -8,7 +8,10 @@ import {
   formatDateLabel,
   invoiceDebtCents,
   invoiceHasCredit,
+  invoiceOpenCents,
+  invoicePaidCents,
   invoiceStatusLabel,
+  invoiceTotalCentsValue,
   isInvoiceLinkedExpense,
   sumCents,
   transactionStatusLabel,
@@ -598,8 +601,10 @@ export function renderInvoiceTableHead(): string {
       <span class="data-table__cell data-table__cell--card" role="columnheader">Cartão</span>
       <span class="data-table__cell data-table__cell--competence" role="columnheader">Competência</span>
       <span class="data-table__cell data-table__cell--status" role="columnheader">Status</span>
-      <span class="data-table__cell data-table__cell--amount" role="columnheader">Valor</span>
-      <span class="data-table__cell data-table__cell--actions" role="columnheader"><span class="sr-only">Ações</span></span>
+      <span class="data-table__cell data-table__cell--total" role="columnheader">Total</span>
+      <span class="data-table__cell data-table__cell--open" role="columnheader">Em aberto</span>
+      <span class="data-table__cell data-table__cell--view" role="columnheader">Ação</span>
+      <span class="data-table__cell data-table__cell--actions" role="columnheader"><span class="sr-only">Mais ações</span></span>
     </div>
   `;
 }
@@ -689,15 +694,64 @@ export function renderTransactionTableRow(item: Transaction): string {
   `;
 }
 
-function renderInvoiceAmountCell(invoice: Invoice): string {
-  if (invoiceHasCredit(invoice)) {
-    return `<span class="money money--positive">${escapeHtml(formatCentsToBRL(invoice.creditBalanceCents ?? 0))}</span>`;
-  }
-  const debt = invoiceDebtCents(invoice);
-  if (debt === 0) {
-    return renderMoney(0);
-  }
-  return renderMoney(-debt);
+export function renderNominalMoney(
+  cents: number,
+  variant: "neutral" | "positive" | "negative" = "neutral",
+): string {
+  const normalized = cents === 0 || Object.is(cents, -0) ? 0 : Math.abs(cents);
+  const cls =
+    variant === "positive"
+      ? "money money--positive"
+      : variant === "negative"
+        ? "money money--negative"
+        : "money";
+  return `<span class="${cls}">${escapeHtml(formatCentsToBRL(normalized))}</span>`;
+}
+
+function invoiceTotalLabel(invoice: Invoice): string {
+  return invoiceHasCredit(invoice) ? "Total líquido" : "Total da fatura";
+}
+
+function renderCardPanelFinancialItems(invoice: Invoice): string {
+  const total = invoiceTotalCentsValue(invoice);
+  const paid = invoicePaidCents(invoice);
+  const open = invoiceOpenCents(invoice);
+  const credit = invoice.creditBalanceCents ?? 0;
+  const statusLabel = invoiceStatusLabel(invoice);
+  const statusVariant =
+    invoiceHasCredit(invoice) || invoice.status === "paid" ? "success" : "warning";
+
+  const openItem = `<div class="card-panel__summary-item">
+      <dt>Em aberto</dt>
+      <dd class="card-panel__money">${renderNominalMoney(open, open > 0 ? "negative" : "neutral")}</dd>
+    </div>`;
+
+  const creditItem =
+    credit > 0
+      ? `<div class="card-panel__summary-item">
+      <dt>Saldo credor</dt>
+      <dd class="card-panel__money">${renderNominalMoney(credit, "positive")}</dd>
+    </div>`
+      : "";
+
+  return [
+    `<div class="card-panel__summary-item">
+      <dt>${escapeHtml(invoiceTotalLabel(invoice))}</dt>
+      <dd class="card-panel__money">${renderNominalMoney(total)}</dd>
+    </div>`,
+    `<div class="card-panel__summary-item">
+      <dt>Pago</dt>
+      <dd class="card-panel__money">${renderNominalMoney(paid)}</dd>
+    </div>`,
+    openItem,
+    creditItem,
+    `<div class="card-panel__summary-item">
+      <dt>Status</dt>
+      <dd class="card-panel__status">${renderStatusChip(statusLabel, statusVariant)}</dd>
+    </div>`,
+  ]
+    .filter(Boolean)
+    .join("");
 }
 
 function invoiceStatusVariant(invoice: Invoice): "success" | "warning" {
@@ -707,28 +761,143 @@ function invoiceStatusVariant(invoice: Invoice): "success" | "warning" {
   return "warning";
 }
 
+function renderInvoiceOpenCell(invoice: Invoice): string {
+  const credit = invoice.creditBalanceCents ?? 0;
+  if (credit > 0) {
+    return renderNominalMoney(credit, "positive");
+  }
+  const open = invoiceOpenCents(invoice);
+  return renderNominalMoney(open, open > 0 ? "negative" : "neutral");
+}
+
 export function renderInvoiceTableRow(input: {
   invoice: Invoice;
   cardName: string;
+  expanded?: boolean;
+  detailPanelId?: string;
 }): string {
-  const statusLabel = invoiceStatusLabel(input.invoice);
-  const statusVariant = invoiceStatusVariant(input.invoice);
+  const { invoice, cardName, expanded = false, detailPanelId = "" } = input;
+  const statusLabel = invoiceStatusLabel(invoice);
+  const statusVariant = invoiceStatusVariant(invoice);
+  const total = invoiceTotalCentsValue(invoice);
+  const controlsAttr =
+    detailPanelId.length > 0 ? ` aria-controls="${escapeHtml(detailPanelId)}"` : "";
+
   return `
-    <div class="data-table__row data-table__row--invoice" role="row">
-      <span class="data-table__cell data-table__cell--date" role="cell">${escapeHtml(formatDateLabel(input.invoice.dueDate))}</span>
+    <div class="data-table__row data-table__row--invoice" role="row" data-invoice-row="${escapeHtml(invoice.id)}">
+      <span class="data-table__cell data-table__cell--date" role="cell">${escapeHtml(formatDateLabel(invoice.dueDate))}</span>
       <span class="data-table__cell data-table__cell--desc" role="cell">
-        <span class="data-table__primary">Fatura ${escapeHtml(formatCompetenceLabel(input.invoice.competenceMonth))}</span>
+        <span class="data-table__primary">Fatura ${escapeHtml(formatCompetenceLabel(invoice.competenceMonth))}</span>
       </span>
       <span class="data-table__cell data-table__cell--card" role="cell">
-        <span class="data-table__primary"${input.cardName.length > 24 ? ` title="${escapeHtml(input.cardName)}"` : ""}>${escapeHtml(input.cardName)}</span>
+        <span class="data-table__primary"${cardName.length > 24 ? ` title="${escapeHtml(cardName)}"` : ""}>${escapeHtml(cardName)}</span>
       </span>
-      <span class="data-table__cell data-table__cell--competence" role="cell">${escapeHtml(formatCompetenceLabel(input.invoice.competenceMonth))}</span>
+      <span class="data-table__cell data-table__cell--competence" role="cell">${escapeHtml(formatCompetenceLabel(invoice.competenceMonth))}</span>
       <span class="data-table__cell data-table__cell--status" role="cell">${renderStatusChip(statusLabel, statusVariant)}</span>
-      <span class="data-table__cell data-table__cell--amount" role="cell">${renderInvoiceAmountCell(input.invoice)}</span>
+      <span class="data-table__cell data-table__cell--total" role="cell">${renderNominalMoney(total)}</span>
+      <span class="data-table__cell data-table__cell--open" role="cell">${renderInvoiceOpenCell(invoice)}</span>
+      <span class="data-table__cell data-table__cell--view" role="cell">
+        <button
+          type="button"
+          class="btn btn--ghost btn--compact invoice-view-btn"
+          data-invoice-view="${escapeHtml(invoice.id)}"
+          aria-expanded="${expanded ? "true" : "false"}"
+          ${controlsAttr}
+        >Ver fatura</button>
+      </span>
       <span class="data-table__cell data-table__cell--actions" role="cell">
-        <div class="row-actions" data-invoice-actions="${escapeHtml(input.invoice.id)}"></div>
+        <div class="row-actions" data-invoice-actions="${escapeHtml(invoice.id)}"></div>
       </span>
     </div>
+  `;
+}
+
+export function renderInvoiceTransactionTableHead(): string {
+  return `
+    <div class="data-table__head data-table__head--invoice-lines" role="row">
+      <span class="data-table__cell data-table__cell--date" role="columnheader">Data</span>
+      <span class="data-table__cell data-table__cell--desc" role="columnheader">Descrição</span>
+      <span class="data-table__cell data-table__cell--installment" role="columnheader">Parcela</span>
+      <span class="data-table__cell data-table__cell--category" role="columnheader">Categoria</span>
+      <span class="data-table__cell data-table__cell--type" role="columnheader">Tipo</span>
+      <span class="data-table__cell data-table__cell--amount" role="columnheader">Valor</span>
+    </div>
+  `;
+}
+
+export function renderInvoiceTransactionRow(item: Transaction): string {
+  const typeLabel = transactionTypeLabel(item);
+  const typeChipClass = transactionTypeChipClass(item);
+  const installment = item.installment
+    ? `${item.installment.current}/${item.installment.total}`
+    : "—";
+  const amountVariant = item.expenseKind === "refund" ? "positive" : "neutral";
+
+  return `
+    <div class="data-table__row data-table__row--invoice-line" role="row">
+      <span class="data-table__cell data-table__cell--date" role="cell">${escapeHtml(formatDateLabel(item.date))}</span>
+      <span class="data-table__cell data-table__cell--desc" role="cell">
+        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>
+      </span>
+      <span class="data-table__cell data-table__cell--installment" role="cell">${escapeHtml(installment)}</span>
+      <span class="data-table__cell data-table__cell--category" role="cell">${escapeHtml(item.category)}</span>
+      <span class="data-table__cell data-table__cell--type" role="cell">
+        <span class="type-chip type-chip--${typeChipClass}">${typeLabel}</span>
+      </span>
+      <span class="data-table__cell data-table__cell--amount" role="cell">${renderNominalMoney(item.amountCents, amountVariant)}</span>
+    </div>
+  `;
+}
+
+export function renderInvoiceDetailPanel(input: {
+  invoice: Invoice;
+  cardName: string;
+  transactions: Transaction[];
+  panelId: string;
+}): string {
+  const { invoice, cardName, transactions, panelId } = input;
+  const total = invoiceTotalCentsValue(invoice);
+  const paid = invoicePaidCents(invoice);
+  const open = invoiceOpenCents(invoice);
+  const credit = invoice.creditBalanceCents ?? 0;
+  const statusLabel = invoiceStatusLabel(invoice);
+  const statusVariant = invoiceStatusVariant(invoice);
+  const closingLabel = invoice.closingDate
+    ? formatDateLabel(invoice.closingDate)
+    : "—";
+
+  const summaryItems = [
+    `<div class="invoice-detail__metric"><dt>${escapeHtml(invoiceTotalLabel(invoice))}</dt><dd>${renderNominalMoney(total)}</dd></div>`,
+    `<div class="invoice-detail__metric"><dt>Pago</dt><dd>${renderNominalMoney(paid)}</dd></div>`,
+    credit > 0
+      ? `<div class="invoice-detail__metric"><dt>Saldo credor</dt><dd>${renderNominalMoney(credit, "positive")}</dd></div>`
+      : `<div class="invoice-detail__metric"><dt>Em aberto</dt><dd>${renderNominalMoney(open, open > 0 ? "negative" : "neutral")}</dd></div>`,
+  ].join("");
+
+  const linesBody =
+    transactions.length === 0
+      ? `<p class="invoice-detail__empty">Nenhum lançamento detalhado foi importado para esta fatura.</p>`
+      : `
+        <div class="data-table data-table--invoice-lines" role="table" aria-label="Lançamentos da fatura">
+          ${renderInvoiceTransactionTableHead()}
+          <div class="data-table__body" role="rowgroup">
+            ${transactions.map((item) => renderInvoiceTransactionRow(item)).join("")}
+          </div>
+        </div>`;
+
+  return `
+    <section class="invoice-detail" id="${escapeHtml(panelId)}" aria-labelledby="${escapeHtml(panelId)}-title">
+      <header class="invoice-detail__header">
+        <div class="invoice-detail__heading">
+          <h3 class="invoice-detail__title" id="${escapeHtml(panelId)}-title">${escapeHtml(cardName)}</h3>
+          <p class="invoice-detail__meta">${escapeHtml(formatCompetenceLabel(invoice.competenceMonth))} · Fechamento ${escapeHtml(closingLabel)} · Vencimento ${escapeHtml(formatDateLabel(invoice.dueDate))}</p>
+        </div>
+        <div class="invoice-detail__status">${renderStatusChip(statusLabel, statusVariant)}</div>
+      </header>
+      <dl class="invoice-detail__summary">${summaryItems}</dl>
+      <p class="invoice-detail__count">${escapeHtml(formatTransactionCount(transactions.length))} observado${transactions.length === 1 ? "" : "s"}</p>
+      ${linesBody}
+    </section>
   `;
 }
 
@@ -749,18 +918,6 @@ export function renderCardPanel(input: {
   const cycle =
     cycleParts.length > 0 ? cycleParts.join(" · ") : "Ciclo não configurado";
   const nameAttr = card.name.length > 28 ? ` title="${escapeHtml(card.name)}"` : "";
-  const dueCents = invoice
-    ? invoiceHasCredit(invoice)
-      ? (invoice.creditBalanceCents ?? 0)
-      : invoiceDebtCents(invoice)
-    : 0;
-  const dueMoneyClass = invoice
-    ? invoiceHasCredit(invoice)
-      ? "money money--positive"
-      : dueCents === 0
-        ? "money"
-        : "money money--negative"
-    : "money";
 
   return `
     <article class="card-panel${single ? " card-panel--single" : ""}">
@@ -783,14 +940,7 @@ export function renderCardPanel(input: {
             <dt>Vencimento</dt>
             <dd class="card-panel__nowrap">${escapeHtml(formatDateLabel(invoice.dueDate))}</dd>
           </div>
-          <div class="card-panel__summary-item">
-            <dt>${invoiceHasCredit(invoice) ? "Saldo credor" : "Valor devido"}</dt>
-            <dd class="card-panel__money ${dueMoneyClass}">${escapeHtml(formatCentsToBRL(dueCents))}</dd>
-          </div>
-          <div class="card-panel__summary-item">
-            <dt>Status</dt>
-            <dd class="card-panel__status">${renderStatusChip(invoiceStatusLabel(invoice), invoiceHasCredit(invoice) || invoice.status === "paid" ? "success" : "warning")}</dd>
-          </div>
+          ${renderCardPanelFinancialItems(invoice)}
         </dl>`
           : `<p class="card-panel__empty">Nenhuma fatura registrada para este cartão na competência.</p>`
       }

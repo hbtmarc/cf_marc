@@ -40,6 +40,16 @@ Compras `in_invoice` não entram nos totais. `creditBalanceCents` não é renda.
 
 A validação contra carga financeira real permanece apenas no ambiente local, com JSON fora do repositório. Não há valores reais versionados neste documento.
 
+### Página Faturas — histórico e detalhamento
+
+Cards e tabela exibem totais históricos (`invoiceTotalCents`, `amountPaidCents`, `amountDueCents`, `creditBalanceCents`) com valores nominais positivos.
+
+A ação **Ver fatura** abre um painel inline (mesma rota) com cabeçalho oficial da fatura e lançamentos filtrados por `invoiceId`.
+
+Badge de **Cartões e faturas** conta somente faturas `open`, `partial` ou vencidas com saldo em aberto.
+
+Screenshots: `docs/screenshots-etapa5/faturas-*` e `fatura-detalhe-*`.
+
 ### Validação técnica
 
 - `npm run typecheck`, `npm test`, `npm run build` — OK.

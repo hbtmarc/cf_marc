@@ -167,6 +167,42 @@ export function invoiceTotalCentsValue(invoice: Invoice): number {
   return invoice.invoiceTotalCents ?? invoice.amountCents;
 }
 
+export function invoicePaidCents(invoice: Invoice): number {
+  return invoice.amountPaidCents ?? 0;
+}
+
+export function invoiceOpenCents(invoice: Invoice): number {
+  return invoice.amountDueCents ?? invoiceDebtCents(invoice);
+}
+
+export function invoiceNeedsFinancialAction(
+  invoice: Invoice,
+  today = new Date().toISOString().slice(0, 10),
+): boolean {
+  if (invoiceHasCredit(invoice)) {
+    return false;
+  }
+  if (invoice.status === "partial" || invoice.importStatus === "partial") {
+    return true;
+  }
+  if (invoice.status === "open" || invoice.importStatus === "open") {
+    return true;
+  }
+  if (invoice.dueDate < today && invoiceOpenCents(invoice) > 0) {
+    return true;
+  }
+  return false;
+}
+
+export function transactionsForInvoice(
+  transactions: Transaction[],
+  invoiceId: string,
+): Transaction[] {
+  return transactions
+    .filter((item) => item.invoiceId === invoiceId && isInvoiceLinkedExpense(item))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
 export function invoiceRealizedCents(invoice: Invoice): number {
   return invoice.amountPaidCents ?? 0;
 }
