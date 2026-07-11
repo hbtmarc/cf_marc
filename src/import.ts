@@ -58,7 +58,13 @@ function cardsEqual(existing: Card, mapped: Omit<Card, "id">): boolean {
 }
 
 function mapInvoiceStatus(status: ImportInvoice["status"]): InvoiceStatus {
-  return status === "paid" ? "paid" : "open";
+  if (status === "paid") {
+    return "paid";
+  }
+  if (status === "partial") {
+    return "partial";
+  }
+  return "open";
 }
 
 function resolveInvoiceDueDate(invoice: ImportInvoice): string {

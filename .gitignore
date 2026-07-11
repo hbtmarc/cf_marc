@@ -84,6 +84,13 @@ src/app/config.js
 *.real.json
 *.sensitive.json
 cfm_import_v1_final_perfeito_validado.json
+cfm_import_2026*.json
+
+# Screenshots locais de etapas anteriores (não versionar)
+docs/screenshots-etapa4/
+docs/screenshots-etapa4/**
+docs/screenshots-etapa5/_invalid-temp.json
+docs/screenshots-etapa5/_storage-temp.json
 
 # Regras pessoais de classificação — nunca versionar
 src/config/classification-rules.local.js

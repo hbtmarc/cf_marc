@@ -167,10 +167,11 @@ export function invoiceTotalCentsValue(invoice: Invoice): number {
 }
 
 export function invoiceRealizedCents(invoice: Invoice): number {
-  if (invoice.status !== "paid") {
-    return 0;
-  }
-  return invoiceTotalCentsValue(invoice);
+  return invoice.amountPaidCents ?? 0;
+}
+
+export function invoiceCommittedCents(invoice: Invoice): number {
+  return invoiceDebtCents(invoice);
 }
 
 export function calculateCompetenceSummary(
@@ -205,9 +206,6 @@ export function calculateCompetenceSummary(
       .map((transaction) => transaction.amountCents),
   );
 
-  const expenseTransactionsPlanned = sumCents(
-    ledgerExpenses.map((transaction) => ledgerExpenseCents(transaction)),
-  );
   const expenseTransactionsPaid = sumCents(
     ledgerExpenses
       .filter((transaction) => transaction.status === "settled")
@@ -219,22 +217,16 @@ export function calculateCompetenceSummary(
       .map((transaction) => ledgerExpenseCents(transaction)),
   );
 
-  const invoicePlannedCents = sumCents(
-    invoices.map((invoice) => invoiceTotalCentsValue(invoice)),
-  );
   const invoicePaidCents = sumCents(
     invoices.map((invoice) => invoiceRealizedCents(invoice)),
   );
-  const invoiceOpenCents = sumCents(
-    invoices
-      .filter((invoice) => invoice.status === "open")
-      .map((invoice) => invoiceDebtCents(invoice)),
+  const invoiceDueCents = sumCents(
+    invoices.map((invoice) => invoiceCommittedCents(invoice)),
   );
 
-  const expensePlannedCents = expenseTransactionsPlanned + invoicePlannedCents;
   const expensePaidCents = expenseTransactionsPaid + invoicePaidCents;
-  const expensePendingCents =
-    expenseTransactionsPending + invoiceOpenCents;
+  const expensePendingCents = expenseTransactionsPending + invoiceDueCents;
+  const expensePlannedCents = expensePaidCents + expensePendingCents;
 
   return {
     competenceMonth,
@@ -360,6 +352,13 @@ export function transactionStatusLabel(
 export function invoiceStatusLabel(invoice: Invoice): string {
   if (invoiceHasCredit(invoice)) {
     return "Credora";
+  }
+  if (
+    invoice.status === "partial" ||
+    invoice.importStatus === "partial" ||
+    ((invoice.amountPaidCents ?? 0) > 0 && invoiceDebtCents(invoice) > 0)
+  ) {
+    return "Parcial";
   }
   return invoice.status === "paid" ? "Paga" : "Aberta";
 }

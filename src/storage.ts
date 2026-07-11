@@ -72,7 +72,7 @@ function isInvoice(value: unknown): boolean {
     typeof value.amountCents === "number" &&
     Number.isInteger(value.amountCents) &&
     typeof value.dueDate === "string" &&
-    (value.status === "open" || value.status === "paid") &&
+    (value.status === "open" || value.status === "paid" || value.status === "partial") &&
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string"
   );

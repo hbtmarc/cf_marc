@@ -6,9 +6,9 @@ export type ExpenseKind = "expense" | "fee" | "refund";
 
 export type LedgerStatus = "paid" | "pending" | "in_invoice";
 
-export type InvoiceStatus = "open" | "paid";
+export type InvoiceStatus = "open" | "paid" | "partial";
 
-export type ImportInvoiceStatus = "paid" | "open" | "closed";
+export type ImportInvoiceStatus = "paid" | "open" | "closed" | "partial";
 
 export interface TransactionInstallment {
   current: number;

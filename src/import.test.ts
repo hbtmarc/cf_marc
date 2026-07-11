@@ -15,12 +15,12 @@ import type { AppData, Invoice } from "./types";
 
 const approvedFixtureRaw = JSON.stringify(fixtureDocument);
 
-function loadApprovedPayload() {
+function loadSyntheticPayload() {
   const parsed = parseImportJson(approvedFixtureRaw);
   if (!parsed.ok) {
     throw new Error(parsed.message);
   }
-  const validated = validateImportDocument(parsed.value, "cfm_import_20260710_2107_corrigido.json");
+  const validated = validateImportDocument(parsed.value, "cfm-import-v1-valid.json");
   if (!validated.ok) {
     throw new Error(validated.summary.errors.join("; "));
   }
@@ -72,18 +72,18 @@ function sampleExistingData(conflictingFingerprint: string): AppData {
 }
 
 describe("cfm.import.v1 validation", () => {
-  it("accepts the approved real import file", () => {
-    const validated = loadApprovedPayload();
+  it("accepts the sanitized synthetic fixture", () => {
+    const validated = loadSyntheticPayload();
     expect(validated.payload.schemaVersion).toBe("cfm.import.v1");
-    expect(validated.summary.counts.incomes).toBe(2);
-    expect(validated.summary.counts.cards).toBe(4);
-    expect(validated.summary.counts.invoices).toBe(9);
-    expect(validated.summary.counts.expenses).toBe(328);
-    expect(validated.summary.counts.expenseByKind.expense).toBe(309);
-    expect(validated.summary.counts.expenseByKind.fee).toBe(13);
-    expect(validated.summary.counts.expenseByKind.refund).toBe(6);
-    expect(validated.summary.counts.installments).toBe(123);
-    expect(validated.summary.counts.uniqueFingerprints).toBe(330);
+    expect(validated.summary.counts.incomes).toBe(1);
+    expect(validated.summary.counts.cards).toBe(1);
+    expect(validated.summary.counts.invoices).toBe(4);
+    expect(validated.summary.counts.expenses).toBe(5);
+    expect(validated.summary.counts.expenseByKind.expense).toBe(3);
+    expect(validated.summary.counts.expenseByKind.fee).toBe(1);
+    expect(validated.summary.counts.expenseByKind.refund).toBe(1);
+    expect(validated.summary.counts.installments).toBe(1);
+    expect(validated.summary.counts.uniqueFingerprints).toBe(6);
   });
 
   it("rejects malformed JSON", () => {
@@ -134,7 +134,7 @@ describe("cfm.import.v1 validation", () => {
   });
 
   it("validates creditor invoice coherence", () => {
-    const validated = loadApprovedPayload();
+    const validated = loadSyntheticPayload();
     const credit = validated.payload.invoices.find((item) => item.creditBalanceCents > 0);
     expect(credit).toBeDefined();
     expect(credit!.invoiceTotalCents + credit!.creditBalanceCents).toBe(
@@ -145,22 +145,26 @@ describe("cfm.import.v1 validation", () => {
 
 describe("import apply and idempotency", () => {
   it("imports valid data on confirmation", () => {
-    const validated = loadApprovedPayload();
+    const validated = loadSyntheticPayload();
     const data = emptyAppData();
     const plan = buildImportPlan(data, validated.payload, validated.summary);
     expect(plan.canImport).toBe(true);
     const result = applyImportPlan(data, plan);
-    expect(result.created).toBeGreaterThan(0);
-    expect(data.cards).toHaveLength(4);
-    expect(data.invoices).toHaveLength(9);
-    expect(data.transactions).toHaveLength(330);
+    expect(result.created).toBe(11);
+    expect(data.cards).toHaveLength(1);
+    expect(data.invoices).toHaveLength(4);
+    expect(data.transactions).toHaveLength(6);
     expect(data.invoices.some((item) => invoiceHasCredit(item))).toBe(true);
-    expect(data.transactions.some((item) => item.kind === "income")).toBe(true);
-    expect(data.transactions.filter((item) => isInvoiceLinkedExpense(item))).toHaveLength(293);
+    expect(data.transactions.filter((item) => isInvoiceLinkedExpense(item))).toHaveLength(3);
+    expect(
+      data.transactions.filter(
+        (item) => item.sourceRecordId === "shared-synthetic-001",
+      ),
+    ).toHaveLength(2);
   });
 
   it("does not persist before confirmation", () => {
-    const validated = loadApprovedPayload();
+    const validated = loadSyntheticPayload();
     const data = emptyAppData();
     buildImportPlan(data, validated.payload, validated.summary);
     expect(data.cards).toHaveLength(0);
@@ -168,7 +172,7 @@ describe("import apply and idempotency", () => {
   });
 
   it("preserves manual records", () => {
-    const validated = loadApprovedPayload();
+    const validated = loadSyntheticPayload();
     const conflictingFingerprint = validated.payload.incomes[0]!.canonicalFingerprint;
     const data = sampleExistingData(conflictingFingerprint);
     const manualTx = data.transactions.length;
@@ -183,7 +187,7 @@ describe("import apply and idempotency", () => {
   });
 
   it("reimports the same file without duplication", () => {
-    const validated = loadApprovedPayload();
+    const validated = loadSyntheticPayload();
     const data = emptyAppData();
     const plan1 = buildImportPlan(data, validated.payload, validated.summary);
     const result1 = applyImportPlan(data, plan1);
@@ -195,44 +199,42 @@ describe("import apply and idempotency", () => {
     expect(data.transactions.length).toBe(txCount);
     expect(data.cards.length).toBe(cardCount);
     expect(data.invoices.length).toBe(invoiceCount);
-    expect(result2.existing).toBeGreaterThan(0);
+    expect(result2.existing).toBe(11);
     expect(result2.created).toBe(0);
-    expect(result1.created).toBeGreaterThan(0);
+    expect(result1.created).toBe(11);
   });
 
-  it("maps open, paid and creditor invoices", () => {
-    const validated = loadApprovedPayload();
+  it("maps open, partial, paid and creditor invoices", () => {
+    const validated = loadSyntheticPayload();
     const data = emptyAppData();
     applyImportPlan(data, buildImportPlan(data, validated.payload, validated.summary));
     const open = data.invoices.find((item) => item.importStatus === "open");
-    const closed = data.invoices.find((item) => item.importStatus === "closed");
+    const partial = data.invoices.find((item) => item.importStatus === "partial");
     const credit = data.invoices.find((item) => invoiceHasCredit(item));
     expect(open?.status).toBe("open");
-    expect(closed?.status).toBe("open");
+    expect(partial?.status).toBe("partial");
     expect(credit).toBeDefined();
     expect(invoiceStatusLabel(credit as Invoice)).toBe("Credora");
+    expect(invoiceStatusLabel(partial as Invoice)).toBe("Parcial");
   });
 
   it("stores purchase and IOF with same sourceRecordId without duplicating obligation", () => {
-    const validated = loadApprovedPayload();
+    const validated = loadSyntheticPayload();
     const data = emptyAppData();
     applyImportPlan(data, buildImportPlan(data, validated.payload, validated.summary));
-    const sourceIds = data.transactions
-      .map((item) => item.sourceRecordId)
-      .filter((item): item is string => Boolean(item));
-    const duplicates = sourceIds.filter(
-      (id, index) => sourceIds.indexOf(id) !== index,
+    const shared = data.transactions.filter(
+      (item) => item.sourceRecordId === "shared-synthetic-001",
     );
-    expect(duplicates.length).toBeGreaterThan(0);
-    const summary = calculateCompetenceSummary(data, "2026-06");
-    expect(summary.expensePaidCents).toBeGreaterThan(0);
-    const inInvoiceTotal = sumInInvoice(data, "2026-06");
-    expect(inInvoiceTotal).toBeGreaterThan(0);
+    expect(shared).toHaveLength(2);
+    const summary = calculateCompetenceSummary(data, "2026-01");
+    expect(summary.expensePaidCents).toBe(40000);
+    expect(summary.expensePendingCents).toBe(0);
+    expect(sumInInvoice(data, "2026-01")).toBe(20300);
   });
 
   it("does not apply invalid plan", () => {
-    const approved = loadApprovedPayload();
-    const conflictingFingerprint = approved.payload.incomes[0]!.canonicalFingerprint;
+    const validated = loadSyntheticPayload();
+    const conflictingFingerprint = validated.payload.incomes[0]!.canonicalFingerprint;
     const before = sampleExistingData(conflictingFingerprint);
     const snapshot = cloneAppData(before);
     const invalid = validateImportDocument({ schemaVersion: "wrong" });
@@ -272,25 +274,14 @@ describe("import integration surfaces", () => {
   });
 
   it("supports dashboard calculations after import without double counting", () => {
-    const validated = loadApprovedPayload();
+    const validated = loadSyntheticPayload();
     const data = emptyAppData();
-    data.selectedCompetenceMonth = "2026-06";
+    data.selectedCompetenceMonth = "2026-01";
     applyImportPlan(data, buildImportPlan(data, validated.payload, validated.summary));
-    const summary = calculateCompetenceSummary(data, "2026-06");
-    expect(summary.incomeSettledCents).toBe(570328);
-    const directPaid = data.transactions
-      .filter(
-        (item) =>
-          item.competenceMonth === "2026-06" &&
-          item.kind === "expense" &&
-          item.ledgerStatus === "paid",
-      )
-      .reduce((total, item) => total + item.amountCents, 0);
-    const invoicePaid = data.invoices
-      .filter((item) => item.competenceMonth === "2026-06" && item.status === "paid")
-      .reduce((total, item) => total + (item.invoiceTotalCents ?? item.amountCents), 0);
-    expect(summary.expensePaidCents).toBeGreaterThanOrEqual(invoicePaid);
-    expect(summary.expensePaidCents).toBeGreaterThan(directPaid);
+    const summary = calculateCompetenceSummary(data, "2026-01");
+    expect(summary.incomeSettledCents).toBe(500000);
+    expect(summary.expensePaidCents).toBe(40000);
+    expect(summary.balanceRealizedCents).toBe(460000);
   });
 });
 

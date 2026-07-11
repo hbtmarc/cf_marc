@@ -37,7 +37,7 @@ function isValidExpenseStatus(value: unknown): value is ImportExpenseStatus {
 }
 
 function isValidInvoiceStatus(value: unknown): value is ImportInvoiceStatus {
-  return value === "paid" || value === "open" || value === "closed";
+  return value === "paid" || value === "open" || value === "closed" || value === "partial";
 }
 
 function validateRequiredArray(

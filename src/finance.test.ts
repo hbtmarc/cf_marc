@@ -92,6 +92,7 @@ function sampleData(): AppData {
         cardId: "card-1",
         competenceMonth: "2026-07",
         amountCents: 80000,
+        amountDueCents: 80000,
         dueDate: "2026-07-08",
         status: "open",
         createdAt: "2026-07-01T00:00:00.000Z",
@@ -102,6 +103,8 @@ function sampleData(): AppData {
         cardId: "card-1",
         competenceMonth: "2026-07",
         amountCents: 20000,
+        amountPaidCents: 20000,
+        amountDueCents: 0,
         dueDate: "2026-07-08",
         status: "paid",
         createdAt: "2026-07-01T00:00:00.000Z",
@@ -144,25 +147,17 @@ describe("finance calculations", () => {
     ).toBe(true);
   });
 
-  it("does not double count invoices as separate expense transactions", () => {
+  it("does not double count in_invoice purchases in paid or committed totals", () => {
     const data = sampleData();
     const summary = calculateCompetenceSummary(data, "2026-07");
-    const expenseTransactions = filterTransactionsByCompetence(
-      data.transactions,
-      "2026-07",
-    )
+    const ledgerExpenses = filterTransactionsByCompetence(data.transactions, "2026-07")
       .filter((item) => item.kind === "expense")
       .reduce((total, item) => total + item.amountCents, 0);
-    const invoiceTotal = filterInvoicesByCompetence(data.invoices, "2026-07").reduce(
-      (total, item) => total + item.amountCents,
-      0,
-    );
 
-    expect(summary.expensePlannedCents).toBe(
-      expenseTransactions + invoiceTotal,
-    );
-    expect(expenseTransactions).toBe(190000);
-    expect(invoiceTotal).toBe(100000);
+    expect(summary.expensePaidCents).toBe(170000);
+    expect(summary.expensePendingCents).toBe(120000);
+    expect(summary.expensePlannedCents).toBe(290000);
+    expect(ledgerExpenses).toBe(190000);
   });
 });
 

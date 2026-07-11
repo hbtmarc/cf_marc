@@ -2,7 +2,7 @@ export const IMPORT_SCHEMA_VERSION = "cfm.import.v1" as const;
 
 export type ImportExpenseKind = "expense" | "fee" | "refund";
 export type ImportExpenseStatus = "paid" | "pending" | "in_invoice";
-export type ImportInvoiceStatus = "paid" | "open" | "closed";
+export type ImportInvoiceStatus = "paid" | "open" | "closed" | "partial";
 
 export interface ImportIncome {
   id: string;

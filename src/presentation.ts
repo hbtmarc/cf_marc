@@ -156,7 +156,7 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
   );
   const openInvoicesCents = sumCents(
     invoices
-      .filter((item) => item.status === "open")
+      .filter((item) => item.status === "open" || item.status === "partial")
       .map((item) => invoiceDebtCents(item)),
   );
 
@@ -212,7 +212,7 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
         statusLabel: transactionStatusLabel(item.kind, item.status, item.ledgerStatus),
       })),
     ...invoices
-      .filter((item) => item.status === "open")
+      .filter((item) => item.status === "open" || item.status === "partial")
       .map((item) => {
         const card = data.cards.find((cardItem) => cardItem.id === item.cardId);
         return {
@@ -244,7 +244,8 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
   }
 
   const overdueInvoices = invoices.filter(
-    (item) => item.status === "open" && item.dueDate < today,
+    (item) =>
+      (item.status === "open" || item.status === "partial") && item.dueDate < today,
   );
   if (overdueInvoices.length > 0) {
     attention.push({
