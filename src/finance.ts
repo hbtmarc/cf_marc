@@ -151,6 +151,28 @@ export function invoiceHasCredit(invoice: Invoice): boolean {
   return (invoice.creditBalanceCents ?? 0) > 0 && invoiceDebtCents(invoice) === 0;
 }
 
+export function isInvoiceLinkedExpense(transaction: Transaction): boolean {
+  return transaction.kind === "expense" && transaction.ledgerStatus === "in_invoice";
+}
+
+export function ledgerExpenseCents(transaction: Transaction): number {
+  if (transaction.expenseKind === "refund") {
+    return -transaction.amountCents;
+  }
+  return transaction.amountCents;
+}
+
+export function invoiceTotalCentsValue(invoice: Invoice): number {
+  return invoice.invoiceTotalCents ?? invoice.amountCents;
+}
+
+export function invoiceRealizedCents(invoice: Invoice): number {
+  if (invoice.status !== "paid") {
+    return 0;
+  }
+  return invoiceTotalCentsValue(invoice);
+}
+
 export function calculateCompetenceSummary(
   data: AppData,
   competenceMonth: string,
@@ -167,6 +189,7 @@ export function calculateCompetenceSummary(
   const expenses = transactions.filter(
     (transaction) => transaction.kind === "expense",
   );
+  const ledgerExpenses = expenses.filter((transaction) => !isInvoiceLinkedExpense(transaction));
 
   const incomePlannedCents = sumCents(
     incomes.map((transaction) => transaction.amountCents),
@@ -183,26 +206,24 @@ export function calculateCompetenceSummary(
   );
 
   const expenseTransactionsPlanned = sumCents(
-    expenses.map((transaction) => transaction.amountCents),
+    ledgerExpenses.map((transaction) => ledgerExpenseCents(transaction)),
   );
   const expenseTransactionsPaid = sumCents(
-    expenses
+    ledgerExpenses
       .filter((transaction) => transaction.status === "settled")
-      .map((transaction) => transaction.amountCents),
+      .map((transaction) => ledgerExpenseCents(transaction)),
   );
   const expenseTransactionsPending = sumCents(
-    expenses
+    ledgerExpenses
       .filter((transaction) => transaction.status === "pending")
-      .map((transaction) => transaction.amountCents),
+      .map((transaction) => ledgerExpenseCents(transaction)),
   );
 
   const invoicePlannedCents = sumCents(
-    invoices.map((invoice) => invoiceDebtCents(invoice)),
+    invoices.map((invoice) => invoiceTotalCentsValue(invoice)),
   );
   const invoicePaidCents = sumCents(
-    invoices
-      .filter((invoice) => invoice.status === "paid")
-      .map((invoice) => invoiceDebtCents(invoice)),
+    invoices.map((invoice) => invoiceRealizedCents(invoice)),
   );
   const invoiceOpenCents = sumCents(
     invoices
@@ -325,9 +346,13 @@ export function validateInvoiceForm(input: {
 export function transactionStatusLabel(
   kind: Transaction["kind"],
   status: Transaction["status"],
+  ledgerStatus?: Transaction["ledgerStatus"],
 ): string {
   if (kind === "income") {
     return status === "settled" ? "Recebido" : "Pendente";
+  }
+  if (ledgerStatus === "in_invoice") {
+    return "Na fatura";
   }
   return status === "settled" ? "Pago" : "Pendente";
 }

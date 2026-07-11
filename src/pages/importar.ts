@@ -2,7 +2,7 @@ import type { AppData } from "../types";
 import type { AppMutations } from "../forms";
 import { applyImportPlan, buildImportPlan, cloneAppData } from "../import";
 import type { ImportPlan, ImportResult } from "../import-types";
-import { parseImportJson, validateImportDocument } from "../import-validate";
+import { parseImportJson, validateImportDocument, formatGeneratedAtLabel } from "../import-validate";
 import { announce, escapeHtml } from "../ui";
 
 type ImportView = "empty" | "review" | "result";
@@ -30,25 +30,16 @@ function resetState(): void {
   };
 }
 
-function countByAction(plan: ImportPlan, action: ImportPlan["items"][number]["action"]): number {
-  return plan.items.filter((item) => item.action === action).length;
-}
-
-function renderCounts(plan: ImportPlan): string {
-  const create = countByAction(plan, "create");
-  const existing = countByAction(plan, "existing");
-  const conflicts = countByAction(plan, "conflict");
-  return `
-    <dl class="import-summary__counts">
-      <div><dt>Novos registros</dt><dd>${create}</dd></div>
-      <div><dt>Já existentes</dt><dd>${existing}</dd></div>
-      <div><dt>Conflitos ignorados</dt><dd>${conflicts}</dd></div>
-    </dl>
-  `;
+function renderCompetenceList(months: string[]): string {
+  if (months.length === 0) {
+    return "—";
+  }
+  return months.map((item) => escapeHtml(item)).join(", ");
 }
 
 function renderReview(plan: ImportPlan): string {
   const { summary } = plan;
+  const { counts, planCounts } = summary;
   return `
     <section class="import-review" aria-live="polite">
       <header class="section-header">
@@ -56,20 +47,27 @@ function renderReview(plan: ImportPlan): string {
         <p class="section-header__meta">${escapeHtml(summary.fileName)}</p>
       </header>
       <dl class="import-summary__meta">
-        <div><dt>Instituição</dt><dd>${escapeHtml(summary.institution)}</dd></div>
-        <div><dt>Origem</dt><dd>${escapeHtml(summary.documentType)}</dd></div>
-        <div><dt>Período</dt><dd>${escapeHtml(summary.periodLabel)}</dd></div>
+        <div><dt>Gerado em</dt><dd>${escapeHtml(formatGeneratedAtLabel(summary.generatedAt))}</dd></div>
+        <div><dt>Moeda</dt><dd>${escapeHtml(summary.currency)}</dd></div>
+        <div><dt>Competências</dt><dd>${renderCompetenceList(summary.competenceMonths)}</dd></div>
       </dl>
       <dl class="import-summary__counts import-summary__counts--wide">
-        <div><dt>Contas</dt><dd>${summary.counts.accounts}</dd></div>
-        <div><dt>Cartões</dt><dd>${summary.counts.cards}</dd></div>
-        <div><dt>Snapshots</dt><dd>${summary.counts.cardSnapshots}</dd></div>
-        <div><dt>Faturas</dt><dd>${summary.counts.invoices}</dd></div>
-        <div><dt>Transações</dt><dd>${summary.counts.transactions}</dd></div>
-        <div><dt>Parcelamentos</dt><dd>${summary.counts.installmentPlans}</dd></div>
-        <div><dt>Recorrências</dt><dd>${summary.counts.recurringRules}</dd></div>
+        <div><dt>Rendas</dt><dd>${counts.incomes}</dd></div>
+        <div><dt>Cartões</dt><dd>${counts.cards}</dd></div>
+        <div><dt>Faturas</dt><dd>${counts.invoices}</dd></div>
+        <div><dt>Despesas</dt><dd>${counts.expenses}</dd></div>
+        <div><dt>Expense</dt><dd>${counts.expenseByKind.expense}</dd></div>
+        <div><dt>Fee</dt><dd>${counts.expenseByKind.fee}</dd></div>
+        <div><dt>Refund</dt><dd>${counts.expenseByKind.refund}</dd></div>
+        <div><dt>Parcelas</dt><dd>${counts.installments}</dd></div>
+        <div><dt>Fingerprints únicos</dt><dd>${counts.uniqueFingerprints}</dd></div>
       </dl>
-      ${renderCounts(plan)}
+      <dl class="import-summary__counts">
+        <div><dt>Novos</dt><dd>${planCounts.new}</dd></div>
+        <div><dt>Atualizados</dt><dd>${planCounts.updated}</dd></div>
+        <div><dt>Já existentes</dt><dd>${planCounts.existing}</dd></div>
+        <div><dt>Conflitos</dt><dd>${planCounts.conflicts}</dd></div>
+      </dl>
       ${
         summary.warnings.length > 0
           ? `<div class="import-message import-message--warning" role="status"><strong>Avisos</strong><ul>${summary.warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
@@ -77,7 +75,7 @@ function renderReview(plan: ImportPlan): string {
       }
       ${
         summary.errors.length > 0
-          ? `<div class="import-message import-message--error" role="alert"><strong>Erros</strong><ul>${summary.errors.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
+          ? `<div class="import-message import-message--error" role="alert"><strong>Erros bloqueantes</strong><ul>${summary.errors.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>`
           : ""
       }
       <div class="import-review__actions">
@@ -185,9 +183,14 @@ async function handleFile(
       plan: {
         payload: {
           schemaVersion: "cfm.import.v1",
-          source: { institution: "—", documentType: "—" },
+          generatedAt: validated.summary.generatedAt,
+          currency: validated.summary.currency,
+          incomes: [],
+          cards: [],
+          invoices: [],
+          expenses: [],
         },
-        summary: validated.summary,
+        summary: { ...validated.summary, fileName: file.name },
         items: [],
         canImport: false,
       },
@@ -199,7 +202,10 @@ async function handleFile(
   }
 
   const previewData = cloneAppData(currentData);
-  const plan = buildImportPlan(previewData, validated.payload, validated.summary);
+  const plan = buildImportPlan(previewData, validated.payload, {
+    ...validated.summary,
+    fileName: file.name,
+  });
   pageState = {
     view: "review",
     fileName: file.name,

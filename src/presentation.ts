@@ -9,6 +9,7 @@ import {
   invoiceDebtCents,
   invoiceHasCredit,
   invoiceStatusLabel,
+  isInvoiceLinkedExpense,
   sumCents,
   transactionStatusLabel,
 } from "./finance";
@@ -150,13 +151,13 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
 
   const pendingExpenseTxCents = sumCents(
     expenses
-      .filter((item) => item.status === "pending")
+      .filter((item) => item.status === "pending" && !isInvoiceLinkedExpense(item))
       .map((item) => item.amountCents),
   );
   const openInvoicesCents = sumCents(
     invoices
       .filter((item) => item.status === "open")
-      .map((item) => item.amountCents),
+      .map((item) => invoiceDebtCents(item)),
   );
 
   const projection: DashboardProjection = {
@@ -197,10 +198,10 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
         origin: item.category,
         amountCents: item.amountCents,
         kind: "income" as const,
-        statusLabel: transactionStatusLabel(item.kind, item.status),
+        statusLabel: transactionStatusLabel(item.kind, item.status, item.ledgerStatus),
       })),
     ...expenses
-      .filter((item) => item.status === "pending")
+      .filter((item) => item.status === "pending" && !isInvoiceLinkedExpense(item))
       .map((item) => ({
         id: item.id,
         date: item.date,
@@ -208,7 +209,7 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
         origin: item.category,
         amountCents: item.amountCents,
         kind: "expense" as const,
-        statusLabel: transactionStatusLabel(item.kind, item.status),
+        statusLabel: transactionStatusLabel(item.kind, item.status, item.ledgerStatus),
       })),
     ...invoices
       .filter((item) => item.status === "open")
@@ -612,15 +613,29 @@ export function renderDataTableHead(): string {
 }
 
 export function renderTransactionTableRow(item: Transaction): string {
-  const statusLabel = transactionStatusLabel(item.kind, item.status);
-  const statusVariant = item.status === "settled" ? "success" : "warning";
+  const statusLabel = transactionStatusLabel(item.kind, item.status, item.ledgerStatus);
+  const statusVariant =
+    item.ledgerStatus === "in_invoice"
+      ? "warning"
+      : item.status === "settled"
+        ? "success"
+        : "warning";
   const typeLabel = item.kind === "income" ? "Receita" : "Despesa";
+  const installmentLabel = item.installment
+    ? ` <span class="data-table__meta">${item.installment.current}/${item.installment.total}</span>`
+    : "";
+  const signedAmount =
+    item.kind === "expense" && item.expenseKind !== "refund"
+      ? -item.amountCents
+      : item.expenseKind === "refund"
+        ? item.amountCents
+        : item.amountCents;
 
   return `
     <div class="data-table__row" role="row" data-transaction-id="${escapeHtml(item.id)}">
       <span class="data-table__cell data-table__cell--date" role="cell">${escapeHtml(formatDateLabel(item.date))}</span>
       <span class="data-table__cell data-table__cell--desc" role="cell">
-        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>
+        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>${installmentLabel}
       </span>
       <span class="data-table__cell data-table__cell--category" role="cell">${escapeHtml(item.category)}</span>
       <span class="data-table__cell data-table__cell--type" role="cell">
@@ -628,7 +643,7 @@ export function renderTransactionTableRow(item: Transaction): string {
       </span>
       <span class="data-table__cell data-table__cell--status" role="cell">${renderStatusChip(statusLabel, statusVariant)}</span>
       <span class="data-table__cell data-table__cell--amount" role="cell">
-        ${renderMoney(item.kind === "expense" ? -item.amountCents : item.amountCents)}
+        ${renderMoney(signedAmount)}
       </span>
       <span class="data-table__cell data-table__cell--actions" role="cell">
         <div class="row-actions" data-row-actions="${escapeHtml(item.id)}"></div>

@@ -1,159 +1,114 @@
 export const IMPORT_SCHEMA_VERSION = "cfm.import.v1" as const;
 
-export interface ImportSource {
-  institution: string;
-  documentType: string;
-  label?: string;
-  exportedAt?: string;
-  periodStart?: string;
-  periodEnd?: string;
-  rawHash?: string;
-  canonicalFingerprint?: string;
-  externalRef?: string;
-}
+export type ImportExpenseKind = "expense" | "fee" | "refund";
+export type ImportExpenseStatus = "paid" | "pending" | "in_invoice";
+export type ImportInvoiceStatus = "paid" | "open" | "closed";
 
-export interface ImportAccount {
+export interface ImportIncome {
   id: string;
-  name: string;
-  type: "checking" | "savings" | "investment";
-  institution?: string;
-  lastFour?: string;
-  currency?: string;
-  isActive?: boolean;
+  competenceMonth: string;
+  receivedDate: string;
+  description: string;
+  amountCents: number;
+  canonicalFingerprint: string;
+  sourceType?: string;
+  sourceRecordId?: string;
 }
 
 export interface ImportCard {
   id: string;
   name: string;
-  brand?: string;
-  lastFour?: string;
-  closingDay?: number | null;
-  dueDay?: number | null;
-  limitCents?: number;
-  accountId?: string;
-  externalRef?: string;
-  aliases?: string[];
-}
-
-export interface ImportCardSnapshot {
-  cardId: string;
-  snapshotMonth: string;
-  snapshotDate?: string;
-  limitCents?: number;
-  usedCents?: number;
-  availableCents?: number;
-  source?: string;
-  confidence?: string;
+  issuer?: string;
+  last4?: string;
+  aliasesLast4?: string[];
+  closingDay?: number;
+  dueDay?: number;
 }
 
 export interface ImportInvoice {
   id: string;
-  externalRef?: string;
   cardId: string;
   competenceMonth: string;
+  status: ImportInvoiceStatus;
+  invoiceTotalCents: number;
+  amountPaidCents: number;
+  amountDueCents: number;
+  creditBalanceCents: number;
+  closingDate?: string;
   dueDate?: string;
-  totalCents?: number;
-  amountDueCents?: number;
-  creditBalanceCents?: number;
-  balanceDirection?: string;
-  creditBehavior?: string;
-  status?: string;
-  isStub?: boolean;
-  referenceOnly?: boolean;
+  paymentDate?: string;
+  paidFrom?: string;
+  asOfDate?: string;
+  sourceType?: string;
 }
 
-export interface ImportTransactionSource {
-  rawHash?: string;
-  canonicalFingerprint?: string;
-  rawFingerprint?: string;
+export interface ImportExpenseInstallment {
+  current: number;
+  total: number;
 }
 
-export interface ImportTransaction {
+export interface ImportExpense {
   id: string;
-  externalRef?: string;
-  accountId?: string;
-  cardId?: string;
-  invoiceId?: string;
-  installmentPlanId?: string;
-  description: string;
-  categoryLabel?: string;
-  type: string;
   competenceMonth: string;
   date: string;
+  description: string;
   amountCents: number;
-  flow: "in" | "out" | "neutral";
-  installment?: { current?: number; total?: number };
-  source?: ImportTransactionSource;
-}
-
-export interface ImportInstallmentPlan {
-  id: string;
-  externalRef?: string;
+  category: string;
+  kind: ImportExpenseKind;
+  status: ImportExpenseStatus;
+  canonicalFingerprint: string;
   cardId?: string;
-  description?: string;
-  kind?: string;
-  totalInstallments?: number;
-  currentInstallment?: number;
-  installmentAmountCents?: number;
-  startCompetenceMonth?: string;
-  flow?: string;
-}
-
-export interface ImportRecurringRule {
-  externalRef?: string;
-  id?: string;
-  description?: string;
-  type?: string;
-  flow?: string;
-  frequency?: string;
-  expectedAmountCents?: number;
-  categoryLabel?: string;
-  startCompetenceMonth?: string;
-  sourcePattern?: string;
-  sourceInstitution?: string;
-  accountId?: string;
-  dayOfMonth?: number;
-  isActive?: boolean;
-}
-
-export interface ImportReview {
-  status?: string;
-  notes?: string;
+  invoiceId?: string;
+  installment?: ImportExpenseInstallment;
+  paymentMethod?: string;
+  paymentLabel?: string;
+  paymentDate?: string;
+  sourceType?: string;
+  sourceRecordId?: string;
 }
 
 export interface ImportPayload {
   schemaVersion: typeof IMPORT_SCHEMA_VERSION;
-  source: ImportSource;
-  accounts?: ImportAccount[];
-  cards?: ImportCard[];
-  cardSnapshots?: ImportCardSnapshot[];
-  invoices?: ImportInvoice[];
-  transactions?: ImportTransaction[];
-  installmentPlans?: ImportInstallmentPlan[];
-  recurringRules?: ImportRecurringRule[];
-  review?: ImportReview;
+  generatedAt: string;
+  currency: string;
+  incomes: ImportIncome[];
+  cards: ImportCard[];
+  invoices: ImportInvoice[];
+  expenses: ImportExpense[];
 }
 
 export interface ImportReviewSummary {
   fileName: string;
-  institution: string;
-  documentType: string;
-  periodLabel: string;
+  generatedAt: string;
+  currency: string;
+  competenceMonths: string[];
   counts: {
-    accounts: number;
+    incomes: number;
     cards: number;
-    cardSnapshots: number;
     invoices: number;
-    transactions: number;
-    installmentPlans: number;
-    recurringRules: number;
+    expenses: number;
+    expenseByKind: {
+      expense: number;
+      fee: number;
+      refund: number;
+    };
+    installments: number;
+    uniqueFingerprints: number;
+  };
+  planCounts: {
+    new: number;
+    updated: number;
+    existing: number;
+    conflicts: number;
   };
   warnings: string[];
   errors: string[];
 }
 
+export type ImportEntity = "income" | "expense" | "card" | "invoice";
+
 export interface ImportPlanItem {
-  entity: "card" | "invoice" | "transaction";
+  entity: ImportEntity;
   importId: string;
   label: string;
   action: "create" | "existing" | "updated" | "conflict";

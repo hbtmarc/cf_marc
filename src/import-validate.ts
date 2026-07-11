@@ -1,16 +1,22 @@
 import { isValidCompetenceMonth, isValidDate } from "./finance";
 import {
   IMPORT_SCHEMA_VERSION,
+  type ImportCard,
+  type ImportExpense,
+  type ImportExpenseKind,
+  type ImportExpenseStatus,
+  type ImportIncome,
+  type ImportInvoice,
+  type ImportInvoiceStatus,
   type ImportPayload,
   type ImportReviewSummary,
 } from "./import-types";
-import { isValidSha256Hash, normalizeImportPayload } from "./import-fingerprint";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isStringArray(value: unknown): boolean {
+function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
@@ -18,80 +24,79 @@ function isPositiveIntCents(value: unknown): boolean {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
-function validateSource(source: unknown, errors: string[]): boolean {
-  if (!isRecord(source)) {
-    errors.push("Campo source é obrigatório.");
-    return false;
-  }
-  let valid = true;
-  if (typeof source.institution !== "string" || source.institution.trim().length === 0) {
-    errors.push("source.institution é obrigatório.");
-    valid = false;
-  }
-  if (typeof source.documentType !== "string" || source.documentType.trim().length === 0) {
-    errors.push("source.documentType é obrigatório.");
-    valid = false;
-  }
-  if (
-    source.rawHash !== undefined &&
-    typeof source.rawHash === "string" &&
-    source.rawHash.length > 0 &&
-    !isValidSha256Hash(source.rawHash)
-  ) {
-    errors.push("source.rawHash deve seguir o formato sha256:<64 hex>.");
-    valid = false;
-  }
-  return valid;
+function isValidDay(value: unknown): boolean {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 31;
 }
 
-function validateArrayField(
+function isValidExpenseKind(value: unknown): value is ImportExpenseKind {
+  return value === "expense" || value === "fee" || value === "refund";
+}
+
+function isValidExpenseStatus(value: unknown): value is ImportExpenseStatus {
+  return value === "paid" || value === "pending" || value === "in_invoice";
+}
+
+function isValidInvoiceStatus(value: unknown): value is ImportInvoiceStatus {
+  return value === "paid" || value === "open" || value === "closed";
+}
+
+function validateRequiredArray(
   payload: Record<string, unknown>,
   field: string,
   errors: string[],
 ): unknown[] {
   const value = payload[field];
-  if (value === undefined) {
-    return [];
-  }
   if (!Array.isArray(value)) {
-    errors.push(`${field} deve ser um array.`);
+    errors.push(`Campo ${field} é obrigatório e deve ser um array.`);
     return [];
   }
   return value;
 }
 
-function validateAccounts(items: unknown[], errors: string[], warnings: string[]): void {
+function validateIncome(items: unknown[], errors: string[], warnings: string[]): ImportIncome[] {
   const ids = new Set<string>();
+  const result: ImportIncome[] = [];
   for (const [index, item] of items.entries()) {
     if (!isRecord(item)) {
-      errors.push(`accounts[${index}] inválido.`);
+      errors.push(`incomes[${index}] inválido.`);
       continue;
     }
     if (typeof item.id !== "string" || item.id.trim().length === 0) {
-      errors.push(`accounts[${index}].id é obrigatório.`);
+      errors.push(`incomes[${index}].id é obrigatório.`);
     } else if (ids.has(item.id)) {
-      errors.push(`accounts[${index}].id duplicado.`);
+      errors.push(`incomes[${index}].id duplicado.`);
     } else {
       ids.add(item.id);
     }
-    if (typeof item.name !== "string" || item.name.trim().length === 0) {
-      errors.push(`accounts[${index}].name é obrigatório.`);
+    if (!isValidCompetenceMonth(String(item.competenceMonth ?? ""))) {
+      errors.push(`incomes[${index}].competenceMonth inválido.`);
+    }
+    if (!isValidDate(String(item.receivedDate ?? ""))) {
+      errors.push(`incomes[${index}].receivedDate inválida.`);
+    }
+    if (typeof item.description !== "string" || item.description.trim().length === 0) {
+      errors.push(`incomes[${index}].description é obrigatória.`);
+    }
+    if (!isPositiveIntCents(item.amountCents) || item.amountCents === 0) {
+      errors.push(`incomes[${index}].amountCents deve ser inteiro positivo.`);
     }
     if (
-      item.type !== "checking" &&
-      item.type !== "savings" &&
-      item.type !== "investment"
+      typeof item.canonicalFingerprint !== "string" ||
+      item.canonicalFingerprint.trim().length === 0
     ) {
-      errors.push(`accounts[${index}].type inválido.`);
+      errors.push(`incomes[${index}].canonicalFingerprint é obrigatório.`);
     }
-    if (item.lastFour !== undefined && typeof item.lastFour === "string" && item.lastFour.length > 4) {
-      warnings.push(`accounts[${index}].lastFour excede 4 caracteres.`);
+    if (item.sourceRecordId !== undefined && typeof item.sourceRecordId !== "string") {
+      warnings.push(`incomes[${index}].sourceRecordId ignorado (formato inválido).`);
     }
+    result.push(item as unknown as ImportIncome);
   }
+  return result;
 }
 
-function validateCards(items: unknown[], errors: string[], warnings: string[]): void {
+function validateCards(items: unknown[], errors: string[], warnings: string[]): ImportCard[] {
   const ids = new Set<string>();
+  const result: ImportCard[] = [];
   for (const [index, item] of items.entries()) {
     if (!isRecord(item)) {
       errors.push(`cards[${index}] inválido.`);
@@ -107,35 +112,47 @@ function validateCards(items: unknown[], errors: string[], warnings: string[]): 
     if (typeof item.name !== "string" || item.name.trim().length === 0) {
       errors.push(`cards[${index}].name é obrigatório.`);
     }
-    if (item.aliases !== undefined && !isStringArray(item.aliases)) {
-      errors.push(`cards[${index}].aliases deve ser um array de strings.`);
+    if (item.issuer !== undefined && typeof item.issuer !== "string") {
+      errors.push(`cards[${index}].issuer deve ser texto.`);
     }
-    if (item.aliases && Array.isArray(item.aliases) && item.aliases.length > 0) {
-      warnings.push(`cards[${index}] possui aliases — não criam cartões adicionais.`);
+    if (item.last4 !== undefined && typeof item.last4 !== "string") {
+      errors.push(`cards[${index}].last4 deve ser texto.`);
     }
-    if (item.limitCents !== undefined && !isPositiveIntCents(item.limitCents)) {
-      errors.push(`cards[${index}].limitCents deve ser inteiro >= 0.`);
+    if (item.aliasesLast4 !== undefined && !isStringArray(item.aliasesLast4)) {
+      errors.push(`cards[${index}].aliasesLast4 deve ser um array de strings.`);
     }
+    if (item.closingDay !== undefined && !isValidDay(item.closingDay)) {
+      errors.push(`cards[${index}].closingDay inválido.`);
+    }
+    if (item.dueDay !== undefined && !isValidDay(item.dueDay)) {
+      errors.push(`cards[${index}].dueDay inválido.`);
+    }
+    if (!item.closingDay && !item.dueDay) {
+      warnings.push(`cards[${index}] sem closingDay e dueDay.`);
+    }
+    result.push(item as unknown as ImportCard);
+  }
+  return result;
+}
+
+function validateInvoiceCoherence(invoice: ImportInvoice, index: number, errors: string[]): void {
+  const left = invoice.invoiceTotalCents + invoice.creditBalanceCents;
+  const right = invoice.amountPaidCents + invoice.amountDueCents;
+  if (left !== right) {
+    errors.push(
+      `invoices[${index}] incoerente: invoiceTotalCents + creditBalanceCents (${left}) ≠ amountPaidCents + amountDueCents (${right}).`,
+    );
   }
 }
 
-function validateSnapshots(items: unknown[], cardIds: Set<string>, errors: string[]): void {
-  for (const [index, item] of items.entries()) {
-    if (!isRecord(item)) {
-      errors.push(`cardSnapshots[${index}] inválido.`);
-      continue;
-    }
-    if (typeof item.cardId !== "string" || !cardIds.has(item.cardId)) {
-      errors.push(`cardSnapshots[${index}].cardId referencia cartão inexistente.`);
-    }
-    if (typeof item.snapshotMonth !== "string" || !isValidCompetenceMonth(item.snapshotMonth)) {
-      errors.push(`cardSnapshots[${index}].snapshotMonth inválido.`);
-    }
-  }
-}
-
-function validateInvoices(items: unknown[], cardIds: Set<string>, errors: string[]): void {
+function validateInvoices(
+  items: unknown[],
+  cardIds: Set<string>,
+  errors: string[],
+  warnings: string[],
+): ImportInvoice[] {
   const ids = new Set<string>();
+  const result: ImportInvoice[] = [];
   for (const [index, item] of items.entries()) {
     if (!isRecord(item)) {
       errors.push(`invoices[${index}] inválido.`);
@@ -149,251 +166,310 @@ function validateInvoices(items: unknown[], cardIds: Set<string>, errors: string
       ids.add(item.id);
     }
     if (typeof item.cardId !== "string" || !cardIds.has(item.cardId)) {
-      errors.push(`invoices[${index}].cardId referencia cartão inexistente.`);
+      errors.push(`invoices[${index}].cardId inválido ou inexistente.`);
     }
-    if (typeof item.competenceMonth !== "string" || !isValidCompetenceMonth(item.competenceMonth)) {
+    if (!isValidCompetenceMonth(String(item.competenceMonth ?? ""))) {
       errors.push(`invoices[${index}].competenceMonth inválido.`);
     }
-    if (item.dueDate !== undefined && typeof item.dueDate === "string" && !isValidDate(item.dueDate)) {
-      errors.push(`invoices[${index}].dueDate inválido.`);
+    if (!isValidInvoiceStatus(item.status)) {
+      errors.push(`invoices[${index}].status inválido.`);
     }
-    for (const field of ["totalCents", "amountDueCents", "creditBalanceCents"] as const) {
-      if (item[field] !== undefined && !isPositiveIntCents(item[field])) {
-        errors.push(`invoices[${index}].${field} deve ser inteiro >= 0.`);
+    for (const field of [
+      "invoiceTotalCents",
+      "amountPaidCents",
+      "amountDueCents",
+      "creditBalanceCents",
+    ] as const) {
+      if (!isPositiveIntCents(item[field])) {
+        errors.push(`invoices[${index}].${field} deve ser inteiro ≥ 0.`);
       }
     }
+    for (const field of ["closingDate", "dueDate", "paymentDate", "asOfDate"] as const) {
+      if (item[field] !== undefined && !isValidDate(String(item[field]))) {
+        errors.push(`invoices[${index}].${field} inválida.`);
+      }
+    }
+    if (item.paidFrom !== undefined && typeof item.paidFrom !== "string") {
+      errors.push(`invoices[${index}].paidFrom deve ser texto.`);
+    }
+    const invoice = item as unknown as ImportInvoice;
+    validateInvoiceCoherence(invoice, index, errors);
+    if (invoice.creditBalanceCents > 0 && invoice.amountDueCents > 0) {
+      warnings.push(`invoices[${index}] possui saldo credor e valor devido simultaneamente.`);
+    }
+    result.push(invoice);
   }
+  return result;
 }
 
-function validateTransactions(
+function validateExpenses(
   items: unknown[],
   cardIds: Set<string>,
-  accountIds: Set<string>,
-  invoiceIds: Set<string>,
+  invoiceById: Map<string, ImportInvoice>,
   errors: string[],
-): void {
+  _warnings: string[],
+): ImportExpense[] {
   const ids = new Set<string>();
+  const result: ImportExpense[] = [];
   for (const [index, item] of items.entries()) {
     if (!isRecord(item)) {
-      errors.push(`transactions[${index}] inválido.`);
+      errors.push(`expenses[${index}] inválido.`);
       continue;
     }
     if (typeof item.id !== "string" || item.id.trim().length === 0) {
-      errors.push(`transactions[${index}].id é obrigatório.`);
+      errors.push(`expenses[${index}].id é obrigatório.`);
     } else if (ids.has(item.id)) {
-      errors.push(`transactions[${index}].id duplicado.`);
+      errors.push(`expenses[${index}].id duplicado.`);
     } else {
       ids.add(item.id);
     }
+    if (!isValidCompetenceMonth(String(item.competenceMonth ?? ""))) {
+      errors.push(`expenses[${index}].competenceMonth inválido.`);
+    }
+    if (!isValidDate(String(item.date ?? ""))) {
+      errors.push(`expenses[${index}].date inválida.`);
+    }
     if (typeof item.description !== "string" || item.description.trim().length === 0) {
-      errors.push(`transactions[${index}].description é obrigatória.`);
+      errors.push(`expenses[${index}].description é obrigatória.`);
     }
     if (!isPositiveIntCents(item.amountCents) || item.amountCents === 0) {
-      errors.push(`transactions[${index}].amountCents deve ser inteiro positivo.`);
+      errors.push(`expenses[${index}].amountCents deve ser inteiro positivo.`);
     }
-    if (typeof item.date !== "string" || !isValidDate(item.date)) {
-      errors.push(`transactions[${index}].date inválida.`);
+    if (typeof item.category !== "string" || item.category.trim().length === 0) {
+      errors.push(`expenses[${index}].category é obrigatória.`);
     }
-    if (typeof item.competenceMonth !== "string" || !isValidCompetenceMonth(item.competenceMonth)) {
-      errors.push(`transactions[${index}].competenceMonth inválida.`);
+    if (!isValidExpenseKind(item.kind)) {
+      errors.push(`expenses[${index}].kind inválido.`);
     }
-    if (item.flow !== "in" && item.flow !== "out" && item.flow !== "neutral") {
-      errors.push(`transactions[${index}].flow inválido.`);
+    if (!isValidExpenseStatus(item.status)) {
+      errors.push(`expenses[${index}].status inválido.`);
     }
-    if (typeof item.type !== "string" || item.type.trim().length === 0) {
-      errors.push(`transactions[${index}].type é obrigatório.`);
+    if (
+      typeof item.canonicalFingerprint !== "string" ||
+      item.canonicalFingerprint.trim().length === 0
+    ) {
+      errors.push(`expenses[${index}].canonicalFingerprint é obrigatório.`);
     }
-    if (item.cardId !== undefined && typeof item.cardId === "string" && !cardIds.has(item.cardId)) {
-      errors.push(`transactions[${index}].cardId referencia cartão inexistente.`);
+    const hasCard = typeof item.cardId === "string" && item.cardId.length > 0;
+    const hasInvoice = typeof item.invoiceId === "string" && item.invoiceId.length > 0;
+    if (item.status === "in_invoice") {
+      if (!hasCard || !hasInvoice) {
+        errors.push(`expenses[${index}] in_invoice exige cardId e invoiceId.`);
+      } else if (!cardIds.has(item.cardId as string)) {
+        errors.push(`expenses[${index}].cardId inexistente.`);
+      } else {
+        const invoice = invoiceById.get(item.invoiceId as string);
+        if (!invoice) {
+          errors.push(`expenses[${index}].invoiceId inexistente.`);
+        } else if (invoice.cardId !== item.cardId) {
+          errors.push(`expenses[${index}] cardId não corresponde à fatura.`);
+        }
+      }
+    } else if (hasInvoice) {
+      errors.push(`expenses[${index}] com invoiceId deve ter status in_invoice.`);
     }
-    if (item.accountId !== undefined && typeof item.accountId === "string" && !accountIds.has(item.accountId)) {
-      errors.push(`transactions[${index}].accountId referencia conta inexistente.`);
-    }
-    if (item.invoiceId !== undefined && typeof item.invoiceId === "string" && !invoiceIds.has(item.invoiceId)) {
-      errors.push(`transactions[${index}].invoiceId referencia fatura inexistente.`);
-    }
-    if (item.source !== undefined && isRecord(item.source) && item.source.rawHash !== undefined) {
-      const rawHash = item.source.rawHash;
-      if (typeof rawHash === "string" && rawHash.length > 0 && !isValidSha256Hash(rawHash)) {
-        // readable hash is normalized later; not a blocker
+    if (item.installment !== undefined) {
+      if (!isRecord(item.installment)) {
+        errors.push(`expenses[${index}].installment inválido.`);
+      } else {
+        const current = item.installment.current;
+        const total = item.installment.total;
+        if (
+          typeof current !== "number" ||
+          typeof total !== "number" ||
+          !Number.isInteger(current) ||
+          !Number.isInteger(total) ||
+          current < 1 ||
+          total < 1 ||
+          current > total
+        ) {
+          errors.push(`expenses[${index}].installment inválido.`);
+        }
       }
     }
+    if (item.paymentDate !== undefined && !isValidDate(String(item.paymentDate))) {
+      errors.push(`expenses[${index}].paymentDate inválida.`);
+    }
+    result.push(item as unknown as ImportExpense);
   }
+  return result;
 }
 
-function validateInstallmentPlans(items: unknown[], cardIds: Set<string>, errors: string[]): void {
-  const ids = new Set<string>();
-  for (const [index, item] of items.entries()) {
-    if (!isRecord(item)) {
-      errors.push(`installmentPlans[${index}] inválido.`);
-      continue;
-    }
-    const id = typeof item.id === "string" ? item.id : typeof item.externalRef === "string" ? item.externalRef : "";
-    if (!id) {
-      errors.push(`installmentPlans[${index}].id é obrigatório.`);
-    } else if (ids.has(id)) {
-      errors.push(`installmentPlans[${index}].id duplicado.`);
+function collectCompetenceMonths(payload: ImportPayload): string[] {
+  const months = new Set<string>();
+  for (const item of [...payload.incomes, ...payload.invoices, ...payload.expenses]) {
+    months.add(item.competenceMonth);
+  }
+  return [...months].sort();
+}
+
+function countExpenseKinds(expenses: ImportExpense[]): ImportReviewSummary["counts"]["expenseByKind"] {
+  const counts = { expense: 0, fee: 0, refund: 0 };
+  for (const item of expenses) {
+    counts[item.kind] += 1;
+  }
+  return counts;
+}
+
+function countUniqueFingerprints(payload: ImportPayload): number {
+  const fingerprints = new Set<string>();
+  for (const item of payload.incomes) {
+    fingerprints.add(item.canonicalFingerprint);
+  }
+  for (const item of payload.expenses) {
+    fingerprints.add(item.canonicalFingerprint);
+  }
+  return fingerprints.size;
+}
+
+function detectDuplicateFingerprints(payload: ImportPayload, errors: string[]): void {
+  const seen = new Map<string, string>();
+  for (const item of payload.incomes) {
+    const key = item.canonicalFingerprint;
+    if (seen.has(key)) {
+      errors.push(`Fingerprint duplicado: ${key}`);
     } else {
-      ids.add(id);
+      seen.set(key, item.id);
     }
-    if (item.cardId !== undefined && typeof item.cardId === "string" && !cardIds.has(item.cardId)) {
-      errors.push(`installmentPlans[${index}].cardId referencia cartão inexistente.`);
+  }
+  for (const item of payload.expenses) {
+    const key = item.canonicalFingerprint;
+    if (seen.has(key)) {
+      errors.push(`Fingerprint duplicado: ${key}`);
+    } else {
+      seen.set(key, item.id);
     }
   }
 }
 
-function validateRecurringRules(items: unknown[], accountIds: Set<string>, errors: string[]): void {
-  for (const [index, item] of items.entries()) {
-    if (!isRecord(item)) {
-      errors.push(`recurringRules[${index}] inválido.`);
-      continue;
-    }
-    const ref =
-      typeof item.externalRef === "string"
-        ? item.externalRef
-        : typeof item.id === "string"
-          ? item.id
-          : "";
-    if (!ref) {
-      errors.push(`recurringRules[${index}].externalRef é obrigatório.`);
-    }
-    if (item.accountId !== undefined && typeof item.accountId === "string" && !accountIds.has(item.accountId)) {
-      errors.push(`recurringRules[${index}].accountId referencia conta inexistente.`);
-    }
-    if (item.expectedAmountCents !== undefined && !isPositiveIntCents(item.expectedAmountCents)) {
-      errors.push(`recurringRules[${index}].expectedAmountCents inválido.`);
-    }
-  }
-}
-
-export function parseImportJson(raw: string): { ok: true; value: unknown } | { ok: false; message: string } {
-  if (typeof raw !== "string" || raw.trim().length === 0) {
-    return { ok: false, message: "Conteúdo JSON vazio." };
-  }
+export function parseImportJson(
+  raw: string,
+): { ok: true; value: unknown } | { ok: false; message: string } {
   try {
     return { ok: true, value: JSON.parse(raw) as unknown };
   } catch {
-    return { ok: false, message: "JSON malformado." };
+    return { ok: false, message: "O arquivo não é um JSON válido." };
   }
 }
 
 export function validateImportDocument(
   value: unknown,
   fileName = "arquivo.json",
-): { ok: true; payload: ImportPayload; summary: ImportReviewSummary } | { ok: false; summary: ImportReviewSummary } {
-  const warnings: string[] = [];
+):
+  | { ok: true; payload: ImportPayload; summary: ImportReviewSummary }
+  | { ok: false; summary: ImportReviewSummary } {
   const errors: string[] = [];
+  const warnings: string[] = [];
+
+  const emptySummary = (partial?: Partial<ImportReviewSummary>): ImportReviewSummary => ({
+    fileName,
+    generatedAt: "—",
+    currency: "—",
+    competenceMonths: [],
+    counts: {
+      incomes: 0,
+      cards: 0,
+      invoices: 0,
+      expenses: 0,
+      expenseByKind: { expense: 0, fee: 0, refund: 0 },
+      installments: 0,
+      uniqueFingerprints: 0,
+    },
+    planCounts: { new: 0, updated: 0, existing: 0, conflicts: 0 },
+    warnings,
+    errors,
+    ...partial,
+  });
 
   if (!isRecord(value)) {
     errors.push("Documento deve ser um objeto JSON.");
-    return {
-      ok: false,
-      summary: buildSummary(fileName, null, warnings, errors),
-    };
+    return { ok: false, summary: emptySummary() };
+  }
+
+  const extraKeys = Object.keys(value).filter(
+    (key) =>
+      !["schemaVersion", "generatedAt", "currency", "incomes", "cards", "invoices", "expenses"].includes(
+        key,
+      ),
+  );
+  if (extraKeys.length > 0) {
+    errors.push(`Campos não permitidos no contrato: ${extraKeys.join(", ")}.`);
   }
 
   if (value.schemaVersion !== IMPORT_SCHEMA_VERSION) {
-    errors.push(`schemaVersion deve ser "${IMPORT_SCHEMA_VERSION}".`);
+    errors.push(`schemaVersion deve ser ${IMPORT_SCHEMA_VERSION}.`);
   }
 
-  const sourceOk = validateSource(value.source, errors);
-  const accounts = validateArrayField(value, "accounts", errors);
-  const cards = validateArrayField(value, "cards", errors);
-  const cardSnapshots = validateArrayField(value, "cardSnapshots", errors);
-  const invoices = validateArrayField(value, "invoices", errors);
-  const transactions = validateArrayField(value, "transactions", errors);
-  const installmentPlans = validateArrayField(value, "installmentPlans", errors);
-  const recurringRules = validateArrayField(value, "recurringRules", errors);
-
-  validateAccounts(accounts, errors, warnings);
-  validateCards(cards, errors, warnings);
-
-  const cardIds = new Set(
-    cards
-      .filter(isRecord)
-      .map((item) => (typeof item.id === "string" ? item.id : ""))
-      .filter(Boolean),
-  );
-  const accountIds = new Set(
-    accounts
-      .filter(isRecord)
-      .map((item) => (typeof item.id === "string" ? item.id : ""))
-      .filter(Boolean),
-  );
-  const invoiceIds = new Set(
-    invoices
-      .filter(isRecord)
-      .map((item) => (typeof item.id === "string" ? item.id : ""))
-      .filter(Boolean),
-  );
-
-  validateSnapshots(cardSnapshots, cardIds, errors);
-  validateInvoices(invoices, cardIds, errors);
-  validateTransactions(transactions, cardIds, accountIds, invoiceIds, errors);
-  validateInstallmentPlans(installmentPlans, cardIds, errors);
-  validateRecurringRules(recurringRules, accountIds, errors);
-
-  if (!sourceOk) {
-    return { ok: false, summary: buildSummary(fileName, null, warnings, errors) };
+  if (typeof value.generatedAt !== "string" || value.generatedAt.trim().length === 0) {
+    errors.push("generatedAt é obrigatório.");
   }
+
+  if (typeof value.currency !== "string" || value.currency.trim().length === 0) {
+    errors.push("currency é obrigatório.");
+  } else if (value.currency !== "BRL") {
+    warnings.push(`Moeda ${value.currency} diferente de BRL.`);
+  }
+
+  const incomes = validateIncome(validateRequiredArray(value, "incomes", errors), errors, warnings);
+  const cards = validateCards(validateRequiredArray(value, "cards", errors), errors, warnings);
+  const cardIds = new Set(cards.map((item) => item.id));
+  const invoices = validateInvoices(
+    validateRequiredArray(value, "invoices", errors),
+    cardIds,
+    errors,
+    warnings,
+  );
+  const invoiceById = new Map(invoices.map((item) => [item.id, item]));
+  const expenses = validateExpenses(
+    validateRequiredArray(value, "expenses", errors),
+    cardIds,
+    invoiceById,
+    errors,
+    warnings,
+  );
+
+  const payload: ImportPayload = {
+    schemaVersion: IMPORT_SCHEMA_VERSION,
+    generatedAt: String(value.generatedAt ?? ""),
+    currency: String(value.currency ?? ""),
+    incomes,
+    cards,
+    invoices,
+    expenses,
+  };
+
+  detectDuplicateFingerprints(payload, errors);
+
+  const installments = expenses.filter((item) => item.installment).length;
+  const summary = emptySummary({
+    generatedAt: payload.generatedAt,
+    currency: payload.currency,
+    competenceMonths: collectCompetenceMonths(payload),
+    counts: {
+      incomes: incomes.length,
+      cards: cards.length,
+      invoices: invoices.length,
+      expenses: expenses.length,
+      expenseByKind: countExpenseKinds(expenses),
+      installments,
+      uniqueFingerprints: countUniqueFingerprints(payload),
+    },
+  });
 
   if (errors.length > 0) {
-    return { ok: false, summary: buildSummary(fileName, null, warnings, errors) };
+    return { ok: false, summary };
   }
 
-  const payload = normalizeImportPayload({
-    schemaVersion: IMPORT_SCHEMA_VERSION,
-    source: value.source as ImportPayload["source"],
-    accounts,
-    cards,
-    cardSnapshots,
-    invoices,
-    transactions,
-    installmentPlans,
-    recurringRules,
-    ...(isRecord(value.review) ? { review: value.review } : {}),
-  } as ImportPayload);
-
-  if ((payload.cardSnapshots?.length ?? 0) > 0) {
-    warnings.push("Snapshots de cartão reconhecidos — não substituem o cadastro do cartão.");
-  }
-
-  const stubInvoices = (payload.invoices ?? []).filter((item) => item.isStub || item.referenceOnly).length;
-  if (stubInvoices > 0) {
-    warnings.push(`${stubInvoices} fatura(s) de referência serão ignoradas na importação.`);
-  }
-
-  const summary = buildSummary(fileName, payload, warnings, errors);
   return { ok: true, payload, summary };
 }
 
-function buildSummary(
-  fileName: string,
-  payload: ImportPayload | null,
-  warnings: string[],
-  errors: string[],
-): ImportReviewSummary {
-  const source = payload?.source;
-  const periodLabel =
-    source?.periodStart && source?.periodEnd
-      ? `${source.periodStart} — ${source.periodEnd}`
-      : source?.periodStart || source?.periodEnd || "—";
-
-  return {
-    fileName,
-    institution: source?.institution ?? "—",
-    documentType: source?.documentType ?? "—",
-    periodLabel,
-    counts: {
-      accounts: payload?.accounts?.length ?? 0,
-      cards: payload?.cards?.length ?? 0,
-      cardSnapshots: payload?.cardSnapshots?.length ?? 0,
-      invoices: payload?.invoices?.length ?? 0,
-      transactions: payload?.transactions?.length ?? 0,
-      installmentPlans: payload?.installmentPlans?.length ?? 0,
-      recurringRules: payload?.recurringRules?.length ?? 0,
-    },
-    warnings,
-    errors,
-  };
+export function formatGeneratedAtLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
 }

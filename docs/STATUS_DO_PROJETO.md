@@ -2,88 +2,79 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 10 de julho de 2026  
-**Etapa atual:** Etapa 4 — Importação local funcional
+**Etapa atual:** Etapa 5 — Importador definitivo `cfm.import.v1`
 
 ---
 
-## Etapa 4 — concluída
+## Etapa 5 — concluída
 
 ### Objetivo
 
-Permitir importação local de arquivos JSON `cfm.import.v1` com validação, revisão, confirmação e idempotência — sem alterar a fundação visual.
+Substituir integralmente o contrato provisório da Etapa 4 pelo contrato definitivo `cfm.import.v1`, com persistência idempotente e proteção contra dupla contagem.
 
-### Entregas
+### Contrato oficial (`cfm.import.v1`)
 
-- Rota `#/importar` no grupo Operação.
-- Validação de schema, referências, centavos inteiros e `canonicalFingerprint`.
-- Revisão antes da gravação; confirmação explícita.
-- Idempotência por `sourceImportId` e fingerprint.
-- Integração com Dashboard, Lançamentos e Faturas.
-- Fatura credora com `creditBalanceCents` e status "Credora".
-- Modelo `cfm.local.v2` estendido minimamente (`importMeta`, campos opcionais).
+Campos de entrada: `schemaVersion`, `generatedAt`, `currency`, `incomes`, `cards`, `invoices`, `expenses`.
 
-### Validação
+Sem compatibilidade com o contrato anterior (`source`, `accounts`, `transactions`, etc.).
 
-- `npm run typecheck`, `npm test` (50), `npm run build` — OK.
-- Screenshots em `docs/screenshots-etapa4/` (não versionados).
+### Fluxo da página Importar
+
+1. Selecionar ou arrastar JSON
+2. Validar
+3. Apresentar revisão (contagens, distribuição expense/fee/refund, parcelas, novos/atualizados/existentes/conflitos)
+4. Confirmar importação
+5. Persistir
+6. Mostrar resultado
+
+Nenhum dado é salvo antes da confirmação.
+
+### Regras de persistência
+
+| Entidade | Idempotência | Comportamento |
+|----------|--------------|---------------|
+| `incomes` | `canonicalFingerprint` | Renda recebida (`settled`) |
+| `expenses` diretas | `canonicalFingerprint` | `paid` → liquidada; `pending` → pendente; `refund` reduz líquido; `fee` é despesa |
+| `expenses` de cartão | `canonicalFingerprint` | Com `cardId` + `invoiceId`: `in_invoice`, parcelas preservadas, detalhamento apenas |
+| `cards` | `id` do arquivo | Upsert; preserva issuer, last4, aliasesLast4, closingDay, dueDay |
+| `invoices` | `id` do arquivo | Upsert; valores e status podem atualizar na reimportação; coerência `invoiceTotal + credit = paid + due` |
+
+### Anti dupla contagem
+
+- Receita recebida e despesa direta entram no realizado/comprometido.
+- Compras `in_invoice` não entram nos totais — obrigação vem da fatura (`amountDueCents` / `invoiceTotalCents`).
+- `amountPaidCents` informa liquidação; não cria nova despesa.
+- `creditBalanceCents` reduz obrigação; nunca vira renda.
+
+### Modelo local (`cfm.local.v2`)
+
+Extensões opcionais em `Transaction`, `Card` e `Invoice` (`ledgerStatus`, `expenseKind`, `installment`, `issuer`, `invoiceTotalCents`, etc.). Dados existentes continuam carregando sem migração.
+
+### Validação com arquivo aprovado
+
+`cfm_import_20260710_2107_corrigido.json` (fixture: `src/fixtures/cfm-import-v1-valid.json`):
+
+- 2 incomes, 4 cards, 9 invoices, 328 expenses
+- 309 expense, 13 fee, 6 refund
+- 123 parcelas, 330 fingerprints únicos
+
+### Validação técnica
+
+- `npm run typecheck`, `npm test` (52), `npm run build` — OK.
+- Screenshots em `docs/screenshots-etapa5/` (1440, 768, 390 px).
+
+---
+
+## Etapa 4 — substituída pela Etapa 5
+
+Contrato provisório removido. Ver histórico no git (`feat: add local financial import flow` → `feat: finalize monthly financial importer`).
 
 ---
 
 ## Etapa 3E — concluída
 
-### Objetivo
-
-Acabamento geométrico da fundação visual: alinhamento, espaçamento, eixos, baselines e ritmo vertical/horizontal entre páginas — sem redesign, novas cores, tipografia ou funcionalidades.
-
-### Sistema de espaçamento
-
-Escala consolidada em múltiplos de 4 px via tokens existentes (`--space-1` … `--space-16`):
-
-| Token | Valor | Uso principal |
-|-------|-------|---------------|
-| `--space-2` | 8 px | Label → campo; overline → H1; itens íntimos |
-| `--space-3` | 12 px | Cabeçalho de seção → conteúdo; título → tabela |
-| `--space-4` | 16 px | Padding interno; painéis na mesma coluna |
-| `--space-5` | 20 px | Grupos intermediários; subseções contextuais |
-| `--space-6` | 24 px | Toolbar → listagem; colunas do dashboard |
-| `--space-8` | 32 px | Grandes seções (Ajustes, cards → faturas) |
-
-### Regras de propriedade do gap
-
-- **Página:** gutter, largura máxima, distância header → conteúdo (`page-stack`, `main-content`).
-- **Seção:** distância cabeçalho → conteúdo interno (`section-header`, `list-panel`).
-- **Componente:** padding e gap internos (`panel`, `card-panel`, `toolbar-panel`).
-- **Elementos:** sem margens externas arbitrárias para corrigir fluxo.
-
-### Principais correções
-
-- **Dashboard:** colunas independentes — transações recentes dentro de `dashboard-grid__primary` (elimina faixa vazia sob Ritmo do mês).
-- **Lançamentos:** toolbar separada da listagem (`list-panel`); 24 px entre grupos; contador na baseline do título.
-- **Faturas:** ritmo cards → faturas (32 px); cabeçalhos e tabela com eixos compartilhados.
-- **Ajustes:** ritmo entre seções (32 px); details com padding uniforme; texto com largura de leitura.
-- **Sidebar:** espaçamento previsível entre marca, grupos e rodapé.
-- **Global:** baselines em headers, contadores, toolbars e ações; campos com mesma altura na mesma linha.
-
-### Fundação visual
-
-Etapas 3B–3D estabeleceram identidade, componentes e hierarquia. A Etapa 3E encerra definitivamente a fundação visual. Próximos trabalhos devem avançar o roadmap funcional (Firebase, domínio), não novo reskin nem ajustes cosméticos ad hoc.
-
-### Validação
-
-- Viewports: 1920×1080 a 320×568; zoom 100–200%.
-- `npm run typecheck`, `npm test` (34), `npm run build` — OK.
-- Screenshots em `docs/screenshots-etapa3e/` (não versionados).
-- Playwright executado em diretório temporário fora do repositório (sem alterar manifests).
+Fundação visual encerrada. Identidade, componentes e ritmo geométrico preservados na Etapa 5.
 
 ### Limitações conscientes
 
-Sem rotas Contas/Importação/Balanço; sem limites de cartão, parcelas ou conciliação no schema.
-
-## Projeto legado
-
-Tag `legacy-v0.6.0` (commit `bebde71`).
-
-## Etapas anteriores
-
-- **Etapa 2:** MVP financeiro local.
-- **Etapa 3B–3D:** Identidade, componentes, hierarquia e polimento sistêmico (base desta fundação).
+Sem Firebase; sem rotas novas; sem contas correntes no importador; registros manuais nunca sobrescritos.

@@ -1,173 +1,17 @@
 import { createId, isValidDate, nowIso } from "./finance";
-import {
-  buildCanonicalFingerprint,
-  ensureImportMeta,
-  hasFingerprint,
-  rememberFingerprint,
-} from "./import-fingerprint";
+import { ensureImportMeta, hasFingerprint, rememberFingerprint } from "./import-meta";
 import type {
   ImportCard,
+  ImportExpense,
+  ImportIncome,
   ImportInvoice,
   ImportPayload,
   ImportPlan,
   ImportPlanItem,
   ImportResult,
-  ImportTransaction,
+  ImportReviewSummary,
 } from "./import-types";
-import type { ImportReviewSummary } from "./import-types";
 import type { AppData, Card, Invoice, InvoiceStatus, Transaction } from "./types";
-
-function importId(value: { id: string; externalRef?: string }): string {
-  return value.externalRef?.trim() || value.id.trim();
-}
-
-function isSkippedInvoice(invoice: ImportInvoice): boolean {
-  return Boolean(invoice.isStub || invoice.referenceOnly);
-}
-
-function isCreditInvoice(invoice: ImportInvoice): boolean {
-  const due = invoice.amountDueCents ?? 0;
-  const credit = invoice.creditBalanceCents ?? 0;
-  return due === 0 && credit > 0;
-}
-
-function mapInvoiceStatus(invoice: ImportInvoice): InvoiceStatus {
-  const status = (invoice.status || "").toLowerCase();
-  if (status === "paid" || status === "closed") {
-    return "paid";
-  }
-  return "open";
-}
-
-function mapInvoiceAmountCents(invoice: ImportInvoice): number {
-  if (isCreditInvoice(invoice)) {
-    return 0;
-  }
-  if (invoice.amountDueCents !== undefined) {
-    return invoice.amountDueCents;
-  }
-  return invoice.totalCents ?? 0;
-}
-
-function mapImportCard(card: ImportCard): Omit<Card, "id"> {
-  const timestamp = nowIso();
-  return {
-    name: card.name.trim(),
-    closingDay: card.closingDay ?? null,
-    dueDay: card.dueDay ?? null,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    sourceImportId: importId(card),
-  };
-}
-
-function cardsEqual(existing: Card, mapped: Omit<Card, "id">): boolean {
-  return (
-    existing.name === mapped.name &&
-    existing.closingDay === mapped.closingDay &&
-    existing.dueDay === mapped.dueDay
-  );
-}
-
-function mapImportInvoice(
-  invoice: ImportInvoice,
-  localCardId: string,
-): Omit<Invoice, "id"> {
-  const timestamp = nowIso();
-  const amountDueCents = invoice.amountDueCents ?? (isCreditInvoice(invoice) ? 0 : mapInvoiceAmountCents(invoice));
-  return {
-    cardId: localCardId,
-    competenceMonth: invoice.competenceMonth,
-    amountCents: mapInvoiceAmountCents(invoice),
-    amountDueCents,
-    creditBalanceCents: invoice.creditBalanceCents ?? 0,
-    dueDate: invoice.dueDate && isValidDate(invoice.dueDate) ? invoice.dueDate : `${invoice.competenceMonth}-01`,
-    status: mapInvoiceStatus(invoice),
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    sourceImportId: importId(invoice),
-  };
-}
-
-function invoicesEqual(existing: Invoice, mapped: Omit<Invoice, "id">): boolean {
-  return (
-    existing.cardId === mapped.cardId &&
-    existing.competenceMonth === mapped.competenceMonth &&
-    existing.amountCents === mapped.amountCents &&
-    (existing.amountDueCents ?? existing.amountCents) === (mapped.amountDueCents ?? mapped.amountCents) &&
-    (existing.creditBalanceCents ?? 0) === (mapped.creditBalanceCents ?? 0) &&
-    existing.dueDate === mapped.dueDate &&
-    existing.status === mapped.status
-  );
-}
-
-function shouldImportTransaction(tx: ImportTransaction, payload: ImportPayload): boolean {
-  if (tx.flow === "neutral") {
-    return false;
-  }
-  if (tx.type === "transfer") {
-    return false;
-  }
-  if (tx.type === "credit_card_payment") {
-    return false;
-  }
-  if (tx.invoiceId) {
-    const invoice = (payload.invoices ?? []).find((item) => item.id === tx.invoiceId);
-    if (invoice && isSkippedInvoice(invoice)) {
-      return false;
-    }
-    if (tx.type === "credit_card_purchase") {
-      return false;
-    }
-  }
-  if (tx.flow === "in") {
-    return tx.type === "income" || tx.type === "refund";
-  }
-  if (tx.flow === "out") {
-    return (
-      tx.type === "expense" ||
-      tx.type === "credit_card_purchase" ||
-      tx.type === "fee" ||
-      tx.type === "adjustment"
-    );
-  }
-  return false;
-}
-
-function mapImportTransaction(
-  tx: ImportTransaction,
-  fingerprint: string,
-): Omit<Transaction, "id"> {
-  const timestamp = nowIso();
-  const kind = tx.flow === "in" ? "income" : "expense";
-  const status: Transaction["status"] =
-    tx.type === "income" || tx.type === "refund" ? "settled" : "settled";
-  return {
-    kind,
-    description: tx.description.trim(),
-    amountCents: tx.amountCents,
-    date: tx.date,
-    competenceMonth: tx.competenceMonth,
-    category: (tx.categoryLabel || "importado").trim(),
-    status,
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    sourceImportId: importId(tx),
-    canonicalFingerprint: fingerprint,
-  };
-}
-
-function transactionsEqual(existing: Transaction, mapped: Omit<Transaction, "id">): boolean {
-  return (
-    existing.kind === mapped.kind &&
-    existing.description === mapped.description &&
-    existing.amountCents === mapped.amountCents &&
-    existing.date === mapped.date &&
-    existing.competenceMonth === mapped.competenceMonth &&
-    existing.category === mapped.category &&
-    existing.status === mapped.status
-  );
-}
 
 function isManualRecord<T extends { sourceImportId?: string }>(item: T): boolean {
   return !item.sourceImportId;
@@ -181,12 +25,170 @@ function findInvoiceByImportId(data: AppData, sourceImportId: string): Invoice |
   return data.invoices.find((item) => item.sourceImportId === sourceImportId);
 }
 
-function findTransactionByImportId(data: AppData, sourceImportId: string): Transaction | undefined {
-  return data.transactions.find((item) => item.sourceImportId === sourceImportId);
-}
-
 function findTransactionByFingerprint(data: AppData, fingerprint: string): Transaction | undefined {
   return data.transactions.find((item) => item.canonicalFingerprint === fingerprint);
+}
+
+function mapImportCard(card: ImportCard): Omit<Card, "id"> {
+  const timestamp = nowIso();
+  return {
+    name: card.name.trim(),
+    ...(card.issuer?.trim() ? { issuer: card.issuer.trim() } : {}),
+    ...(card.last4?.trim() ? { last4: card.last4.trim() } : {}),
+    ...(card.aliasesLast4?.length ? { aliasesLast4: [...card.aliasesLast4] } : {}),
+    closingDay: card.closingDay ?? null,
+    dueDay: card.dueDay ?? null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    sourceImportId: card.id,
+  };
+}
+
+function cardsEqual(existing: Card, mapped: Omit<Card, "id">): boolean {
+  const aliasesEqual =
+    JSON.stringify(existing.aliasesLast4 ?? []) === JSON.stringify(mapped.aliasesLast4 ?? []);
+  return (
+    existing.name === mapped.name &&
+    (existing.issuer ?? "") === (mapped.issuer ?? "") &&
+    (existing.last4 ?? "") === (mapped.last4 ?? "") &&
+    aliasesEqual &&
+    existing.closingDay === mapped.closingDay &&
+    existing.dueDay === mapped.dueDay
+  );
+}
+
+function mapInvoiceStatus(status: ImportInvoice["status"]): InvoiceStatus {
+  return status === "paid" ? "paid" : "open";
+}
+
+function resolveInvoiceDueDate(invoice: ImportInvoice): string {
+  if (invoice.dueDate && isValidDate(invoice.dueDate)) {
+    return invoice.dueDate;
+  }
+  if (invoice.closingDate && isValidDate(invoice.closingDate)) {
+    return invoice.closingDate;
+  }
+  return `${invoice.competenceMonth}-01`;
+}
+
+function mapImportInvoice(invoice: ImportInvoice, localCardId: string): Omit<Invoice, "id"> {
+  const timestamp = nowIso();
+  return {
+    cardId: localCardId,
+    competenceMonth: invoice.competenceMonth,
+    amountCents: invoice.invoiceTotalCents,
+    invoiceTotalCents: invoice.invoiceTotalCents,
+    amountPaidCents: invoice.amountPaidCents,
+    amountDueCents: invoice.amountDueCents,
+    creditBalanceCents: invoice.creditBalanceCents,
+    ...(invoice.closingDate ? { closingDate: invoice.closingDate } : {}),
+    dueDate: resolveInvoiceDueDate(invoice),
+    ...(invoice.paymentDate ? { paymentDate: invoice.paymentDate } : {}),
+    ...(invoice.paidFrom ? { paidFrom: invoice.paidFrom } : {}),
+    ...(invoice.asOfDate ? { asOfDate: invoice.asOfDate } : {}),
+    importStatus: invoice.status,
+    status: mapInvoiceStatus(invoice.status),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    sourceImportId: invoice.id,
+  };
+}
+
+function invoicesEqual(existing: Invoice, mapped: Omit<Invoice, "id">): boolean {
+  return (
+    existing.cardId === mapped.cardId &&
+    existing.competenceMonth === mapped.competenceMonth &&
+    existing.amountCents === mapped.amountCents &&
+    (existing.invoiceTotalCents ?? existing.amountCents) ===
+      (mapped.invoiceTotalCents ?? mapped.amountCents) &&
+    (existing.amountPaidCents ?? 0) === (mapped.amountPaidCents ?? 0) &&
+    (existing.amountDueCents ?? existing.amountCents) ===
+      (mapped.amountDueCents ?? mapped.amountCents) &&
+    (existing.creditBalanceCents ?? 0) === (mapped.creditBalanceCents ?? 0) &&
+    existing.dueDate === mapped.dueDate &&
+    existing.status === mapped.status &&
+    (existing.importStatus ?? "") === (mapped.importStatus ?? "") &&
+    (existing.closingDate ?? "") === (mapped.closingDate ?? "") &&
+    (existing.paymentDate ?? "") === (mapped.paymentDate ?? "") &&
+    (existing.paidFrom ?? "") === (mapped.paidFrom ?? "") &&
+    (existing.asOfDate ?? "") === (mapped.asOfDate ?? "")
+  );
+}
+
+function mapImportIncome(income: ImportIncome): Omit<Transaction, "id"> {
+  const timestamp = nowIso();
+  return {
+    kind: "income",
+    description: income.description.trim(),
+    amountCents: income.amountCents,
+    date: income.receivedDate,
+    competenceMonth: income.competenceMonth,
+    category: "Renda",
+    status: "settled",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    sourceImportId: income.id,
+    canonicalFingerprint: income.canonicalFingerprint,
+    ...(income.sourceRecordId ? { sourceRecordId: income.sourceRecordId } : {}),
+  };
+}
+
+function mapImportExpense(
+  expense: ImportExpense,
+  localCardId?: string,
+  localInvoiceId?: string,
+): Omit<Transaction, "id"> {
+  const timestamp = nowIso();
+  return {
+    kind: "expense",
+    description: expense.description.trim(),
+    amountCents: expense.amountCents,
+    date: expense.date,
+    competenceMonth: expense.competenceMonth,
+    category: expense.category.trim(),
+    status: expense.status === "pending" ? "pending" : "settled",
+    expenseKind: expense.kind,
+    ledgerStatus: expense.status,
+    ...(expense.installment ? { installment: { ...expense.installment } } : {}),
+    ...(localCardId ? { cardId: localCardId } : {}),
+    ...(localInvoiceId ? { invoiceId: localInvoiceId } : {}),
+    ...(expense.paymentDate ? { paymentDate: expense.paymentDate } : {}),
+    ...(expense.sourceRecordId ? { sourceRecordId: expense.sourceRecordId } : {}),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    sourceImportId: expense.id,
+    canonicalFingerprint: expense.canonicalFingerprint,
+  };
+}
+
+function ledgerRecordsEqual(
+  existing: Transaction,
+  mapped: Omit<Transaction, "id">,
+): boolean {
+  return (
+    existing.kind === mapped.kind &&
+    existing.description === mapped.description &&
+    existing.amountCents === mapped.amountCents &&
+    existing.date === mapped.date &&
+    existing.competenceMonth === mapped.competenceMonth &&
+    existing.category === mapped.category &&
+    existing.status === mapped.status &&
+    (existing.expenseKind ?? "expense") === (mapped.expenseKind ?? "expense") &&
+    (existing.ledgerStatus ?? "") === (mapped.ledgerStatus ?? "") &&
+    JSON.stringify(existing.installment ?? null) === JSON.stringify(mapped.installment ?? null) &&
+    (existing.cardId ?? "") === (mapped.cardId ?? "") &&
+    (existing.invoiceId ?? "") === (mapped.invoiceId ?? "") &&
+    (existing.sourceRecordId ?? "") === (mapped.sourceRecordId ?? "")
+  );
+}
+
+function summarizePlan(items: ImportPlanItem[]): ImportReviewSummary["planCounts"] {
+  return {
+    new: items.filter((item) => item.action === "create").length,
+    updated: items.filter((item) => item.action === "updated").length,
+    existing: items.filter((item) => item.action === "existing").length,
+    conflicts: items.filter((item) => item.action === "conflict").length,
+  };
 }
 
 export function buildImportPlan(
@@ -197,56 +199,49 @@ export function buildImportPlan(
   const items: ImportPlanItem[] = [];
   const cardIdMap = new Map<string, string>();
   const cardActions = new Map<string, ImportPlanItem["action"]>();
-  const context = {
-    institution: payload.source.institution,
-    documentType: payload.source.documentType,
-  };
 
-  for (const card of payload.cards ?? []) {
-    const sid = importId(card);
+  for (const card of payload.cards) {
     const mapped = mapImportCard(card);
-    const existing = findCardByImportId(data, sid);
+    const existing = findCardByImportId(data, card.id);
     if (existing) {
       cardIdMap.set(card.id, existing.id);
-      if (cardsEqual(existing, mapped)) {
-        const action = "existing";
-        cardActions.set(card.id, action);
-        items.push({
-          entity: "card",
-          importId: sid,
-          label: card.name,
-          action,
-        });
-      } else if (isManualRecord(existing)) {
+      if (isManualRecord(existing)) {
         const action = "conflict";
         cardActions.set(card.id, action);
         items.push({
           entity: "card",
-          importId: sid,
+          importId: card.id,
           label: card.name,
           action,
           reason: "Cartão manual com identificador conflitante.",
         });
-      } else {
-        const action = "conflict";
+      } else if (cardsEqual(existing, mapped)) {
+        const action = "existing";
         cardActions.set(card.id, action);
         items.push({
           entity: "card",
-          importId: sid,
+          importId: card.id,
           label: card.name,
           action,
-          reason: "Cartão importado com dados divergentes.",
+        });
+      } else {
+        const action = "updated";
+        cardActions.set(card.id, action);
+        items.push({
+          entity: "card",
+          importId: card.id,
+          label: card.name,
+          action,
         });
       }
       continue;
     }
-    const action = "create";
-    cardActions.set(card.id, action);
+    cardActions.set(card.id, "create");
     items.push({
       entity: "card",
-      importId: sid,
+      importId: card.id,
       label: card.name,
-      action,
+      action: "create",
     });
   }
 
@@ -255,27 +250,19 @@ export function buildImportPlan(
     if (mapped) {
       return mapped;
     }
-    const importCard = (payload.cards ?? []).find((item) => item.id === importCardId);
-    if (!importCard) {
-      return undefined;
-    }
     if (cardActions.get(importCardId) === "create") {
       return `__pending__:${importCardId}`;
     }
     return undefined;
   }
 
-  for (const invoice of payload.invoices ?? []) {
-    if (isSkippedInvoice(invoice)) {
-      continue;
-    }
-    const sid = importId(invoice);
+  for (const invoice of payload.invoices) {
     const cardRef = resolveImportCardId(invoice.cardId);
     const cardAction = cardActions.get(invoice.cardId);
     if (!cardRef || cardAction === "conflict") {
       items.push({
         entity: "invoice",
-        importId: sid,
+        importId: invoice.id,
         label: `Fatura ${invoice.competenceMonth}`,
         action: "conflict",
         reason: !cardRef ? "Cartão da fatura não encontrado." : "Cartão em conflito.",
@@ -287,124 +274,164 @@ export function buildImportPlan(
       ? cardRef.replace("__pending__:", "")
       : cardRef;
     const mapped = mapImportInvoice(invoice, placeholderCardId);
-    const existing = findInvoiceByImportId(data, sid);
+    const existing = findInvoiceByImportId(data, invoice.id);
     if (existing) {
-      if (invoicesEqual(existing, { ...mapped, cardId: existing.cardId })) {
+      if (isManualRecord(existing)) {
         items.push({
           entity: "invoice",
-          importId: sid,
-          label: `Fatura ${invoice.competenceMonth}`,
-          action: "existing",
-        });
-      } else if (isManualRecord(existing)) {
-        items.push({
-          entity: "invoice",
-          importId: sid,
+          importId: invoice.id,
           label: `Fatura ${invoice.competenceMonth}`,
           action: "conflict",
           reason: "Fatura manual não será sobrescrita.",
         });
+      } else if (invoicesEqual(existing, { ...mapped, cardId: existing.cardId })) {
+        items.push({
+          entity: "invoice",
+          importId: invoice.id,
+          label: `Fatura ${invoice.competenceMonth}`,
+          action: "existing",
+        });
       } else {
         items.push({
           entity: "invoice",
-          importId: sid,
+          importId: invoice.id,
           label: `Fatura ${invoice.competenceMonth}`,
-          action: "conflict",
-          reason: "Fatura importada com dados divergentes.",
+          action: "updated",
         });
       }
       continue;
     }
     items.push({
       entity: "invoice",
-      importId: sid,
+      importId: invoice.id,
       label: `Fatura ${invoice.competenceMonth}`,
       action: "create",
     });
   }
 
-  for (const tx of payload.transactions ?? []) {
-    if (!shouldImportTransaction(tx, payload)) {
-      continue;
-    }
-    const sid = importId(tx);
-    const fingerprint = buildCanonicalFingerprint(tx, context);
-    const mapped = mapImportTransaction(tx, fingerprint);
-    const byImportId = findTransactionByImportId(data, sid);
-    const byFingerprint =
-      fingerprint.length > 0 ? findTransactionByFingerprint(data, fingerprint) : undefined;
-
-    if (byImportId) {
-      if (transactionsEqual(byImportId, mapped)) {
+  for (const income of payload.incomes) {
+    const mapped = mapImportIncome(income);
+    const byFingerprint = findTransactionByFingerprint(data, income.canonicalFingerprint);
+    if (byFingerprint) {
+      if (ledgerRecordsEqual(byFingerprint, mapped)) {
         items.push({
-          entity: "transaction",
-          importId: sid,
-          label: tx.description,
+          entity: "income",
+          importId: income.id,
+          label: income.description,
           action: "existing",
         });
-      } else if (isManualRecord(byImportId)) {
+      } else if (isManualRecord(byFingerprint)) {
         items.push({
-          entity: "transaction",
-          importId: sid,
-          label: tx.description,
+          entity: "income",
+          importId: income.id,
+          label: income.description,
           action: "conflict",
-          reason: "Lançamento manual não será sobrescrito.",
+          reason: "Renda manual não será sobrescrita.",
         });
       } else {
         items.push({
-          entity: "transaction",
-          importId: sid,
-          label: tx.description,
+          entity: "income",
+          importId: income.id,
+          label: income.description,
           action: "conflict",
-          reason: "Lançamento importado com dados divergentes.",
+          reason: "Renda importada com dados divergentes.",
         });
       }
       continue;
     }
-
-    if (byFingerprint || hasFingerprint(data, fingerprint)) {
+    if (hasFingerprint(data, income.canonicalFingerprint)) {
       items.push({
-        entity: "transaction",
-        importId: sid,
-        label: tx.description,
+        entity: "income",
+        importId: income.id,
+        label: income.description,
         action: "existing",
         reason: "Fingerprint já importado.",
       });
       continue;
     }
-
-    const probableManual = data.transactions.find((existing) => {
-      if (!isManualRecord(existing)) {
-        return false;
-      }
-      return (
-        existing.amountCents === mapped.amountCents &&
-        existing.description.trim().toLowerCase() === mapped.description.trim().toLowerCase() &&
-        existing.date !== mapped.date
-      );
-    });
-    if (probableManual) {
-      items.push({
-        entity: "transaction",
-        importId: sid,
-        label: tx.description,
-        action: "conflict",
-        reason: "Possível correspondência incerta com lançamento manual.",
-      });
-      continue;
-    }
-
     items.push({
-      entity: "transaction",
-      importId: sid,
-      label: tx.description,
+      entity: "income",
+      importId: income.id,
+      label: income.description,
       action: "create",
     });
   }
 
+  for (const expense of payload.expenses) {
+    const localCardId = expense.cardId ? resolveImportCardId(expense.cardId) : undefined;
+    const existingInvoice = expense.invoiceId
+      ? findInvoiceByImportId(data, expense.invoiceId)
+      : undefined;
+    const localInvoiceId = existingInvoice?.id;
+    const mapped = mapImportExpense(
+      expense,
+      localCardId && !localCardId.startsWith("__pending__") ? localCardId : undefined,
+      localInvoiceId,
+    );
+    const byFingerprint = findTransactionByFingerprint(data, expense.canonicalFingerprint);
+    if (byFingerprint) {
+      if (ledgerRecordsEqual(byFingerprint, mapped)) {
+        items.push({
+          entity: "expense",
+          importId: expense.id,
+          label: expense.description,
+          action: "existing",
+        });
+      } else if (isManualRecord(byFingerprint)) {
+        items.push({
+          entity: "expense",
+          importId: expense.id,
+          label: expense.description,
+          action: "conflict",
+          reason: "Despesa manual não será sobrescrita.",
+        });
+      } else {
+        items.push({
+          entity: "expense",
+          importId: expense.id,
+          label: expense.description,
+          action: "conflict",
+          reason: "Despesa importada com dados divergentes.",
+        });
+      }
+      continue;
+    }
+    if (hasFingerprint(data, expense.canonicalFingerprint)) {
+      items.push({
+        entity: "expense",
+        importId: expense.id,
+        label: expense.description,
+        action: "existing",
+        reason: "Fingerprint já importado.",
+      });
+      continue;
+    }
+    if (expense.invoiceId && cardActions.get(expense.cardId ?? "") === "conflict") {
+      items.push({
+        entity: "expense",
+        importId: expense.id,
+        label: expense.description,
+        action: "conflict",
+        reason: "Cartão em conflito.",
+      });
+      continue;
+    }
+    items.push({
+      entity: "expense",
+      importId: expense.id,
+      label: expense.description,
+      action: "create",
+    });
+  }
+
+  const planCounts = summarizePlan(items);
+
   return {
     payload,
-    summary,
+    summary: {
+      ...summary,
+      planCounts,
+    },
     items,
     canImport: summary.errors.length === 0,
   };
@@ -425,15 +452,12 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
   ensureImportMeta(data);
   const payload = plan.payload;
   const cardIdMap = new Map<string, string>();
+  const invoiceIdMap = new Map<string, string>();
   const resultItems: ImportPlanItem[] = [];
   let created = 0;
   let existing = 0;
   let updated = 0;
   let conflicts = 0;
-  const context = {
-    institution: payload.source.institution,
-    documentType: payload.source.documentType,
-  };
 
   const nextData: AppData = {
     ...data,
@@ -445,19 +469,25 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
     },
   };
 
-  for (const card of payload.cards ?? []) {
-    const sid = importId(card);
-    const planItem = plan.items.find((item) => item.entity === "card" && item.importId === sid);
+  for (const card of payload.cards) {
+    const planItem = plan.items.find(
+      (item) => item.entity === "card" && item.importId === card.id,
+    );
     if (!planItem) {
       continue;
     }
     const mapped = mapImportCard(card);
-    const current = findCardByImportId(nextData, sid);
+    const current = findCardByImportId(nextData, card.id);
     if (planItem.action === "create") {
       const localId = createId();
       nextData.cards.push({ id: localId, ...mapped });
       cardIdMap.set(card.id, localId);
       created += 1;
+      resultItems.push(planItem);
+    } else if (planItem.action === "updated" && current && !isManualRecord(current)) {
+      Object.assign(current, { ...mapped, id: current.id, createdAt: current.createdAt });
+      cardIdMap.set(card.id, current.id);
+      updated += 1;
       resultItems.push(planItem);
     } else if (planItem.action === "existing" && current) {
       cardIdMap.set(card.id, current.id);
@@ -472,30 +502,60 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
     }
   }
 
-  for (const invoice of payload.invoices ?? []) {
-    if (isSkippedInvoice(invoice)) {
-      continue;
-    }
-    const sid = importId(invoice);
-    const planItem = plan.items.find((item) => item.entity === "invoice" && item.importId === sid);
+  for (const invoice of payload.invoices) {
+    const planItem = plan.items.find(
+      (item) => item.entity === "invoice" && item.importId === invoice.id,
+    );
     if (!planItem) {
       continue;
     }
-    const importCard = (payload.cards ?? []).find((item) => item.id === invoice.cardId);
     const localCardId =
-      cardIdMap.get(invoice.cardId) ??
-      (importCard ? findCardByImportId(nextData, importId(importCard))?.id : undefined);
+      cardIdMap.get(invoice.cardId) ?? findCardByImportId(nextData, invoice.cardId)?.id;
     if (!localCardId) {
       conflicts += 1;
       continue;
     }
     const mapped = mapImportInvoice(invoice, localCardId);
-    const current = findInvoiceByImportId(nextData, sid);
+    const current = findInvoiceByImportId(nextData, invoice.id);
     if (planItem.action === "create") {
-      nextData.invoices.push({ id: createId(), ...mapped });
+      const localId = createId();
+      nextData.invoices.push({ id: localId, ...mapped });
+      invoiceIdMap.set(invoice.id, localId);
       created += 1;
       resultItems.push(planItem);
+    } else if (planItem.action === "updated" && current && !isManualRecord(current)) {
+      Object.assign(current, { ...mapped, id: current.id, createdAt: current.createdAt });
+      invoiceIdMap.set(invoice.id, current.id);
+      updated += 1;
+      resultItems.push(planItem);
     } else if (planItem.action === "existing" && current) {
+      invoiceIdMap.set(invoice.id, current.id);
+      existing += 1;
+      resultItems.push(planItem);
+    } else {
+      conflicts += 1;
+      resultItems.push(planItem);
+      if (current) {
+        invoiceIdMap.set(invoice.id, current.id);
+      }
+    }
+  }
+
+  for (const income of payload.incomes) {
+    const planItem = plan.items.find(
+      (item) => item.entity === "income" && item.importId === income.id,
+    );
+    if (!planItem) {
+      continue;
+    }
+    const mapped = mapImportIncome(income);
+    const current = findTransactionByFingerprint(nextData, income.canonicalFingerprint);
+    if (planItem.action === "create") {
+      nextData.transactions.push({ id: createId(), ...mapped });
+      rememberFingerprint(nextData, income.canonicalFingerprint);
+      created += 1;
+      resultItems.push(planItem);
+    } else if (planItem.action === "existing" || current || hasFingerprint(nextData, income.canonicalFingerprint)) {
       existing += 1;
       resultItems.push(planItem);
     } else {
@@ -504,30 +564,28 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
     }
   }
 
-  for (const tx of payload.transactions ?? []) {
-    if (!shouldImportTransaction(tx, payload)) {
-      continue;
-    }
-    const sid = importId(tx);
+  for (const expense of payload.expenses) {
     const planItem = plan.items.find(
-      (item) => item.entity === "transaction" && item.importId === sid,
+      (item) => item.entity === "expense" && item.importId === expense.id,
     );
     if (!planItem) {
       continue;
     }
-    const fingerprint = buildCanonicalFingerprint(tx, context);
-    const mapped = mapImportTransaction(tx, fingerprint);
-    const currentById = findTransactionByImportId(nextData, sid);
-    const currentByFingerprint = fingerprint
-      ? findTransactionByFingerprint(nextData, fingerprint)
+    const localCardId = expense.cardId
+      ? (cardIdMap.get(expense.cardId) ?? findCardByImportId(nextData, expense.cardId)?.id)
       : undefined;
-
+    const localInvoiceId = expense.invoiceId
+      ? (invoiceIdMap.get(expense.invoiceId) ??
+        findInvoiceByImportId(nextData, expense.invoiceId)?.id)
+      : undefined;
+    const mapped = mapImportExpense(expense, localCardId, localInvoiceId);
+    const current = findTransactionByFingerprint(nextData, expense.canonicalFingerprint);
     if (planItem.action === "create") {
       nextData.transactions.push({ id: createId(), ...mapped });
-      rememberFingerprint(nextData, fingerprint);
+      rememberFingerprint(nextData, expense.canonicalFingerprint);
       created += 1;
       resultItems.push(planItem);
-    } else if (planItem.action === "existing" || currentById || currentByFingerprint || hasFingerprint(nextData, fingerprint)) {
+    } else if (planItem.action === "existing" || current || hasFingerprint(nextData, expense.canonicalFingerprint)) {
       existing += 1;
       resultItems.push(planItem);
     } else {

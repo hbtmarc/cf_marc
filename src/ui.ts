@@ -291,8 +291,9 @@ export function transactionRowHtml(input: {
   amountCents: number;
   kind: "income" | "expense";
   status: "pending" | "settled";
+  ledgerStatus?: "paid" | "pending" | "in_invoice";
 }): string {
-  const statusLabel = transactionStatusLabel(input.kind, input.status);
+  const statusLabel = transactionStatusLabel(input.kind, input.status, input.ledgerStatus);
   const variant = input.kind === "income" ? "income" : "expense";
   const statusVariant =
     input.status === "settled" ? "success" : "warning";
