@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "cfm.import.v1",
+  "generatedAt": "2026-05-15T10:00:00-03:00",
+  "currency": "BRL",
+  "incomes": [
+    {
+      "id": "inc_projection_demo",
+      "competenceMonth": "2026-05",
+      "receivedDate": "2026-05-05",
+      "description": "Renda demo projeções",
+      "amountCents": 300000,
+      "canonicalFingerprint": "income|projection|2026-05-05|300000|renda",
+      "sourceType": "payroll"
+    }
+  ],
+  "cards": [
+    {
+      "id": "card_projection",
+      "name": "Cartão Projeção",
+      "issuer": "Banco Demo",
+      "last4": "9090",
+      "closingDay": 12,
+      "dueDay": 20
+    }
+  ],
+  "invoices": [
+    {
+      "id": "inv_projection_may",
+      "cardId": "card_projection",
+      "competenceMonth": "2026-05",
+      "status": "paid",
+      "invoiceTotalCents": 20000,
+      "amountPaidCents": 20000,
+      "amountDueCents": 0,
+      "creditBalanceCents": 0,
+      "dueDate": "2026-05-20",
+      "sourceType": "card_statement"
+    },
+    {
+      "id": "inv_projection_jun",
+      "cardId": "card_projection",
+      "competenceMonth": "2026-06",
+      "status": "open",
+      "invoiceTotalCents": 50000,
+      "amountPaidCents": 0,
+      "amountDueCents": 50000,
+      "creditBalanceCents": 0,
+      "dueDate": "2026-06-20",
+      "asOfDate": "2026-06-12",
+      "sourceType": "card_statement"
+    }
+  ],
+  "expenses": [
+    {
+      "id": "exp_projection_2_6",
+      "competenceMonth": "2026-05",
+      "date": "2026-05-10",
+      "description": "Eletrônicos parcelado demo",
+      "amountCents": 15000,
+      "category": "Eletrônicos",
+      "kind": "expense",
+      "status": "in_invoice",
+      "cardId": "card_projection",
+      "invoiceId": "inv_projection_may",
+      "installment": { "current": 2, "total": 6 },
+      "canonicalFingerprint": "expense|projection|2026-05-10|15000|eletronicos",
+      "sourceType": "card_purchase",
+      "paymentMethod": "credit_card",
+      "paymentLabel": "Cartão Projeção"
+    }
+  ]
+}

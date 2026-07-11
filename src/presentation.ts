@@ -17,6 +17,12 @@ import {
   transactionStatusLabel,
   transactionDisplayedAmountCents,
 } from "./finance";
+import {
+  projectedInstallmentCentsForMonth,
+  projectedInstallmentsForMonth,
+  PROJECTED_STATUS_LABEL,
+  type ProjectedInstallment,
+} from "./installments";
 import type {
   AppData,
   Card,
@@ -36,6 +42,12 @@ import {
 } from "./text";
 
 export type BalanceTone = "positive" | "negative" | "neutral";
+
+export interface DashboardProjectedInstallments {
+  totalCents: number;
+  count: number;
+  byCard: Array<{ cardId: string; cardName: string; totalCents: number; count: number }>;
+}
 
 export interface DashboardProjection {
   realizedCents: number;
@@ -83,6 +95,7 @@ export interface DashboardContext {
   upcoming: DashboardUpcomingItem[];
   attention: DashboardAttentionItem[];
   hasMovement: boolean;
+  projectedInstallments: DashboardProjectedInstallments | null;
 }
 
 export function balanceTone(cents: number): BalanceTone {
@@ -165,6 +178,8 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
       .filter((item) => item.status === "open" || item.status === "partial")
       .map((item) => invoiceDebtCents(item)),
   );
+  const projectedInstallmentsCents = projectedInstallmentCentsForMonth(data, competenceMonth);
+  const projectedItems = projectedInstallmentsForMonth(data, competenceMonth);
 
   const projection: DashboardProjection = {
     realizedCents: summary.balanceRealizedCents,
@@ -173,6 +188,29 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
     openInvoicesCents,
     projectedCents: summary.balancePlannedCents,
   };
+
+  const projectedByCard = new Map<string, { totalCents: number; count: number }>();
+  for (const item of projectedItems) {
+    const current = projectedByCard.get(item.cardId) ?? { totalCents: 0, count: 0 };
+    current.totalCents += item.amountCents;
+    current.count += 1;
+    projectedByCard.set(item.cardId, current);
+  }
+  const projectedInstallments: DashboardProjectedInstallments | null =
+    projectedItems.length > 0
+      ? {
+          totalCents: projectedInstallmentsCents,
+          count: projectedItems.length,
+          byCard: [...projectedByCard.entries()]
+            .map(([cardId, stats]) => ({
+              cardId,
+              cardName: data.cards.find((card) => card.id === cardId)?.name ?? "Cartão removido",
+              totalCents: stats.totalCents,
+              count: stats.count,
+            }))
+            .sort((a, b) => b.totalCents - a.totalCents),
+        }
+      : null;
 
   const daysInMonth = daysInCompetenceMonth(competenceMonth);
   const daysElapsed = daysElapsedInCompetence(competenceMonth);
@@ -280,7 +318,8 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
     rhythm,
     upcoming,
     attention,
-    hasMovement: transactions.length > 0 || invoices.length > 0,
+    hasMovement: transactions.length > 0 || invoices.length > 0 || projectedItems.length > 0,
+    projectedInstallments,
   };
 }
 
@@ -289,7 +328,8 @@ export function renderSituationPanel(ctx: DashboardContext): string {
   const committed =
     ctx.summary.incomePendingCents +
     ctx.projection.pendingExpenseTxCents +
-    ctx.projection.openInvoicesCents;
+    ctx.projection.openInvoicesCents +
+    (ctx.projectedInstallments?.totalCents ?? 0);
   return `
     <section class="panel panel--situation" aria-labelledby="situation-title">
       <header class="panel__header">
@@ -376,6 +416,50 @@ export function renderProjectionPanel(ctx: DashboardContext): string {
             <span class="projection-breakdown__value">${renderMoney(ctx.projection.projectedCents)}</span>
           </li>
         </ol>
+      </div>
+    </section>
+  `;
+}
+
+export function renderProjectedInstallmentsPanel(
+  projected: DashboardProjectedInstallments | null,
+): string {
+  if (!projected || projected.count === 0) {
+    return "";
+  }
+
+  const visibleCards = projected.byCard.slice(0, 5);
+  const hiddenCount = projected.byCard.length - visibleCards.length;
+
+  return `
+    <section class="panel panel--projected-installments" aria-labelledby="projected-installments-title">
+      <header class="panel__header">
+        <div>
+          <p class="text-overline" id="projected-installments-title">Parcelas projetadas</p>
+          <p class="panel__context">${escapeHtml(formatTransactionCount(projected.count))} · ${escapeHtml(formatCentsToBRL(projected.totalCents))}</p>
+        </div>
+      </header>
+      <div class="panel__body">
+        <ul class="projected-installments-list">
+          ${visibleCards
+            .map(
+              (card) => `
+            <li class="projected-installments-list__item">
+              <span class="projected-installments-list__label">${escapeHtml(card.cardName)}</span>
+              <span class="projected-installments-list__meta">${escapeHtml(formatTransactionCount(card.count))}</span>
+              <span class="projected-installments-list__value money money--negative">${escapeHtml(formatCentsToBRL(card.totalCents))}</span>
+            </li>`,
+            )
+            .join("")}
+        </ul>
+        ${
+          hiddenCount > 0
+            ? `<p class="projected-installments-list__more">${escapeHtml(formatCardCount(hiddenCount))} adicionais não exibidos.</p>`
+            : ""
+        }
+        <div class="panel__actions">
+          <a class="btn btn--secondary btn--compact" href="#/lancamentos">Ver lançamentos</a>
+        </div>
       </div>
     </section>
   `;
@@ -719,6 +803,36 @@ export function renderTransactionTableRow(
   `;
 }
 
+export function renderProjectedInstallmentRow(
+  item: ProjectedInstallment,
+  tableId: string = TABLE_IDS.lancamentos,
+): string {
+  const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
+  const installmentLabel = ` <span class="data-table__meta">${item.installment.current}/${item.installment.total}</span>`;
+
+  return `
+    <tr class="cfm-table__row--projected" data-projected-id="${escapeHtml(item.id)}">
+      <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatCompetenceLabel(item.competenceMonth))}</td>
+      <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
+        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>${installmentLabel}
+      </td>
+      <td class="cfm-table__cell--category" ${h("category")} data-label="Categoria">${escapeHtml(item.category)}</td>
+      <td class="cfm-table__cell--type" ${h("type")} data-label="Tipo">
+        <span class="type-chip type-chip--expense">Despesa</span>
+      </td>
+      <td class="cfm-table__cell--status" ${h("status")} data-label="Status">
+        <span class="status-chip status-chip--projected">${escapeHtml(PROJECTED_STATUS_LABEL.toUpperCase())}</span>
+      </td>
+      <td class="cfm-table__cell--amount" ${h("amount")} data-label="Valor">
+        ${renderMoney(-item.amountCents)}
+      </td>
+      <td class="cfm-table__cell--actions" ${h("actions")} data-label="Ações">
+        <span class="sr-only">Sem ações disponíveis para parcela projetada</span>
+      </td>
+    </tr>
+  `;
+}
+
 export function renderNominalMoney(
   cents: number,
   variant: "neutral" | "positive" | "negative" = "neutral",
@@ -1028,6 +1142,7 @@ export function renderFinanceSynthesis(summary: CompetenceSummary): string {
       upcoming: [],
       attention: [],
       hasMovement: true,
+      projectedInstallments: null,
     },
   );
 }

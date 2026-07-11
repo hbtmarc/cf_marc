@@ -937,6 +937,61 @@ body.modal-open {
   color: var(--color-text-secondary);
 }
 
+.status-chip--projected {
+  background: color-mix(in srgb, var(--color-action) 12%, var(--color-surface-raised));
+  color: var(--color-action);
+  border: 1px dashed color-mix(in srgb, var(--color-action) 35%, transparent);
+}
+
+.cfm-table__row--projected {
+  background: color-mix(in srgb, var(--color-action) 4%, var(--color-surface-raised));
+}
+
+.cfm-table__row--projected .data-table__primary {
+  font-style: italic;
+}
+
+.panel--projected-installments .panel__actions {
+  margin-top: var(--space-3);
+}
+
+.projected-installments-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.projected-installments-list__item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--space-2) var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.projected-installments-list__item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.projected-installments-list__label {
+  font-weight: var(--weight-semibold);
+}
+
+.projected-installments-list__meta {
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+}
+
+.projected-installments-list__more {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+}
+
 /* ── Buttons ─────────────────────────────────────────────── */
 
 .btn {

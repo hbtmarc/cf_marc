@@ -1,8 +1,39 @@
 # Status do Projeto
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
-**Última atualização:** 10 de julho de 2026  
-**Etapa atual:** Etapa 6 — Ordenação global das tabelas
+**Última atualização:** 11 de julho de 2026  
+**Etapa atual:** Etapa 7 — Projeção de parcelas futuras
+
+---
+
+## Etapa 7 — concluída
+
+### Motor derivado de parcelas
+
+Projeções são calculadas **em memória** a partir de compras parceladas já observadas (`kind: expense`, `ledgerStatus: in_invoice`, parcela válida, `cardId` definido). Não há persistência em `AppData`, nem alteração do schema `cfm.local.v2` ou do contrato `cfm.import.v1`.
+
+**Geração:** a partir da observação mais recente de cada assinatura (`cardId` + descrição normalizada + `amountCents` + `installment.total`), usa o maior `installment.current` da competência mais recente e projeta parcelas `current+1 … total` com `shiftCompetenceMonth()` sobre a competência de origem.
+
+**Continuidade entre competências:** observações anteriores da mesma assinatura são ignoradas (ex.: 5/12 em junho + 6/12 em julho → projeta a partir de 6/12). Compras distintas na mesma competência são preservadas quando têm `canonicalFingerprint` diferente.
+
+**Prioridade da fatura real:** se já existir fatura real para o cartão na competência alvo, as parcelas projetadas daquele cartão **não entram** no comprometido nem são exibidas em Lançamentos — evita dupla contagem com a fatura oficial.
+
+**Impacto financeiro (mês sem fatura para o cartão):** parcelas projetadas compõem `expensePendingCents`, afetam `expensePlannedCents` e `balancePlannedCents`. Não alteram `expensePaidCents` nem `balanceRealizedCents`.
+
+**IDs determinísticos:** `projected:<sourceTransactionId>:<installmentNumber>`.
+
+### UI
+
+- **Lançamentos:** combina reais + projeções; badge `PROJETADA`; filtro de status `Projetado`; sem editar/excluir.
+- **Dashboard:** painel compacto **Parcelas projetadas** (subtotal, quantidade, agrupamento por cartão, link para Lançamentos).
+
+Fixture sintética de capturas: `src/fixtures/cfm-import-v1-projections.json`. Screenshots: `docs/screenshots-etapa7/`.
+
+### Limitações do MVP
+
+- Assinatura heurística (descrição + valor + total) pode agrupar compras distintas se importadas sem fingerprints diferentes.
+- Não cobre despesas fixas/recorrentes nem gera faturas futuras.
+- Não permite editar projeções manualmente.
 
 ---
 

@@ -3,6 +3,13 @@ import {
   transactionDisplayedAmountCents,
   transactionStatusLabel,
 } from "../finance";
+import {
+  isProjectedInstallmentRow,
+  lancamentoRowStatusLabel,
+  LANCAMENTOS_STATUS_SORT_ORDER,
+  projectedInstallmentsForMonth,
+  type LancamentoRow,
+} from "../installments";
 import type { AppData, Transaction } from "../types";
 import type { AppMutations } from "../forms";
 import {
@@ -15,15 +22,14 @@ import {
   renderEmptyState,
   renderFilterChip,
   renderLancamentosTableHead,
+  renderProjectedInstallmentRow,
   renderSectionHeader,
   renderTransactionTableRow,
-  sectionTotal,
   transactionTypeLabel,
 } from "../presentation";
 import {
   sortTableItems,
   toggleTableSort,
-  TRANSACTION_STATUS_SORT_ORDER,
   type SortColumnAccessor,
   type TableSortState,
 } from "../table-sort";
@@ -31,7 +37,7 @@ import { bindTableSortControls, renderMobileSortControl, type SortableColumnOpti
 import { announce, createRowMenu, el, escapeHtml, openConfirmModal } from "../ui";
 
 type KindFilter = "all" | "income" | "expense" | "fee" | "refund";
-type StatusFilter = "all" | "pending" | "settled";
+type StatusFilter = "all" | "pending" | "settled" | "projected";
 
 export type LancamentosSortColumn =
   | "date"
@@ -59,6 +65,43 @@ export const LANCAMENTOS_SORT_COLUMNS: SortableColumnOption<LancamentosSortColum
   { id: "amount", label: "Valor" },
 ];
 
+export const lancamentosRowSortAccessors: Record<
+  LancamentosSortColumn,
+  SortColumnAccessor<LancamentoRow>
+> = {
+  date: {
+    kind: "date",
+    getValue: (row) =>
+      row.rowKind === "projected" ? `${row.data.competenceMonth}-01` : row.data.date,
+  },
+  description: {
+    kind: "text",
+    getValue: (row) => row.data.description,
+  },
+  category: {
+    kind: "text",
+    getValue: (row) => row.data.category,
+  },
+  type: {
+    kind: "text",
+    getValue: (row) =>
+      row.rowKind === "projected" ? "Despesa" : transactionTypeLabel(row.data),
+  },
+  status: {
+    kind: "status",
+    getValue: (row) => lancamentoRowStatusLabel(row),
+    statusOrder: LANCAMENTOS_STATUS_SORT_ORDER,
+  },
+  amount: {
+    kind: "number",
+    getValue: (row) =>
+      row.rowKind === "projected"
+        ? -row.data.amountCents
+        : transactionDisplayedAmountCents(row.data),
+  },
+};
+
+/** @deprecated Use lancamentosRowSortAccessors in new code paths. */
 export const lancamentosSortAccessors: Record<
   LancamentosSortColumn,
   SortColumnAccessor<Transaction>
@@ -70,7 +113,7 @@ export const lancamentosSortAccessors: Record<
   status: {
     kind: "status",
     getValue: (item) => transactionStatusLabel(item.kind, item.status, item.ledgerStatus),
-    statusOrder: TRANSACTION_STATUS_SORT_ORDER,
+    statusOrder: LANCAMENTOS_STATUS_SORT_ORDER,
   },
   amount: {
     kind: "number",
@@ -93,6 +136,30 @@ let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function getLancamentosTableSort(): TableSortState<LancamentosSortColumn> {
   return tableSort;
+}
+
+function buildLancamentoRows(data: AppData, competenceMonth: string): LancamentoRow[] {
+  const transactions = filterTransactionsByCompetence(data.transactions, competenceMonth);
+  const projections = projectedInstallmentsForMonth(data, competenceMonth);
+  return [
+    ...transactions.map((item) => ({ rowKind: "transaction" as const, data: item })),
+    ...projections.map((item) => ({ rowKind: "projected" as const, data: item })),
+  ];
+}
+
+function lancamentosSectionTotal(rows: LancamentoRow[]): number {
+  return rows.reduce((total, row) => {
+    if (row.rowKind === "projected") {
+      return total + row.data.amountCents;
+    }
+    return total + row.data.amountCents;
+  }, 0);
+}
+
+function renderLancamentoRow(row: LancamentoRow): string {
+  return row.rowKind === "projected"
+    ? renderProjectedInstallmentRow(row.data)
+    : renderTransactionTableRow(row.data);
 }
 
 export function renderLancamentos(
@@ -148,6 +215,7 @@ function renderToolbarControlsMarkup(): string {
             <option value="all" ${filters.status === "all" ? "selected" : ""}>Todos</option>
             <option value="pending" ${filters.status === "pending" ? "selected" : ""}>Pendentes</option>
             <option value="settled" ${filters.status === "settled" ? "selected" : ""}>Quitados</option>
+            <option value="projected" ${filters.status === "projected" ? "selected" : ""}>Projetado</option>
           </select>
         </label>
       </div>
@@ -164,9 +232,7 @@ function renderFilterChipsMarkup(): string {
   const chips = [
     filters.search ? renderFilterChip(`Busca: ${filters.search}`, "search") : "",
     filters.kind !== "all" ? renderFilterChip(kindFilterLabel(filters.kind), "kind") : "",
-    filters.status !== "all"
-      ? renderFilterChip(filters.status === "pending" ? "Pendentes" : "Quitados", "status")
-      : "",
+    filters.status !== "all" ? renderFilterChip(statusFilterLabel(filters.status), "status") : "",
   ]
     .filter(Boolean)
     .join("");
@@ -187,16 +253,34 @@ function kindFilterLabel(kind: Exclude<KindFilter, "all">): string {
   }
 }
 
-function matchesKindFilter(item: Transaction, kind: KindFilter): boolean {
+function statusFilterLabel(status: Exclude<StatusFilter, "all">): string {
+  switch (status) {
+    case "projected":
+      return "Projetado";
+    case "settled":
+      return "Quitados";
+    case "pending":
+    default:
+      return "Pendentes";
+  }
+}
+
+function matchesKindFilter(row: LancamentoRow, kind: KindFilter): boolean {
+  if (row.rowKind === "projected") {
+    return kind === "all" || kind === "expense";
+  }
   switch (kind) {
     case "income":
-      return item.kind === "income";
+      return row.data.kind === "income";
     case "expense":
-      return item.kind === "expense" && (item.expenseKind === "expense" || item.expenseKind === undefined);
+      return (
+        row.data.kind === "expense" &&
+        (row.data.expenseKind === "expense" || row.data.expenseKind === undefined)
+      );
     case "fee":
-      return item.kind === "expense" && item.expenseKind === "fee";
+      return row.data.kind === "expense" && row.data.expenseKind === "fee";
     case "refund":
-      return item.kind === "expense" && item.expenseKind === "refund";
+      return row.data.kind === "expense" && row.data.expenseKind === "refund";
     case "all":
     default:
       return true;
@@ -214,10 +298,39 @@ export function applyFilters(items: Transaction[], state: LancamentosFilters): T
     );
   }
   if (state.kind !== "all") {
-    result = result.filter((item) => matchesKindFilter(item, state.kind));
+    result = result.filter((item) => matchesKindFilter({ rowKind: "transaction", data: item }, state.kind));
   }
-  if (state.status !== "all") {
+  if (state.status !== "all" && state.status !== "projected") {
     result = result.filter((item) => item.status === state.status);
+  }
+  if (state.status === "projected") {
+    return [];
+  }
+  return result;
+}
+
+export function applyLancamentoFilters(
+  rows: LancamentoRow[],
+  state: LancamentosFilters,
+): LancamentoRow[] {
+  let result = [...rows];
+  const query = state.search.trim().toLowerCase();
+  if (query.length > 0) {
+    result = result.filter(
+      (row) =>
+        row.data.description.toLowerCase().includes(query) ||
+        row.data.category.toLowerCase().includes(query),
+    );
+  }
+  if (state.kind !== "all") {
+    result = result.filter((row) => matchesKindFilter(row, state.kind));
+  }
+  if (state.status === "projected") {
+    result = result.filter((row) => row.rowKind === "projected");
+  } else if (state.status !== "all") {
+    result = result.filter(
+      (row) => row.rowKind === "transaction" && row.data.status === state.status,
+    );
   }
   return result;
 }
@@ -229,11 +342,11 @@ function refreshLancamentosList(
   rerender: () => void,
 ): void {
   const month = data.selectedCompetenceMonth;
-  const allTransactions = filterTransactionsByCompetence(data.transactions, month);
+  const allRows = buildLancamentoRows(data, month);
   const filtered = sortTableItems(
-    applyFilters(allTransactions, filters),
+    applyLancamentoFilters(allRows, filters),
     tableSort,
-    lancamentosSortAccessors,
+    lancamentosRowSortAccessors,
   );
 
   const chipsSlot = host.querySelector<HTMLElement>(".filter-chips-slot");
@@ -246,7 +359,7 @@ function refreshLancamentosList(
   if (listHeader) {
     listHeader.innerHTML = renderSectionHeader("Lançamentos da competência", {
       count: filtered.length,
-      totalCents: sectionTotal(filtered),
+      totalCents: lancamentosSectionTotal(filtered),
     });
   }
 
@@ -254,12 +367,12 @@ function refreshLancamentosList(
   if (tableSection) {
     if (filtered.length === 0) {
       tableSection.innerHTML = renderEmptyState({
-        title: allTransactions.length === 0 ? "Nenhum lançamento nesta competência" : "Nenhum resultado para os filtros",
+        title: allRows.length === 0 ? "Nenhum lançamento nesta competência" : "Nenhum resultado para os filtros",
         description:
-          allTransactions.length === 0
+          allRows.length === 0
             ? "Adicione receitas e despesas para construir o histórico operacional do mês."
             : "Ajuste a busca ou remova filtros para ampliar os resultados.",
-        ...(allTransactions.length === 0
+        ...(allRows.length === 0
           ? { ctaLabel: "Novo lançamento", ctaAction: "new-transaction-empty" }
           : {}),
       });
@@ -279,7 +392,7 @@ function refreshLancamentosList(
         <table class="cfm-table cfm-table--lancamentos" aria-label="Lançamentos" data-sort-table="${LANCAMENTOS_MOBILE_SORT_ID}">
           ${renderLancamentosTableHead(LANCAMENTOS_SORT_COLUMNS, tableSort)}
           <tbody>
-            ${filtered.map((item) => renderTransactionTableRow(item)).join("")}
+            ${filtered.map((item) => renderLancamentoRow(item)).join("")}
           </tbody>
         </table>
       `;
@@ -299,7 +412,7 @@ function refreshLancamentosList(
   }
 
   if (filters.search || filters.kind !== "all" || filters.status !== "all") {
-    announce(`${filtered.length} de ${allTransactions.length} lançamentos exibidos.`);
+    announce(`${filtered.length} de ${allRows.length} lançamentos exibidos.`);
   }
 
   bindRowActions(host, filtered, data, mutations, rerender);
@@ -371,12 +484,16 @@ function bindFilterChips(host: HTMLElement, rerender: () => void): void {
 
 function bindRowActions(
   host: HTMLElement,
-  items: Transaction[],
+  items: LancamentoRow[],
   data: AppData,
   mutations: AppMutations,
   rerender: () => void,
 ): void {
-  for (const item of items) {
+  for (const row of items) {
+    if (isProjectedInstallmentRow(row)) {
+      continue;
+    }
+    const item = row.data;
     const slot = host.querySelector<HTMLElement>(`[data-row-actions="${item.id}"]`);
     if (!slot) {
       continue;

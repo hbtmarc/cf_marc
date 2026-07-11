@@ -6,6 +6,7 @@ import {
   renderContextualPanel,
   renderEmptyState,
   renderProjectionPanel,
+  renderProjectedInstallmentsPanel,
   renderRhythmPanel,
   renderSectionHeader,
   renderSituationPanel,
@@ -52,6 +53,7 @@ export function renderDashboard(
       <div class="dashboard-grid__primary">
         ${renderSituationPanel(ctx)}
         ${renderRhythmPanel(ctx.rhythm)}
+        ${renderProjectedInstallmentsPanel(ctx.projectedInstallments)}
         ${recentBlock}
       </div>
       <div class="dashboard-grid__side">

@@ -5,6 +5,7 @@ import type {
   Invoice,
   Transaction,
 } from "./types";
+import { projectedInstallmentCentsForMonth } from "./installments";
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -274,9 +275,11 @@ export function calculateCompetenceSummary(
   const invoiceDueCents = sumCents(
     invoices.map((invoice) => invoiceCommittedCents(invoice)),
   );
+  const projectedInstallmentsCents = projectedInstallmentCentsForMonth(data, competenceMonth);
 
   const expensePaidCents = expenseTransactionsPaid + invoicePaidCents;
-  const expensePendingCents = expenseTransactionsPending + invoiceDueCents;
+  const expensePendingCents =
+    expenseTransactionsPending + invoiceDueCents + projectedInstallmentsCents;
   const expensePlannedCents = expensePaidCents + expensePendingCents;
 
   return {
