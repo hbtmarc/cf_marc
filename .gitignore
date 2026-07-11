@@ -97,6 +97,9 @@ src/config/classification-rules.local.js
 src/config/personal-rules.local.js
 src/config/card-snapshots.local.js
 
+# Testes locais com carga financeira real (nunca versionar)
+src/**/*-real*.test.ts
+
 # Qualquer JSON com sufixo indicando dados reais ou sensíveis
 *_real.json
 *_privado.json

@@ -11,7 +11,7 @@ export interface ImportIncome {
   description: string;
   amountCents: number;
   canonicalFingerprint: string;
-  sourceType?: string;
+  sourceType: string;
   sourceRecordId?: string;
 }
 
@@ -39,7 +39,7 @@ export interface ImportInvoice {
   paymentDate?: string;
   paidFrom?: string;
   asOfDate?: string;
-  sourceType?: string;
+  sourceType: string;
 }
 
 export interface ImportExpenseInstallment {
@@ -60,10 +60,10 @@ export interface ImportExpense {
   cardId?: string;
   invoiceId?: string;
   installment?: ImportExpenseInstallment;
-  paymentMethod?: string;
-  paymentLabel?: string;
+  paymentMethod: string;
+  paymentLabel: string;
   paymentDate?: string;
-  sourceType?: string;
+  sourceType: string;
   sourceRecordId?: string;
 }
 

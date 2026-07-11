@@ -66,10 +66,11 @@ export function clearChildren(node: HTMLElement): void {
 }
 
 export function moneyClass(cents: number): string {
-  if (cents > 0) {
+  const normalizedCents = cents === 0 || Object.is(cents, -0) ? 0 : cents;
+  if (normalizedCents > 0) {
     return "money money--positive";
   }
-  if (cents < 0) {
+  if (normalizedCents < 0) {
     return "money money--negative";
   }
   return "money";

@@ -9,7 +9,8 @@
       "receivedDate": "2026-01-05",
       "description": "Renda sintética demo",
       "amountCents": 500000,
-      "canonicalFingerprint": "income|synthetic|2026-01-05|500000|renda-demo"
+      "canonicalFingerprint": "income|synthetic|2026-01-05|500000|renda-demo",
+      "sourceType": "payroll"
     }
   ],
   "cards": [
@@ -20,6 +21,26 @@
       "last4": "4242",
       "closingDay": 10,
       "dueDay": 20
+    },
+    {
+      "id": "card_ourocard",
+      "name": "Ourocard Platinum",
+      "issuer": "Banco Demo",
+      "last4": "1111"
+    },
+    {
+      "id": "card_porto",
+      "name": "Porto Seguro Visa",
+      "issuer": "Porto",
+      "last4": "2222",
+      "dueDay": 15
+    },
+    {
+      "id": "card_mercado_pago",
+      "name": "Mercado Pago",
+      "issuer": "Mercado Pago",
+      "last4": "3333",
+      "closingDay": 5
     }
   ],
   "invoices": [
@@ -32,7 +53,8 @@
       "amountPaidCents": 30000,
       "amountDueCents": 0,
       "creditBalanceCents": 0,
-      "dueDate": "2026-01-20"
+      "dueDate": "2026-01-20",
+      "sourceType": "card_statement"
     },
     {
       "id": "inv_synthetic_open",
@@ -43,7 +65,9 @@
       "amountPaidCents": 0,
       "amountDueCents": 50000,
       "creditBalanceCents": 0,
-      "dueDate": "2026-02-20"
+      "dueDate": "2026-02-20",
+      "asOfDate": "2026-02-10",
+      "sourceType": "card_statement"
     },
     {
       "id": "inv_synthetic_partial",
@@ -54,7 +78,8 @@
       "amountPaidCents": 40000,
       "amountDueCents": 60000,
       "creditBalanceCents": 0,
-      "dueDate": "2026-03-20"
+      "dueDate": "2026-03-20",
+      "sourceType": "card_statement"
     },
     {
       "id": "inv_synthetic_credit",
@@ -65,7 +90,8 @@
       "amountPaidCents": 25000,
       "amountDueCents": 0,
       "creditBalanceCents": 5000,
-      "dueDate": "2026-04-20"
+      "dueDate": "2026-04-20",
+      "sourceType": "card_statement"
     }
   ],
   "expenses": [
@@ -78,7 +104,10 @@
       "category": "Casa",
       "kind": "expense",
       "status": "paid",
-      "canonicalFingerprint": "expense|synthetic|2026-01-08|15000|despesa-direta"
+      "canonicalFingerprint": "expense|synthetic|2026-01-08|15000|despesa-direta",
+      "sourceType": "bank_transfer",
+      "paymentMethod": "pix",
+      "paymentLabel": "PIX"
     },
     {
       "id": "exp_synthetic_refund",
@@ -89,7 +118,10 @@
       "category": "Casa",
       "kind": "refund",
       "status": "paid",
-      "canonicalFingerprint": "expense|synthetic|2026-01-09|5000|estorno"
+      "canonicalFingerprint": "expense|synthetic|2026-01-09|5000|estorno",
+      "sourceType": "bank_transfer",
+      "paymentMethod": "pix",
+      "paymentLabel": "PIX"
     },
     {
       "id": "exp_synthetic_purchase",
@@ -103,7 +135,10 @@
       "cardId": "card_synthetic",
       "invoiceId": "inv_synthetic_paid",
       "canonicalFingerprint": "expense|synthetic|card|inv|2026-01-07|12000|compra",
-      "sourceRecordId": "shared-synthetic-001"
+      "sourceRecordId": "shared-synthetic-001",
+      "sourceType": "card_purchase",
+      "paymentMethod": "credit_card",
+      "paymentLabel": "Cartão Sintético"
     },
     {
       "id": "exp_synthetic_fee",
@@ -117,7 +152,10 @@
       "cardId": "card_synthetic",
       "invoiceId": "inv_synthetic_paid",
       "canonicalFingerprint": "expense|synthetic|card|inv|2026-01-07|300|iof",
-      "sourceRecordId": "shared-synthetic-001"
+      "sourceRecordId": "shared-synthetic-001",
+      "sourceType": "card_fee",
+      "paymentMethod": "credit_card",
+      "paymentLabel": "Cartão Sintético"
     },
     {
       "id": "exp_synthetic_installment",
@@ -131,7 +169,10 @@
       "cardId": "card_synthetic",
       "invoiceId": "inv_synthetic_paid",
       "installment": { "current": 2, "total": 3 },
-      "canonicalFingerprint": "expense|synthetic|card|inv|2026-01-06|8000|parcela"
+      "canonicalFingerprint": "expense|synthetic|card|inv|2026-01-06|8000|parcela",
+      "sourceType": "card_purchase",
+      "paymentMethod": "credit_card",
+      "paymentLabel": "Cartão Sintético"
     }
   ]
 }

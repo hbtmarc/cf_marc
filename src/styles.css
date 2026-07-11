@@ -1513,6 +1513,10 @@ body.modal-open {
   color: var(--color-income);
 }
 
+.projection-breakdown__row--negative .projection-breakdown__value .money {
+  color: var(--color-expense);
+}
+
 .projection-breakdown__row--deduction .projection-breakdown__value .money {
   color: var(--color-expense);
 }
@@ -1961,6 +1965,8 @@ body.modal-open {
 
 .type-chip--income { background: var(--color-income-soft); color: var(--color-income); }
 .type-chip--expense { background: var(--color-expense-soft); color: var(--color-expense); }
+.type-chip--fee { background: var(--color-expense-soft); color: var(--color-expense); }
+.type-chip--refund { background: var(--color-income-soft); color: var(--color-income); }
 
 .row-actions {
   display: flex;

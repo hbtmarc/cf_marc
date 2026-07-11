@@ -76,7 +76,7 @@ describe("cfm.import.v1 validation", () => {
     const validated = loadSyntheticPayload();
     expect(validated.payload.schemaVersion).toBe("cfm.import.v1");
     expect(validated.summary.counts.incomes).toBe(1);
-    expect(validated.summary.counts.cards).toBe(1);
+    expect(validated.summary.counts.cards).toBe(4);
     expect(validated.summary.counts.invoices).toBe(4);
     expect(validated.summary.counts.expenses).toBe(5);
     expect(validated.summary.counts.expenseByKind.expense).toBe(3);
@@ -141,6 +141,36 @@ describe("cfm.import.v1 validation", () => {
       credit!.amountPaidCents + credit!.amountDueCents,
     );
   });
+
+  it("warns about missing card cycle fields", () => {
+    const validated = loadSyntheticPayload();
+    expect(validated.summary.warnings).toContain("Ourocard Platinum: closingDay ausente.");
+    expect(validated.summary.warnings).toContain("Ourocard Platinum: dueDay ausente.");
+    expect(validated.summary.warnings).toContain("Porto Seguro Visa: closingDay ausente.");
+    expect(validated.summary.warnings).toContain("Mercado Pago: dueDay ausente.");
+  });
+
+  it("rejects missing required contract fields", () => {
+    const payload = JSON.parse(approvedFixtureRaw) as ImportPayload;
+    delete (payload.incomes[0] as { sourceType?: string }).sourceType;
+    delete (payload.invoices[0] as { sourceType?: string }).sourceType;
+    delete (payload.expenses[0] as { sourceType?: string }).sourceType;
+    delete (payload.expenses[0] as { paymentMethod?: string }).paymentMethod;
+    const validated = validateImportDocument(payload);
+    expect(validated.ok).toBe(false);
+    expect(validated.summary.errors.some((item) => item.includes("sourceType"))).toBe(true);
+    expect(validated.summary.errors.some((item) => item.includes("paymentMethod"))).toBe(true);
+  });
+
+  it("rejects open invoice without asOfDate", () => {
+    const payload = JSON.parse(approvedFixtureRaw) as ImportPayload;
+    const openInvoice = payload.invoices.find((item) => item.status === "open");
+    expect(openInvoice).toBeDefined();
+    delete openInvoice!.asOfDate;
+    const validated = validateImportDocument(payload);
+    expect(validated.ok).toBe(false);
+    expect(validated.summary.errors.some((item) => item.includes("asOfDate"))).toBe(true);
+  });
 });
 
 describe("import apply and idempotency", () => {
@@ -150,8 +180,8 @@ describe("import apply and idempotency", () => {
     const plan = buildImportPlan(data, validated.payload, validated.summary);
     expect(plan.canImport).toBe(true);
     const result = applyImportPlan(data, plan);
-    expect(result.created).toBe(11);
-    expect(data.cards).toHaveLength(1);
+    expect(result.created).toBe(14);
+    expect(data.cards).toHaveLength(4);
     expect(data.invoices).toHaveLength(4);
     expect(data.transactions).toHaveLength(6);
     expect(data.invoices.some((item) => invoiceHasCredit(item))).toBe(true);
@@ -199,9 +229,9 @@ describe("import apply and idempotency", () => {
     expect(data.transactions.length).toBe(txCount);
     expect(data.cards.length).toBe(cardCount);
     expect(data.invoices.length).toBe(invoiceCount);
-    expect(result2.existing).toBe(11);
+    expect(result2.existing).toBe(14);
     expect(result2.created).toBe(0);
-    expect(result1.created).toBe(11);
+    expect(result1.created).toBe(14);
   });
 
   it("maps open, partial, paid and creditor invoices", () => {

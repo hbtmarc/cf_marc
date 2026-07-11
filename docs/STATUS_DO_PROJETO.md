@@ -38,19 +38,13 @@ Compras `in_invoice` não entram nos totais. `creditBalanceCents` não é renda.
 
 ### Validação com arquivo real (manual, fora do repo)
 
-| Competência | Recebido | Pago | Devido | Saldo após pagos | Projetado |
-|-------------|----------|------|--------|------------------|-----------|
-| 2026-06 | 570328 | 581902 | 0 | -11574 | -11574 |
-| 2026-07 | 579067 | 568047 | 484624 | 11020 | -473604 |
-| 2026-08 | 0 | 0 | 151159 | — | -151159 |
-
-Primeira importação: **343 criados**. Reimportação: **343 existentes**, sem duplicatas.
+A validação contra carga financeira real permanece apenas no ambiente local, com JSON fora do repositório. Não há valores reais versionados neste documento.
 
 ### Validação técnica
 
-- `npm run typecheck`, `npm test` (58+), `npm run build` — OK.
-- Screenshots em `docs/screenshots-etapa5/` (fluxo real via navegador).
-- Testes `*-real*.test.ts` rodam somente se o JSON aprovado existir localmente.
+- `npm run typecheck`, `npm test`, `npm run build` — OK.
+- Screenshots em `docs/screenshots-etapa5/` (fluxo sintético via navegador).
+- Testes locais `*-real*.test.ts` podem ser criados fora do git (ver `.gitignore`).
 
 ---
 

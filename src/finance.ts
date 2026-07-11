@@ -84,7 +84,8 @@ export function formatCompetenceLabel(competenceMonth: string): string {
 }
 
 export function formatCentsToBRL(cents: number): string {
-  const value = cents / 100;
+  const normalizedCents = cents === 0 || Object.is(cents, -0) ? 0 : cents;
+  const value = normalizedCents / 100;
   return value.toLocaleString("pt-BR", {
     style: "currency",
     currency: "BRL",

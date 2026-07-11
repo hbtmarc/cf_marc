@@ -316,30 +316,31 @@ export function renderSituationPanel(ctx: DashboardContext): string {
 }
 
 export function renderProjectionPanel(ctx: DashboardContext): string {
+  const realizedTone = balanceTone(ctx.projection.realizedCents);
   const rows: Array<{
     label: string;
     value: number;
     sign: string;
     tone: "positive" | "negative" | "neutral" | "deduction";
   }> = [
-    { label: "Saldo realizado", value: ctx.projection.realizedCents, sign: "", tone: "positive" },
+    { label: "Saldo realizado", value: ctx.projection.realizedCents, sign: "", tone: realizedTone },
     {
       label: "Receitas previstas",
       value: ctx.projection.pendingIncomeCents,
       sign: "+",
-      tone: "neutral",
+      tone: ctx.projection.pendingIncomeCents === 0 ? "neutral" : "neutral",
     },
     {
       label: "Despesas pendentes",
       value: ctx.projection.pendingExpenseTxCents,
       sign: "−",
-      tone: "deduction",
+      tone: ctx.projection.pendingExpenseTxCents === 0 ? "neutral" : "deduction",
     },
     {
       label: "Faturas em aberto",
       value: ctx.projection.openInvoicesCents,
       sign: "−",
-      tone: "deduction",
+      tone: ctx.projection.openInvoicesCents === 0 ? "neutral" : "deduction",
     },
   ];
   const projectedTone = balanceTone(ctx.projection.projectedCents);
@@ -356,7 +357,11 @@ export function renderProjectionPanel(ctx: DashboardContext): string {
               (row) => `
             <li class="projection-breakdown__row projection-breakdown__row--${row.tone}">
               <span class="projection-breakdown__label">${escapeHtml(row.label)}</span>
-              <span class="projection-breakdown__value">${row.sign}${renderMoney(Math.abs(row.value))}</span>
+              <span class="projection-breakdown__value">${
+                row.label === "Saldo realizado"
+                  ? renderMoney(row.value)
+                  : `${row.sign}${renderMoney(row.value === 0 ? 0 : Math.abs(row.value))}`
+              }</span>
             </li>`,
             )
             .join("")}
@@ -613,6 +618,36 @@ export function renderDataTableHead(): string {
   `;
 }
 
+export function transactionTypeLabel(item: Transaction): string {
+  if (item.kind === "income") {
+    return "Receita";
+  }
+  switch (item.expenseKind) {
+    case "fee":
+      return "Tarifa";
+    case "refund":
+      return "Estorno";
+    case "expense":
+    default:
+      return "Despesa";
+  }
+}
+
+function transactionTypeChipClass(item: Transaction): string {
+  if (item.kind === "income") {
+    return "income";
+  }
+  switch (item.expenseKind) {
+    case "fee":
+      return "fee";
+    case "refund":
+      return "refund";
+    case "expense":
+    default:
+      return "expense";
+  }
+}
+
 export function renderTransactionTableRow(item: Transaction): string {
   const statusLabel = transactionStatusLabel(item.kind, item.status, item.ledgerStatus);
   const statusVariant =
@@ -621,7 +656,8 @@ export function renderTransactionTableRow(item: Transaction): string {
       : item.status === "settled"
         ? "success"
         : "warning";
-  const typeLabel = item.kind === "income" ? "Receita" : "Despesa";
+  const typeLabel = transactionTypeLabel(item);
+  const typeChipClass = transactionTypeChipClass(item);
   const installmentLabel = item.installment
     ? ` <span class="data-table__meta">${item.installment.current}/${item.installment.total}</span>`
     : "";
@@ -640,7 +676,7 @@ export function renderTransactionTableRow(item: Transaction): string {
       </span>
       <span class="data-table__cell data-table__cell--category" role="cell">${escapeHtml(item.category)}</span>
       <span class="data-table__cell data-table__cell--type" role="cell">
-        <span class="type-chip type-chip--${item.kind}">${typeLabel}</span>
+        <span class="type-chip type-chip--${typeChipClass}">${typeLabel}</span>
       </span>
       <span class="data-table__cell data-table__cell--status" role="cell">${renderStatusChip(statusLabel, statusVariant)}</span>
       <span class="data-table__cell data-table__cell--amount" role="cell">
@@ -657,7 +693,11 @@ function renderInvoiceAmountCell(invoice: Invoice): string {
   if (invoiceHasCredit(invoice)) {
     return `<span class="money money--positive">${escapeHtml(formatCentsToBRL(invoice.creditBalanceCents ?? 0))}</span>`;
   }
-  return renderMoney(-invoiceDebtCents(invoice));
+  const debt = invoiceDebtCents(invoice);
+  if (debt === 0) {
+    return renderMoney(0);
+  }
+  return renderMoney(-debt);
 }
 
 function invoiceStatusVariant(invoice: Invoice): "success" | "warning" {
@@ -709,6 +749,18 @@ export function renderCardPanel(input: {
   const cycle =
     cycleParts.length > 0 ? cycleParts.join(" · ") : "Ciclo não configurado";
   const nameAttr = card.name.length > 28 ? ` title="${escapeHtml(card.name)}"` : "";
+  const dueCents = invoice
+    ? invoiceHasCredit(invoice)
+      ? (invoice.creditBalanceCents ?? 0)
+      : invoiceDebtCents(invoice)
+    : 0;
+  const dueMoneyClass = invoice
+    ? invoiceHasCredit(invoice)
+      ? "money money--positive"
+      : dueCents === 0
+        ? "money"
+        : "money money--negative"
+    : "money";
 
   return `
     <article class="card-panel${single ? " card-panel--single" : ""}">
@@ -733,7 +785,7 @@ export function renderCardPanel(input: {
           </div>
           <div class="card-panel__summary-item">
             <dt>${invoiceHasCredit(invoice) ? "Saldo credor" : "Valor devido"}</dt>
-            <dd class="card-panel__money ${invoiceHasCredit(invoice) ? "money money--positive" : "money money--negative"}">${escapeHtml(formatCentsToBRL(invoiceHasCredit(invoice) ? (invoice.creditBalanceCents ?? 0) : invoiceDebtCents(invoice)))}</dd>
+            <dd class="card-panel__money ${dueMoneyClass}">${escapeHtml(formatCentsToBRL(dueCents))}</dd>
           </div>
           <div class="card-panel__summary-item">
             <dt>Status</dt>

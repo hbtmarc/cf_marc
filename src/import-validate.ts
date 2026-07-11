@@ -86,6 +86,9 @@ function validateIncome(items: unknown[], errors: string[], warnings: string[]):
     ) {
       errors.push(`incomes[${index}].canonicalFingerprint é obrigatório.`);
     }
+    if (typeof item.sourceType !== "string" || item.sourceType.trim().length === 0) {
+      errors.push(`incomes[${index}].sourceType é obrigatório.`);
+    }
     if (item.sourceRecordId !== undefined && typeof item.sourceRecordId !== "string") {
       warnings.push(`incomes[${index}].sourceRecordId ignorado (formato inválido).`);
     }
@@ -127,8 +130,12 @@ function validateCards(items: unknown[], errors: string[], warnings: string[]): 
     if (item.dueDay !== undefined && !isValidDay(item.dueDay)) {
       errors.push(`cards[${index}].dueDay inválido.`);
     }
-    if (!item.closingDay && !item.dueDay) {
-      warnings.push(`cards[${index}] sem closingDay e dueDay.`);
+    const cardName = typeof item.name === "string" ? item.name : `cards[${index}]`;
+    if (!item.closingDay) {
+      warnings.push(`${cardName}: closingDay ausente.`);
+    }
+    if (!item.dueDay) {
+      warnings.push(`${cardName}: dueDay ausente.`);
     }
     result.push(item as unknown as ImportCard);
   }
@@ -192,6 +199,14 @@ function validateInvoices(
     if (item.paidFrom !== undefined && typeof item.paidFrom !== "string") {
       errors.push(`invoices[${index}].paidFrom deve ser texto.`);
     }
+    if (typeof item.sourceType !== "string" || item.sourceType.trim().length === 0) {
+      errors.push(`invoices[${index}].sourceType é obrigatório.`);
+    }
+    if (item.status === "open") {
+      if (typeof item.asOfDate !== "string" || !isValidDate(item.asOfDate)) {
+        errors.push(`invoices[${index}] com status open exige asOfDate válida.`);
+      }
+    }
     const invoice = item as unknown as ImportInvoice;
     validateInvoiceCoherence(invoice, index, errors);
     if (invoice.creditBalanceCents > 0 && invoice.amountDueCents > 0) {
@@ -249,6 +264,15 @@ function validateExpenses(
       item.canonicalFingerprint.trim().length === 0
     ) {
       errors.push(`expenses[${index}].canonicalFingerprint é obrigatório.`);
+    }
+    if (typeof item.sourceType !== "string" || item.sourceType.trim().length === 0) {
+      errors.push(`expenses[${index}].sourceType é obrigatório.`);
+    }
+    if (typeof item.paymentMethod !== "string" || item.paymentMethod.trim().length === 0) {
+      errors.push(`expenses[${index}].paymentMethod é obrigatório.`);
+    }
+    if (typeof item.paymentLabel !== "string" || item.paymentLabel.trim().length === 0) {
+      errors.push(`expenses[${index}].paymentLabel é obrigatório.`);
     }
     const hasCard = typeof item.cardId === "string" && item.cardId.length > 0;
     const hasInvoice = typeof item.invoiceId === "string" && item.invoiceId.length > 0;

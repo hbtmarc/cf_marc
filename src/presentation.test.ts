@@ -10,6 +10,7 @@ import {
   renderRhythmPanel,
   renderSituationActions,
   renderSituationPanel,
+  transactionTypeLabel,
 } from "./presentation";
 import type { AppData } from "./types";
 
@@ -150,5 +151,46 @@ describe("presentation", () => {
     expect(html).toContain("1 fatura");
     expect(html).not.toContain("fatura(s)");
     expect(html).toContain("vence dia");
+  });
+
+  it("labels ledger types for display", () => {
+    expect(transactionTypeLabel(sampleData.transactions[0]!)).toBe("Receita");
+    expect(
+      transactionTypeLabel({
+        ...sampleData.transactions[1]!,
+        expenseKind: "fee",
+      }),
+    ).toBe("Tarifa");
+    expect(
+      transactionTypeLabel({
+        ...sampleData.transactions[1]!,
+        expenseKind: "refund",
+      }),
+    ).toBe("Estorno");
+    expect(transactionTypeLabel(sampleData.transactions[1]!)).toBe("Despesa");
+  });
+
+  it("renders negative realized balance with deficit tone in projection", () => {
+    const ctx = buildDashboardContext(sampleData, "2026-07");
+    ctx.projection.realizedCents = -5000;
+    const html = renderProjectionPanel(ctx);
+    expect(html).toContain("projection-breakdown__row--negative");
+    expect(html).toContain("money--negative");
+    expect(html).not.toContain("-R$&nbsp;0,00");
+  });
+
+  it("uses neutral money class for zero due invoice cards", () => {
+    const html = renderCardPanel({
+      card: sampleData.cards[0]!,
+      invoice: {
+        ...sampleData.invoices[0]!,
+        status: "paid",
+        amountDueCents: 0,
+        creditBalanceCents: 0,
+      },
+      invoiceCount: 1,
+    });
+    expect(html).toContain('class="card-panel__money money"');
+    expect(html).not.toContain("money--negative");
   });
 });

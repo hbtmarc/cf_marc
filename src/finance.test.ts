@@ -3,6 +3,7 @@ import {
   calculateCompetenceSummary,
   filterInvoicesByCompetence,
   filterTransactionsByCompetence,
+  formatCentsToBRL,
   parseMoneyToCents,
   validateCardForm,
   validateInvoiceForm,
@@ -115,6 +116,11 @@ function sampleData(): AppData {
 }
 
 describe("finance calculations", () => {
+  it("formats zero without negative sign", () => {
+    expect(formatCentsToBRL(0)).toBe("R$\u00a00,00");
+    expect(formatCentsToBRL(-0)).toBe("R$\u00a00,00");
+  });
+
   it("calculates planned and settled income", () => {
     const summary = calculateCompetenceSummary(sampleData(), "2026-07");
     expect(summary.incomePlannedCents).toBe(600000);
