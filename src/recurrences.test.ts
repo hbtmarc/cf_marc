@@ -79,7 +79,34 @@ describe("recurring occurrence engine", () => {
     ]);
   });
 
-  it("does not generate occurrences for paused rules", () => {
+  it("generates historical occurrences before pausedFromMonth", () => {
+    const pausedRule = rule({
+      id: "rule_paused",
+      status: "paused",
+      startMonth: "2026-01",
+      pausedFromMonth: "2026-03",
+    });
+    const occurrences = buildRecurringOccurrences([pausedRule], "2026-01", "2026-04");
+
+    expect(occurrences.map((item) => item.competenceMonth)).toEqual([
+      "2026-01",
+      "2026-02",
+    ]);
+  });
+
+  it("does not generate occurrences from pausedFromMonth onward", () => {
+    const pausedRule = rule({
+      id: "rule_paused",
+      status: "paused",
+      startMonth: "2026-01",
+      pausedFromMonth: "2026-03",
+    });
+    const occurrences = buildRecurringOccurrences([pausedRule], "2026-03", "2026-05");
+
+    expect(occurrences).toEqual([]);
+  });
+
+  it("does not generate occurrences for legacy paused rules without pausedFromMonth", () => {
     const pausedRule = rule({ id: "rule_paused", status: "paused" });
     const occurrences = buildRecurringOccurrences([pausedRule], "2026-07", "2026-09");
 

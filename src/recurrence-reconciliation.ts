@@ -128,8 +128,16 @@ export function validateRecurringMatch(
     return errors;
   }
 
-  if (rule.status !== "active") {
-    errors.ruleId = "Regra pausada não aceita match.";
+  if (rule.status === "paused") {
+    if (
+      !rule.pausedFromMonth ||
+      compareCompetenceMonths(match.competenceMonth, rule.pausedFromMonth) >= 0
+    ) {
+      errors.ruleId = "Regra pausada não aceita match nesta competência.";
+      return errors;
+    }
+  } else if (rule.status !== "active") {
+    errors.ruleId = "Regra inativa não aceita match.";
     return errors;
   }
 
@@ -286,4 +294,18 @@ export function compatibleTransactionsForRecurringOccurrence(
       !linkedIds.has(transaction.id) &&
       isTransactionCompatibleWithOccurrence(transaction, occurrence, rule),
   );
+}
+
+export function findInvalidRecurringMatches(
+  data: AppData,
+): Array<{ match: RecurringMatch; errors: Record<string, string> }> {
+  return (data.recurringMatches ?? [])
+    .map((match) => ({ match, errors: validateRecurringMatch(match, data) }))
+    .filter((item) => Object.keys(item.errors).length > 0);
+}
+
+export function invalidRecurringMatchReason(
+  errors: Record<string, string>,
+): string {
+  return Object.values(errors)[0] ?? "Vínculo inválido.";
 }

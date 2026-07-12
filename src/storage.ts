@@ -84,6 +84,8 @@ function isRecurringRule(value: unknown): boolean {
   }
   const endMonthValid =
     value.endMonth === undefined || typeof value.endMonth === "string";
+  const pausedFromMonthValid =
+    value.pausedFromMonth === undefined || typeof value.pausedFromMonth === "string";
   const cardIdValid =
     value.cardId === undefined || typeof value.cardId === "string";
 
@@ -98,6 +100,7 @@ function isRecurringRule(value: unknown): boolean {
     Number.isInteger(value.dayOfMonth) &&
     typeof value.startMonth === "string" &&
     endMonthValid &&
+    pausedFromMonthValid &&
     (value.status === "active" || value.status === "paused") &&
     (value.billingMode === "direct" || value.billingMode === "card") &&
     cardIdValid &&

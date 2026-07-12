@@ -2,7 +2,7 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 8.2 — Conciliação de recorrências com lançamentos
+**Etapa atual:** Etapa 8.3 — Página de Planejamento recorrente
 
 ---
 
@@ -10,7 +10,63 @@
 
 Campos interativos não podem estar dentro de subárvores substituídas a cada evento de input. Durante digitação, atualizar somente o estado e os elementos dependentes, preservando o nó DOM, o foco e a posição do cursor.
 
-Aplicada na revisão de importação (dias de cartão) e na busca de Lançamentos.
+Aplicada na revisão de importação (dias de cartão), na busca de Lançamentos e no formulário inline de Planejamento.
+
+---
+
+## Etapa 8.3 — página de Planejamento recorrente
+
+### Objetivo
+
+Rota `#/planejamento` para administrar regras recorrentes mensais, visualizar ocorrências da competência e confirmar vínculos com lançamentos reais. Sem integração ao Dashboard nem a `calculateCompetenceSummary`.
+
+### Fluxo da página
+
+1. Cabeçalho com seletor de competência (compartilhado com Dashboard/Lançamentos/Faturas).
+2. Resumo informativo da competência (receitas/despesas previstas, quantidades prevista/conciliada/coberta por fatura).
+3. Ocorrências do mês via `recurringResolutionsForMonth()`.
+4. Regras mensais separadas em receitas e despesas, com filtro Todas/Ativas/Pausadas/Encerradas.
+
+### CRUD permitido
+
+- Criar e editar regra em formulário inline único (validação da Etapa 8.1).
+- Pausar a partir da competência selecionada (`pausedFromMonth`, inclusivo): preserva ocorrências e vínculos anteriores; somente a competência da pausa e meses futuros deixam de ser projetados. Reativar retoma projeções futuras.
+- Encerrar define `endMonth` na competência selecionada (inclusivo); histórico e matches anteriores preservados.
+- Sem exclusão permanente nesta etapa.
+
+### Conciliação explícita
+
+- Ocorrências `projected` ou `covered_by_invoice` oferecem **Vincular lançamento**.
+- Candidatos somente de `compatibleTransactionsForRecurringOccurrence()` — sem escolha automática.
+- Vínculo cria `RecurringMatch` com ID determinístico e persiste no `AppData`.
+- **Desvincular** remove somente o match, com confirmação.
+
+### Estados exibidos
+
+| Estado | Rótulo |
+|--------|--------|
+| `projected` | PREVISTA |
+| `matched` | CONCILIADA |
+| `covered_by_invoice` | COBERTA PELA FATURA |
+
+Em `matched`: valor previsto, realizado, diferença neutra e transação vinculada. `covered_by_invoice` **não** é chamada de conciliada.
+
+### Matches inválidos
+
+Área **Vínculos que precisam de revisão** quando `findInvalidRecurringMatches()` retorna itens, com motivo e ação **Remover vínculo inválido**.
+
+### Limitações da Etapa 8.3
+
+- Resumo e ocorrências são informativos; não alteram totais do Dashboard.
+- Ocorrências e resoluções continuam derivadas e não persistidas.
+- Sem associação automática por descrição ou valor.
+- Encerrar não apaga matches históricos.
+
+Screenshots sintéticos: `docs/screenshots-etapa8.3/`.
+
+### Próximo passo — Etapa 8.4
+
+Dashboard executivo com integração financeira das recorrências (somente `projected` como previsão adicional).
 
 ---
 

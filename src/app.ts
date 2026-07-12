@@ -3,6 +3,7 @@ import { renderDashboard } from "./pages/dashboard";
 import { renderFaturas, renderFaturasHeaderActions } from "./pages/faturas";
 import { renderImportar, resetImportarPage } from "./pages/importar";
 import { renderLancamentos } from "./pages/lancamentos";
+import { renderPlanejamento } from "./pages/planejamento";
 import {
   navigate,
   registerRoute,
@@ -43,12 +44,18 @@ let competenceHost: HTMLElement | null = null;
 let pageActionsHost: HTMLElement | null = null;
 let pageOverline: HTMLElement | null = null;
 
-const COMPETENCE_ROUTES: RoutePath[] = ["/dashboard", "/lancamentos", "/faturas"];
+const COMPETENCE_ROUTES: RoutePath[] = [
+  "/dashboard",
+  "/lancamentos",
+  "/faturas",
+  "/planejamento",
+];
 
 const PAGE_OVERLINE: Record<RoutePath, string> = {
   "/dashboard": "Competência",
   "/lancamentos": "Competência",
   "/faturas": "Competência",
+  "/planejamento": "Competência",
   "/importar": "Operação",
   "/ajustes": "Configurações",
 };
@@ -157,6 +164,9 @@ function renderMain(): void {
     case "/faturas":
       renderFaturas(mainHost, state.data, mutations, rerender);
       break;
+    case "/planejamento":
+      renderPlanejamento(mainHost, state.data, mutations, rerender);
+      break;
     case "/importar":
       renderImportar(
         mainHost,
@@ -193,6 +203,7 @@ function registerRoutes(): void {
     "/dashboard",
     "/lancamentos",
     "/faturas",
+    "/planejamento",
     "/importar",
     "/ajustes",
   ];

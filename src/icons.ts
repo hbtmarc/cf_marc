@@ -2,7 +2,13 @@
 
 const SVG_ATTRS = 'xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true"';
 
-export type NavIconName = "dashboard" | "lancamentos" | "faturas" | "importar" | "ajustes";
+export type NavIconName =
+  | "dashboard"
+  | "lancamentos"
+  | "faturas"
+  | "planejamento"
+  | "importar"
+  | "ajustes";
 
 const NAV_ICON_PATHS: Record<NavIconName, string> = {
   dashboard:
@@ -11,6 +17,8 @@ const NAV_ICON_PATHS: Record<NavIconName, string> = {
     '<path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z"/>',
   faturas:
     '<path d="M224,48H32A16,16,0,0,0,16,64V192a16,16,0,0,0,16,16H224a16,16,0,0,0,16-16V64A16,16,0,0,0,224,48Zm0,16V88H32V64Zm0,128H32V104H224v88Zm-16-24a8,8,0,0,1-8,8H168a8,8,0,0,1,0-16h32A8,8,0,0,1,208,168Zm-64,0a8,8,0,0,1-8,8H120a8,8,0,0,1,0-16h16A8,8,0,0,1,144,168Z"/>',
+  planejamento:
+    '<path d="M240,56v64a8,8,0,0,1-16,0V75.31l-82.34,82.35a8,8,0,0,1-11.32,0L96,123.31,29.66,189.66a8,8,0,0,1-11.32-11.32l72-72a8,8,0,0,1,11.32,0L136,140.69,186.34,90.3,160,64H192a8,8,0,0,1,0-16H224A8,8,0,0,1,240,56Z"/>',
   importar:
     '<path d="M224,152v32a16,16,0,0,1-16,16H48a16,16,0,0,1-16-16V152a8,8,0,0,1,16,0v32H208V152a8,8,0,0,1,16,0ZM93.66,85.66,120,59.31V152a8,8,0,0,0,16,0V59.31l26.34,26.35a8,8,0,0,0,11.32-11.32l-40-40a8,8,0,0,0-11.32,0l-40,40A8,8,0,0,0,93.66,85.66Z"/>',
   ajustes:
@@ -21,6 +29,7 @@ const ROUTE_ICON: Record<string, NavIconName> = {
   "/dashboard": "dashboard",
   "/lancamentos": "lancamentos",
   "/faturas": "faturas",
+  "/planejamento": "planejamento",
   "/importar": "importar",
   "/ajustes": "ajustes",
 };

@@ -564,6 +564,7 @@ const NAV_SHORT_LABELS: Record<RoutePath, string> = {
   "/dashboard": "Início",
   "/lancamentos": "Lanç.",
   "/faturas": "Faturas",
+  "/planejamento": "Plan.",
   "/importar": "Import.",
   "/ajustes": "Ajustes",
 };
@@ -572,13 +573,14 @@ const NAV_LABELS: Record<RoutePath, string> = {
   "/dashboard": "Visão geral",
   "/lancamentos": "Lançamentos",
   "/faturas": "Cartões e faturas",
+  "/planejamento": "Planejamento",
   "/importar": "Importar dados",
   "/ajustes": "Ajustes",
 };
 
 const NAV_GROUPS: Array<{ label: string; routes: RoutePath[] }> = [
   { label: "Principal", routes: ["/dashboard"] },
-  { label: "Operação", routes: ["/lancamentos", "/importar"] },
+  { label: "Operação", routes: ["/lancamentos", "/planejamento", "/importar"] },
   { label: "Crédito", routes: ["/faturas"] },
   { label: "Sistema", routes: ["/ajustes"] },
 ];
@@ -587,6 +589,7 @@ const PAGE_DESC_EXTENDED: Record<RoutePath, string> = {
   "/dashboard": "Situação atual, compromissos e fechamento projetado da competência.",
   "/lancamentos": "Ledger operacional com busca, filtros e ações sobre receitas e despesas.",
   "/faturas": "Cartões, faturas da competência e compromissos de crédito.",
+  "/planejamento": "Regras recorrentes mensais, ocorrências previstas e conciliação com lançamentos.",
   "/importar": "Importação local de arquivos JSON no contrato cfm.import.v1.",
   "/ajustes": "Cartões, dados locais e preferências do dispositivo.",
 };

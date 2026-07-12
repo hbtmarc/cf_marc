@@ -285,18 +285,40 @@ describe("recurring match validation", () => {
     expect(validateRecurringMatch(match, data)).toEqual({});
   });
 
-  it("rejects matches for paused rules", () => {
-    const pausedRule = rule({ id: "rule_paused", status: "paused" });
+  it("rejects matches for paused rules from pausedFromMonth onward", () => {
+    const pausedRule = rule({
+      id: "rule_paused",
+      status: "paused",
+      startMonth: "2026-01",
+      pausedFromMonth: "2026-03",
+    });
     const expenseTx = tx({ id: "tx-paused" });
     const data = baseData({
       rules: [pausedRule],
       transactions: [expenseTx],
     });
-    const match = matchFor("rule_paused", "2026-07", "tx-paused");
+    const futureMatch = matchFor("rule_paused", "2026-03", "tx-paused");
 
-    expect(validateRecurringMatch(match, data).ruleId).toBe(
-      "Regra pausada não aceita match.",
+    expect(validateRecurringMatch(futureMatch, data).ruleId).toBe(
+      "Regra pausada não aceita match nesta competência.",
     );
+  });
+
+  it("accepts historical matches before pausedFromMonth", () => {
+    const pausedRule = rule({
+      id: "rule_paused",
+      status: "paused",
+      startMonth: "2026-01",
+      pausedFromMonth: "2026-03",
+    });
+    const expenseTx = tx({ id: "tx-paused", competenceMonth: "2026-02", date: "2026-02-10" });
+    const data = baseData({
+      rules: [pausedRule],
+      transactions: [expenseTx],
+    });
+    const historicalMatch = matchFor("rule_paused", "2026-02", "tx-paused");
+
+    expect(validateRecurringMatch(historicalMatch, data)).toEqual({});
   });
 
   it("rejects matches before rule startMonth", () => {

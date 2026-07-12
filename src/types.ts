@@ -91,6 +91,8 @@ export interface RecurringRule {
   startMonth: string;
   endMonth?: string;
   status: RecurringRuleStatus;
+  /** Competência a partir da qual a regra deixa de projetar ocorrências (inclusiva). */
+  pausedFromMonth?: string;
   billingMode: RecurringBillingMode;
   cardId?: string;
   createdAt: string;
@@ -150,6 +152,7 @@ export type RoutePath =
   | "/dashboard"
   | "/lancamentos"
   | "/faturas"
+  | "/planejamento"
   | "/importar"
   | "/ajustes";
 

@@ -50,7 +50,7 @@ function* iterateCompetenceMonths(
   }
 }
 
-function occurrenceFromRule(
+export function occurrenceForRuleMonth(
   rule: RecurringRule,
   competenceMonth: string,
 ): ProjectedRecurringOccurrence {
@@ -82,7 +82,11 @@ export function buildRecurringOccurrences(
   const occurrences: ProjectedRecurringOccurrence[] = [];
 
   for (const rule of rules) {
-    if (rule.status !== "active") {
+    if (rule.status !== "active" && rule.status !== "paused") {
+      continue;
+    }
+
+    if (rule.status === "paused" && !rule.pausedFromMonth) {
       continue;
     }
 
@@ -106,7 +110,15 @@ export function buildRecurringOccurrences(
         continue;
       }
 
-      occurrences.push(occurrenceFromRule(rule, competenceMonth));
+      if (
+        rule.status === "paused" &&
+        rule.pausedFromMonth !== undefined &&
+        compareCompetenceMonths(competenceMonth, rule.pausedFromMonth) >= 0
+      ) {
+        continue;
+      }
+
+      occurrences.push(occurrenceForRuleMonth(rule, competenceMonth));
     }
   }
 
@@ -118,7 +130,27 @@ export function recurringOccurrencesForMonth(
   competenceMonth: string,
 ): ProjectedRecurringOccurrence[] {
   const rules = data.recurringRules ?? [];
-  return buildRecurringOccurrences(rules, competenceMonth, competenceMonth);
+  const occurrences = buildRecurringOccurrences(rules, competenceMonth, competenceMonth);
+  const seen = new Set(occurrences.map((occurrence) => occurrence.id));
+
+  for (const match of data.recurringMatches ?? []) {
+    if (match.competenceMonth !== competenceMonth) {
+      continue;
+    }
+    const occurrenceId = recurringOccurrenceId(match.ruleId, competenceMonth);
+    if (seen.has(occurrenceId)) {
+      continue;
+    }
+    const rule = rules.find((item) => item.id === match.ruleId);
+    if (!rule) {
+      continue;
+    }
+    const synthetic = occurrenceForRuleMonth(rule, competenceMonth);
+    occurrences.push(synthetic);
+    seen.add(occurrenceId);
+  }
+
+  return occurrences;
 }
 
 export interface RecurringRuleValidationContext {

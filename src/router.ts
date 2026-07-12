@@ -14,6 +14,7 @@ export function normalizeRoute(hash: string): RoutePath {
     base === "/dashboard" ||
     base === "/lancamentos" ||
     base === "/faturas" ||
+    base === "/planejamento" ||
     base === "/importar" ||
     base === "/ajustes"
   ) {
@@ -65,6 +66,7 @@ export const ROUTE_LABELS: Record<RoutePath, string> = {
   "/dashboard": "Dashboard",
   "/lancamentos": "Lançamentos",
   "/faturas": "Faturas",
+  "/planejamento": "Planejamento",
   "/importar": "Importar",
   "/ajustes": "Ajustes",
 };
