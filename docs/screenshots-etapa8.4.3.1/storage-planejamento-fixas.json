@@ -1,0 +1,14 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:5173",
+      "localStorage": [
+        {
+          "name": "cfm:v2:appData",
+          "value": "{\"schemaVersion\":\"cfm.local.v2\",\"selectedCompetenceMonth\":\"2026-07\",\"cards\":[{\"id\":\"card-1\",\"name\":\"Cartão Demo\",\"closingDay\":10,\"dueDay\":20,\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"}],\"invoices\":[],\"recurringRules\":[{\"id\":\"rule-internet\",\"kind\":\"expense\",\"description\":\"Internet\",\"amountCents\":9990,\"category\":\"Casa\",\"dayOfMonth\":10,\"startMonth\":\"2026-06\",\"status\":\"active\",\"billingMode\":\"direct\",\"recurrenceClass\":\"fixed_bill\",\"seriesId\":\"rule-internet\",\"renewalPolicy\":\"none\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"},{\"id\":\"rule-salary\",\"kind\":\"income\",\"description\":\"Salário demo\",\"amountCents\":500000,\"category\":\"Trabalho\",\"dayOfMonth\":5,\"startMonth\":\"2026-07\",\"status\":\"active\",\"billingMode\":\"direct\",\"recurrenceClass\":\"income\",\"seriesId\":\"rule-salary\",\"renewalPolicy\":\"none\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"},{\"id\":\"rule-streaming\",\"kind\":\"expense\",\"description\":\"Streaming\",\"amountCents\":4990,\"category\":\"Lazer\",\"dayOfMonth\":15,\"startMonth\":\"2026-07\",\"status\":\"active\",\"billingMode\":\"card\",\"cardId\":\"card-1\",\"recurrenceClass\":\"card_subscription\",\"seriesId\":\"rule-streaming\",\"renewalPolicy\":\"manual_annual\",\"renewedThroughMonth\":\"2027-06\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"}],\"recurringMatches\":[],\"ignoredRecurringSuggestions\":[],\"transactionDescriptionAliases\":[{\"id\":\"txn-desc-alias:bmi serviços digitais\",\"sourceDescriptionNormalized\":\"bmi serviços digitais\",\"sourceDescriptionSample\":\"BMI Serviços Digitais\",\"displayName\":\"Internet\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"},{\"id\":\"txn-desc-alias:auto pan\",\"sourceDescriptionNormalized\":\"auto pan\",\"sourceDescriptionSample\":\"Auto Pan\",\"displayName\":\"Moto\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"}],\"transactions\":[{\"id\":\"tx-bmi-6\",\"kind\":\"expense\",\"description\":\"BMI Serviços Digitais\",\"amountCents\":9990,\"date\":\"2026-06-10\",\"competenceMonth\":\"2026-06\",\"category\":\"Casa\",\"status\":\"settled\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"},{\"id\":\"tx-bmi-7\",\"kind\":\"expense\",\"description\":\"BMI Serviços Digitais\",\"amountCents\":9990,\"date\":\"2026-07-10\",\"competenceMonth\":\"2026-07\",\"category\":\"Casa\",\"status\":\"settled\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"}]}"
+        }
+      ]
+    }
+  ]
+}

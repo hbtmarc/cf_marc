@@ -1,8 +1,3 @@
-import {
-  createProgressiveForm,
-  createValidatedField,
-  type ProgressiveFormHandle,
-} from "../form-validation";
 import type { AppMutations } from "../forms";
 import {
   compatibleTransactionsForRecurringOccurrence,
@@ -16,24 +11,31 @@ import {
 } from "../recurrence-auto-match";
 import {
   allowedRecurrenceClassesForSuggestion,
+  inferRecurrenceClassFromRule,
   recurrenceClassLabel,
+  ruleEditActionLabel,
+  rulesGroupEmptyDescription,
+  rulesGroupEmptyTitle,
+  rulesGroupHeading,
+  suggestionConfirmActionLabel,
   suggestionGroupLabel,
   suggestionGroupOrder,
 } from "../recurrence-class";
 import {
   createRecurringMatch,
-  createRecurringRule,
   endRecurringRule,
   pauseRecurringRule,
   removeRecurringMatch,
   removeRecurringMatchById,
   renewRecurringRule,
   resumeRecurringRule,
-  updateRecurringRule,
-  validateRecurringRuleDraft,
-  type RecurringRuleDraft,
 } from "../recurring-operations";
-import { updateRecurringRuleAmountFromMonth } from "../recurrence-versioning";
+import {
+  openCreateRuleModal,
+  openEditRuleModal,
+  openUpdateRuleValueModal,
+  resetPlanejamentoModalsForTests,
+} from "../planejamento-modals";
 import {
   billingModeLabel,
   buildPlanejamentoSummary,
@@ -59,7 +61,7 @@ import {
   ignoreRecurringSuggestion,
 } from "../recurring-suggestions";
 import { renderEmptyState, renderSectionHeader } from "../presentation";
-import { formatCentsToBRL, formatCompetenceLabel, formatDateLabel, parseMoneyToCents } from "../finance";
+import { formatCentsToBRL, formatCompetenceLabel, formatDateLabel } from "../finance";
 import {
   transactionDisplayDescription,
   transactionDisplayDescriptionForSource,
@@ -67,7 +69,6 @@ import {
 import type { AppData, RecurrenceClass, RecurringRule } from "../types";
 import {
   announce,
-  centsToInputValue,
   el,
   escapeHtml,
   openConfirmModal,
@@ -76,11 +77,8 @@ import {
 } from "../ui";
 
 let ruleFilter: RuleFilter = "all";
-let formMode: "hidden" | "create" | "edit" = "hidden";
-let editingRuleId: string | null = null;
 let linkPanelOccurrenceId: string | null = null;
 let lastRenderedCompetenceMonth: string | null = null;
-let formController: ProgressiveFormHandle | null = null;
 let pageAbort: AbortController | null = null;
 const PLANEJAMENTO_NEW_RULE_EVENT = "cfm:planejamento-new-rule";
 
@@ -99,21 +97,20 @@ export function renderPlanejamentoHeaderActions(host: HTMLElement): void {
 
 export function resetPlanejamentoUiStateForTests(): void {
   ruleFilter = "all";
-  formMode = "hidden";
-  editingRuleId = null;
   linkPanelOccurrenceId = null;
   lastRenderedCompetenceMonth = null;
-  formController?.destroy();
-  formController = null;
   pageAbort?.abort();
   pageAbort = null;
+  resetPlanejamentoModalsForTests();
 }
 
-function closeRuleForm(): void {
-  formController?.destroy();
-  formController = null;
-  formMode = "hidden";
-  editingRuleId = null;
+function openNewRuleModal(
+  data: AppData,
+  month: string,
+  mutations: AppMutations,
+  rerender: () => void,
+): void {
+  openCreateRuleModal({ data, month, mutations, onSaved: rerender });
 }
 
 function candidatesPanelId(occurrenceId: string): string {
@@ -208,6 +205,7 @@ function renderSuggestionRow(data: AppData, suggestion: ReturnType<typeof buildR
   const allowed = allowedRecurrenceClassesForSuggestion(suggestion);
   const billingLabel =
     suggestion.billingMode === "card" ? `Cartão · ${cardLabel}` : cardLabel;
+  const confirmLabel = suggestionConfirmActionLabel(suggestion.proposedRecurrenceClass);
   return `
     <div class="planejamento-suggestion-row" data-suggestion-id="${escapeHtml(suggestion.id)}">
       <div class="planejamento-suggestion-row__main">
@@ -220,7 +218,7 @@ function renderSuggestionRow(data: AppData, suggestion: ReturnType<typeof buildR
       <div class="planejamento-suggestion-row__aside">
         <span class="money ${moneyClass}">${escapeHtml(formatCentsToBRL(suggestion.amountCents))}</span>
         <div class="planejamento-suggestion-row__actions">
-          <button type="button" class="btn btn--primary btn--small" data-action="confirm-suggestion" data-suggestion-id="${escapeHtml(suggestion.id)}">Criar recorrência</button>
+          <button type="button" class="btn btn--primary btn--small" data-action="confirm-suggestion" data-suggestion-id="${escapeHtml(suggestion.id)}">${escapeHtml(confirmLabel)}</button>
           <button type="button" class="btn btn--ghost btn--small" data-action="ignore-suggestion" data-suggestion-id="${escapeHtml(suggestion.id)}">Ignorar</button>
         </div>
       </div>
@@ -298,7 +296,7 @@ function renderOccurrenceTableRow(
     <tr class="planejamento-occurrence-row" data-occurrence-id="${escapeHtml(occurrence.id)}">
       <td class="cfm-table__cell--date" data-label="Data esperada">${escapeHtml(formatDateLabel(occurrence.expectedDate))}</td>
       <td class="cfm-table__cell--desc" data-label="Descrição">
-        <span class="data-table__primary">${escapeHtml(occurrence.description)}</span>
+        <span class="data-table__primary">${escapeHtml(transactionDisplayDescriptionForSource(data, occurrence.description))}</span>
       </td>
       <td class="cfm-table__cell--class" data-label="Classificação">${escapeHtml(classLabel)}</td>
       <td class="cfm-table__cell--amount" data-label="Previsto">
@@ -321,7 +319,7 @@ function renderOccurrencesSection(data: AppData, month: string): string {
     .map(
       (review) => `
         <article class="planejamento-amount-review">
-          <p><strong>${escapeHtml(review.occurrence.description)}</strong> — revisão necessária</p>
+          <p><strong>${escapeHtml(transactionDisplayDescriptionForSource(data, review.occurrence.description))}</strong> — revisão necessária</p>
           <p class="planejamento-amount-review__meta">Previsto: ${escapeHtml(formatCentsToBRL(review.expectedAmountCents))} · Observado: ${escapeHtml(formatCentsToBRL(review.actualAmountCents))} · ${escapeHtml(formatRecurringDifferenceLabel(review.differenceCents))}</p>
           <div class="planejamento-occurrence__actions">
             <button type="button" class="btn btn--secondary btn--small" data-action="link-amount-review" data-rule-id="${escapeHtml(review.occurrence.ruleId)}" data-transaction-id="${escapeHtml(review.transaction.id)}" data-competence-month="${escapeHtml(review.occurrence.competenceMonth)}">Vincular</button>
@@ -356,7 +354,7 @@ function renderOccurrencesSection(data: AppData, month: string): string {
         </div>`
       : renderEmptyState({
           title: "Nenhuma ocorrência nesta competência",
-          description: "Crie ou reative regras recorrentes para gerar previsões neste mês.",
+          description: "Crie ou reative previsões mensais para gerar ocorrências neste mês.",
         });
 
   return `
@@ -427,7 +425,7 @@ function renderRuleRow(data: AppData, rule: RecurringRule, month: string): strin
         ${renderStatusChip(ruleDisplayStatusLabel(status), statusVariant)}
       </div>
       <div class="planejamento-rule__actions">
-        <button type="button" class="btn btn--ghost btn--small" data-action="edit-rule" data-rule-id="${escapeHtml(rule.id)}">Editar</button>
+        <button type="button" class="btn btn--ghost btn--small" data-action="edit-rule" data-rule-id="${escapeHtml(rule.id)}">${escapeHtml(ruleEditActionLabel(rule))}</button>
         ${status === "renewal_pending" ? `<button type="button" class="btn btn--primary btn--small" data-action="renew-rule" data-rule-id="${escapeHtml(rule.id)}">Renovar por 12 meses</button>` : ""}
         ${rule.recurrenceClass === "fixed_bill" || rule.recurrenceClass === "other" ? `<button type="button" class="btn btn--ghost btn--small" data-action="update-rule-value" data-rule-id="${escapeHtml(rule.id)}">Atualizar valor</button>` : ""}
         ${status === "active" || status === "renewal_pending" ? `<button type="button" class="btn btn--ghost btn--small" data-action="pause-rule" data-rule-id="${escapeHtml(rule.id)}">Pausar</button>` : ""}
@@ -438,12 +436,38 @@ function renderRuleRow(data: AppData, rule: RecurringRule, month: string): strin
   `;
 }
 
+function renderRulesGroup(
+  data: AppData,
+  month: string,
+  recurrenceClass: RecurrenceClass,
+  rules: RecurringRule[],
+): string {
+  const items = rules.filter(
+    (rule) => inferRecurrenceClassFromRule(rule) === recurrenceClass,
+  );
+  const rows =
+    items.length > 0
+      ? items.map((rule) => renderRuleRow(data, rule, month)).join("")
+      : renderEmptyState({
+          title: rulesGroupEmptyTitle(recurrenceClass),
+          description: rulesGroupEmptyDescription(recurrenceClass),
+        });
+  return `
+    <div class="planejamento-rules-group">
+      <h3 class="planejamento-rules-group__title">${escapeHtml(rulesGroupHeading(recurrenceClass))}</h3>
+      ${rows}
+    </div>`;
+}
+
 function renderRulesSection(data: AppData, month: string): string {
   const rules = (data.recurringRules ?? []).filter((rule) =>
     ruleMatchesFilter(rule, ruleFilter, month),
   );
-  const incomeRules = rules.filter((rule) => rule.kind === "income");
-  const expenseRules = rules.filter((rule) => rule.kind === "expense");
+  const groups: RecurrenceClass[] = ["income", "fixed_bill", "card_subscription"];
+  const hasOther = rules.some((rule) => inferRecurrenceClassFromRule(rule) === "other");
+  if (hasOther) {
+    groups.push("other");
+  }
 
   const filterControl = renderSegmentedControl({
     items: (["all", "active", "paused", "ended"] as RuleFilter[]).map((filter) => {
@@ -469,14 +493,7 @@ function renderRulesSection(data: AppData, month: string): string {
         <h2 class="section-header__title" id="planejamento-rules-title">Regras mensais</h2>
         ${filterControl}
       </div>
-      <div class="planejamento-rules-group">
-        <h3 class="planejamento-rules-group__title">Receitas previstas</h3>
-        ${incomeRules.length > 0 ? incomeRules.map((rule) => renderRuleRow(data, rule, month)).join("") : renderEmptyState({ title: "Nenhuma receita recorrente", description: "Cadastre uma regra de receita para prever entradas mensais." })}
-      </div>
-      <div class="planejamento-rules-group">
-        <h3 class="planejamento-rules-group__title">Despesas recorrentes</h3>
-        ${expenseRules.length > 0 ? expenseRules.map((rule) => renderRuleRow(data, rule, month)).join("") : renderEmptyState({ title: "Nenhuma despesa recorrente", description: "Cadastre uma regra de despesa para prever saídas mensais." })}
-      </div>
+      ${groups.map((recurrenceClass) => renderRulesGroup(data, month, recurrenceClass, rules)).join("")}
     </section>
   `;
 }
@@ -510,307 +527,12 @@ function renderInvalidMatchesSection(data: AppData): string {
   `;
 }
 
-function buildRuleDraftFromControls(host: HTMLElement): RecurringRuleDraft {
-  const kind = host.querySelector<HTMLInputElement>('input[name="rule-kind"]:checked')?.value ?? "expense";
-  return {
-    kind: kind === "income" ? "income" : "expense",
-    description: host.querySelector<HTMLInputElement>("#rule-description")?.value ?? "",
-    amountInput: host.querySelector<HTMLInputElement>("#rule-amount")?.value ?? "",
-    category: host.querySelector<HTMLInputElement>("#rule-category")?.value ?? "",
-    dayOfMonth: host.querySelector<HTMLInputElement>("#rule-day")?.value ?? "",
-    startMonth: host.querySelector<HTMLInputElement>("#rule-start-month")?.value ?? "",
-    endMonth: host.querySelector<HTMLInputElement>("#rule-end-month")?.value ?? "",
-    billingMode:
-      host.querySelector<HTMLInputElement>('input[name="rule-billing"]:checked')?.value === "card"
-        ? "card"
-        : "direct",
-    cardId: host.querySelector<HTMLSelectElement>("#rule-card")?.value ?? "",
-  };
-}
-
-function syncBillingVisibility(formHost: HTMLElement): void {
-  const kind = formHost.querySelector<HTMLInputElement>('input[name="rule-kind"]:checked')?.value;
-  const billing = formHost.querySelector<HTMLInputElement>('input[name="rule-billing"]:checked')?.value;
-  const billingGroup = formHost.querySelector<HTMLElement>('[data-field-group="billing"]');
-  const cardGroup = formHost.querySelector<HTMLElement>('[data-field-group="card"]');
-  if (billingGroup) {
-    billingGroup.hidden = kind === "income";
-  }
-  if (cardGroup) {
-    cardGroup.hidden = kind === "income" || billing !== "card";
-  }
-}
-
-function mountRuleForm(
-  formHost: HTMLElement,
-  data: AppData,
-  month: string,
-  mutations: AppMutations,
-  rerender: () => void,
-  rule?: RecurringRule,
-): void {
-  formController?.destroy();
-  formHost.replaceChildren();
-
-  const isEdit = rule !== undefined;
-  const panelHeader = el("div", "panel__header");
-  panelHeader.append(
-    el("h2", "panel__title", isEdit ? "Editar regra" : "Nova regra"),
-    el(
-      "p",
-      "panel__meta",
-      isEdit
-        ? "Atualize os dados da regra recorrente."
-        : "Cadastre manualmente quando nenhuma sugestão automática se aplicar.",
-    ),
-  );
-
-  const form = el("form", "form planejamento-form");
-  form.noValidate = true;
-  form.id = "planejamento-rule-form";
-
-  const kindIncome = el("input") as HTMLInputElement;
-  kindIncome.type = "radio";
-  kindIncome.name = "rule-kind";
-  kindIncome.value = "income";
-  kindIncome.id = "rule-kind-income";
-  kindIncome.checked = rule?.kind === "income";
-
-  const kindExpense = el("input") as HTMLInputElement;
-  kindExpense.type = "radio";
-  kindExpense.name = "rule-kind";
-  kindExpense.value = "expense";
-  kindExpense.id = "rule-kind-expense";
-  kindExpense.checked = rule?.kind !== "income";
-
-  const description = el("input") as HTMLInputElement;
-  description.type = "text";
-  description.id = "rule-description";
-  description.value = rule?.description ?? "";
-  description.autocomplete = "off";
-
-  const amount = el("input") as HTMLInputElement;
-  amount.type = "text";
-  amount.id = "rule-amount";
-  amount.inputMode = "decimal";
-  amount.placeholder = "0,00";
-  amount.value = rule ? centsToInputValue(rule.amountCents) : "";
-  amount.classList.add("field__control--money");
-
-  const category = el("input") as HTMLInputElement;
-  category.type = "text";
-  category.id = "rule-category";
-  category.value = rule?.category ?? "";
-
-  const day = el("input") as HTMLInputElement;
-  day.type = "number";
-  day.id = "rule-day";
-  day.min = "1";
-  day.max = "31";
-  day.value = rule ? String(rule.dayOfMonth) : "1";
-
-  const startMonth = el("input") as HTMLInputElement;
-  startMonth.type = "month";
-  startMonth.id = "rule-start-month";
-  startMonth.value = rule?.startMonth ?? month;
-
-  const endMonth = el("input") as HTMLInputElement;
-  endMonth.type = "month";
-  endMonth.id = "rule-end-month";
-  endMonth.value = rule?.endMonth ?? "";
-
-  const billingDirect = el("input") as HTMLInputElement;
-  billingDirect.type = "radio";
-  billingDirect.name = "rule-billing";
-  billingDirect.value = "direct";
-  billingDirect.id = "rule-billing-direct";
-  billingDirect.checked = rule?.billingMode !== "card";
-
-  const billingCard = el("input") as HTMLInputElement;
-  billingCard.type = "radio";
-  billingCard.name = "rule-billing";
-  billingCard.value = "card";
-  billingCard.id = "rule-billing-card";
-  billingCard.checked = rule?.billingMode === "card";
-
-  const card = el("select") as HTMLSelectElement;
-  card.id = "rule-card";
-  const emptyOption = el("option") as HTMLOptionElement;
-  emptyOption.value = "";
-  emptyOption.textContent = "Selecione um cartão";
-  card.appendChild(emptyOption);
-  for (const cardItem of data.cards) {
-    const option = el("option") as HTMLOptionElement;
-    option.value = cardItem.id;
-    option.textContent = cardItem.name;
-    if (rule?.cardId === cardItem.id) {
-      option.selected = true;
-    }
-    card.appendChild(option);
-  }
-
-  const getDraft = (): RecurringRuleDraft => buildRuleDraftFromControls(formHost);
-  const cardIds = data.cards.map((item) => item.id);
-
-  const fields = [
-    createValidatedField({
-      name: "rule-description",
-      label: "Descrição",
-      control: description,
-      required: true,
-      getError: () => {
-        const errors = validateRecurringRuleDraft(getDraft(), cardIds, rule);
-        return errors.description ?? null;
-      },
-    }),
-    createValidatedField({
-      name: "rule-amount",
-      label: "Valor",
-      control: amount,
-      required: true,
-      getError: () => {
-        const errors = validateRecurringRuleDraft(getDraft(), cardIds, rule);
-        return errors.amount ?? errors.amountCents ?? null;
-      },
-    }),
-    createValidatedField({
-      name: "rule-category",
-      label: "Categoria",
-      control: category,
-      required: true,
-      getError: () => {
-        const errors = validateRecurringRuleDraft(getDraft(), cardIds, rule);
-        return errors.category ?? null;
-      },
-    }),
-    createValidatedField({
-      name: "rule-day",
-      label: "Dia esperado",
-      control: day,
-      required: true,
-      getError: () => {
-        const errors = validateRecurringRuleDraft(getDraft(), cardIds, rule);
-        return errors.dayOfMonth ?? null;
-      },
-    }),
-    createValidatedField({
-      name: "rule-start-month",
-      label: "Competência inicial",
-      control: startMonth,
-      required: true,
-      getError: () => {
-        const errors = validateRecurringRuleDraft(getDraft(), cardIds, rule);
-        return errors.startMonth ?? null;
-      },
-    }),
-    createValidatedField({
-      name: "rule-end-month",
-      label: "Competência final",
-      control: endMonth,
-      getError: () => {
-        const errors = validateRecurringRuleDraft(getDraft(), cardIds, rule);
-        return errors.endMonth ?? null;
-      },
-    }),
-    createValidatedField({
-      name: "rule-card",
-      label: "Cartão",
-      control: card,
-      getError: () => {
-        const errors = validateRecurringRuleDraft(getDraft(), cardIds, rule);
-        return errors.cardId ?? null;
-      },
-    }),
-  ];
-
-  const kindGroup = el("fieldset", "field field--inline-options");
-  kindGroup.setAttribute("data-field-group", "kind");
-  const kindLegend = el("legend", "field__label", "Tipo");
-  const kindIncomeLabel = el("label", "choice-chip");
-  kindIncomeLabel.htmlFor = "rule-kind-income";
-  kindIncomeLabel.append(kindIncome, document.createTextNode(" Receita"));
-  const kindExpenseLabel = el("label", "choice-chip");
-  kindExpenseLabel.htmlFor = "rule-kind-expense";
-  kindExpenseLabel.append(kindExpense, document.createTextNode(" Despesa"));
-  kindGroup.append(kindLegend, kindIncomeLabel, kindExpenseLabel);
-
-  const billingGroup = el("fieldset", "field field--inline-options");
-  billingGroup.setAttribute("data-field-group", "billing");
-  const billingLegend = el("legend", "field__label", "Forma de cobrança");
-  const billingDirectLabel = el("label", "choice-chip");
-  billingDirectLabel.htmlFor = "rule-billing-direct";
-  billingDirectLabel.append(billingDirect, document.createTextNode(" Direta"));
-  const billingCardLabel = el("label", "choice-chip");
-  billingCardLabel.htmlFor = "rule-billing-card";
-  billingCardLabel.append(billingCard, document.createTextNode(" Cartão"));
-  billingGroup.append(billingLegend, billingDirectLabel, billingCardLabel);
-
-  const actions = el("div", "form-actions");
-  const cancelButton = el("button", "btn btn--secondary", "Cancelar");
-  cancelButton.type = "button";
-  const submitButton = el("button", "btn btn--primary", isEdit ? "Salvar" : "Criar regra");
-  submitButton.type = "submit";
-  actions.append(cancelButton, submitButton);
-
-  form.append(
-    kindGroup,
-    fields[0]!.group,
-    fields[1]!.group,
-    fields[2]!.group,
-    fields[3]!.group,
-    fields[4]!.group,
-    fields[5]!.group,
-    billingGroup,
-    fields[6]!.group,
-    actions,
-  );
-
-  formHost.append(panelHeader, form);
-  syncBillingVisibility(formHost);
-
-  cancelButton.addEventListener("click", () => {
-    closeRuleForm();
-    refreshPlanejamentoSections(formHost.closest(".planejamento-page") as HTMLElement, data, month);
-  });
-
-  formController = createProgressiveForm({
-    form,
-    submitButton,
-    fields,
-    onSubmit: () => {
-      const draft = getDraft();
-      mutations.update((appData) => {
-        const errors = isEdit && rule
-          ? updateRecurringRule(appData, rule.id, draft)
-          : createRecurringRule(appData, draft);
-        if (Object.keys(errors).length > 0) {
-          announce("Corrija os campos do formulário antes de salvar.");
-          return;
-        }
-        closeRuleForm();
-        announce(isEdit ? "Regra recorrente atualizada." : "Regra recorrente criada.");
-      });
-      rerender();
-    },
-  });
-  formController.bind();
-
-  for (const control of [kindIncome, kindExpense, billingDirect, billingCard]) {
-    control.addEventListener("change", () => {
-      syncBillingVisibility(formHost);
-      formController?.updateSubmitState();
-      formController?.renderErrors();
-    });
-  }
-}
-
 function refreshPlanejamentoSections(host: HTMLElement, data: AppData, month: string): void {
   const summaryHost = host.querySelector<HTMLElement>("#planejamento-summary-host");
   const suggestionsHost = host.querySelector<HTMLElement>("#planejamento-suggestions-host");
   const invalidHost = host.querySelector<HTMLElement>("#planejamento-invalid-host");
   const occurrencesHost = host.querySelector<HTMLElement>("#planejamento-occurrences-host");
   const rulesHost = host.querySelector<HTMLElement>("#planejamento-rules-host");
-  const formHost = host.querySelector<HTMLElement>("#planejamento-form-host");
 
   if (summaryHost) {
     summaryHost.innerHTML = renderSummaryPanel(data, month);
@@ -826,29 +548,6 @@ function refreshPlanejamentoSections(host: HTMLElement, data: AppData, month: st
   }
   if (rulesHost) {
     rulesHost.innerHTML = renderRulesSection(data, month);
-  }
-  if (formHost) {
-    formHost.hidden = formMode === "hidden";
-    if (formMode === "hidden") {
-      formHost.replaceChildren();
-    }
-  }
-}
-
-function openNewRuleForm(
-  host: HTMLElement,
-  data: AppData,
-  month: string,
-  mutations: AppMutations,
-  rerender: () => void,
-): void {
-  formMode = "create";
-  editingRuleId = null;
-  const formHost = host.querySelector<HTMLElement>("#planejamento-form-host");
-  if (formHost) {
-    formHost.hidden = false;
-    mountRuleForm(formHost, data, month, mutations, rerender);
-    formHost.scrollIntoView?.({ block: "nearest", behavior: "auto" });
   }
 }
 
@@ -866,7 +565,7 @@ function bindPlanejamentoActions(
   document.addEventListener(
     PLANEJAMENTO_NEW_RULE_EVENT,
     () => {
-      openNewRuleForm(host, data, month, mutations, rerender);
+      openNewRuleModal(data, month, mutations, rerender);
     },
     { signal },
   );
@@ -882,7 +581,7 @@ function bindPlanejamentoActions(
 
       const action = actionNode.dataset.action;
       if (action === "new-rule") {
-        openNewRuleForm(host, data, month, mutations, rerender);
+        openNewRuleModal(data, month, mutations, rerender);
         return;
       }
 
@@ -985,27 +684,7 @@ function bindPlanejamentoActions(
         if (!rule) {
           return;
         }
-        const input = window.prompt(
-          `Novo valor a partir de ${formatCompetenceLabel(month)} (use vírgula para centavos):`,
-          centsToInputValue(rule.amountCents),
-        );
-        if (!input) {
-          return;
-        }
-        const cents = parseMoneyToCents(input);
-        if (cents === null) {
-          announce("Valor inválido.");
-          return;
-        }
-        mutations.update((appData) => {
-          const errors = updateRecurringRuleAmountFromMonth(appData, ruleId, month, cents);
-          if (Object.keys(errors).length > 0) {
-            announce("Não foi possível atualizar o valor.");
-            return;
-          }
-          announce("Valor atualizado a partir da competência selecionada.");
-        });
-        rerender();
+        openUpdateRuleValueModal({ data, month, mutations, onSaved: rerender, rule });
         return;
       }
 
@@ -1034,13 +713,7 @@ function bindPlanejamentoActions(
         if (!rule) {
           return;
         }
-        formMode = "edit";
-        editingRuleId = rule.id;
-        const formHost = host.querySelector<HTMLElement>("#planejamento-form-host");
-        if (formHost) {
-          formHost.hidden = false;
-          mountRuleForm(formHost, data, month, mutations, rerender, rule);
-        }
+        openEditRuleModal({ data, month, mutations, onSaved: rerender, rule });
         return;
       }
 
@@ -1221,10 +894,6 @@ export function renderPlanejamento(
     const rulesHost = el("div");
     rulesHost.id = "planejamento-rules-host";
 
-    const formHost = el("section", "panel planejamento-form-panel");
-    formHost.id = "planejamento-form-host";
-    formHost.hidden = true;
-
     page.append(
       status,
       summaryHost,
@@ -1232,27 +901,9 @@ export function renderPlanejamento(
       invalidHost,
       occurrencesHost,
       rulesHost,
-      formHost,
     );
     host.appendChild(page);
     bindPlanejamentoActions(page, data, mutations, rerender);
-  }
-
-  if (formMode !== "hidden") {
-    const formHost = page.querySelector<HTMLElement>("#planejamento-form-host");
-    if (formHost) {
-      formHost.hidden = false;
-      if (formHost.childElementCount === 0) {
-        if (formMode === "edit" && editingRuleId) {
-          const rule = (data.recurringRules ?? []).find((item) => item.id === editingRuleId);
-          if (rule) {
-            mountRuleForm(formHost, data, month, mutations, rerender, rule);
-          }
-        } else if (formMode === "create") {
-          mountRuleForm(formHost, data, month, mutations, rerender);
-        }
-      }
-    }
   }
 
   refreshPlanejamentoSections(page, data, month);

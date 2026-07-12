@@ -589,7 +589,7 @@ const PAGE_DESC_EXTENDED: Record<RoutePath, string> = {
   "/dashboard": "Situação atual, compromissos e fechamento projetado da competência.",
   "/lancamentos": "Ledger operacional com busca, filtros e ações sobre receitas e despesas.",
   "/faturas": "Cartões, faturas da competência e compromissos de crédito.",
-  "/planejamento": "Regras recorrentes mensais, ocorrências previstas e conciliação com lançamentos.",
+  "/planejamento": "Receitas previstas, fixas, assinaturas e conciliação com lançamentos.",
   "/importar": "Importação local de arquivos JSON no contrato cfm.import.v1.",
   "/ajustes": "Cartões, dados locais e preferências do dispositivo.",
 };

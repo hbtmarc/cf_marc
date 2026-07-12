@@ -30,6 +30,7 @@ import {
 } from "../lancamentos-sections";
 import type { AppData, Transaction } from "../types";
 import { transactionHasValidRecurringMatch } from "../recurrence-auto-match";
+import { recurrenceClassForTransaction } from "../recurrence-class";
 import {
   deleteTransaction,
   openTransactionChoiceModal,
@@ -63,7 +64,12 @@ import {
 } from "../table-sort";
 import { bindTableSortControls, renderMobileSortControl, TABLE_IDS, type SortableColumnOption } from "../table-ui";
 import { announce, createRowMenu, el, escapeHtml, openConfirmModal } from "../ui";
-import { transactionDescriptionTextAccessor, transactionDisplayDescription } from "../transaction-aliases";
+import {
+  projectedInstallmentDisplayDescription,
+  projectedInstallmentSearchHaystack,
+  transactionDescriptionTextAccessor,
+  transactionDisplayDescription,
+} from "../transaction-aliases";
 import { openTransactionDisplayAliasModal } from "../transaction-alias-modal";
 
 type KindFilter = LancamentosFilterState["kind"];
@@ -149,6 +155,21 @@ export const incomeSortAccessors: Record<IncomeSortColumn, SortColumnAccessor<Tr
   },
   amount: { kind: "number", getValue: (item) => transactionDisplayedAmountCents(item) },
 };
+
+export function getLancamentosRowSortAccessors(
+  data: AppData,
+): Record<LancamentosSortColumn, SortColumnAccessor<LancamentoRow>> {
+  return {
+    ...lancamentosRowSortAccessors,
+    description: {
+      kind: "text",
+      getValue: (row) =>
+        row.rowKind === "projected"
+          ? projectedInstallmentDisplayDescription(data, row.data)
+          : transactionDisplayDescription(data, row.data),
+    },
+  };
+}
 
 export const lancamentosRowSortAccessors: Record<
   LancamentosSortColumn,
@@ -420,7 +441,7 @@ function renderCardDetailPanelFixed(group: LedgerCardGroup, data: AppData): stri
     TABLE_IDS.lancamentosCardsDetail,
     `${ledgerDetailMobileSortId(group.key)}`,
     projections
-      .map((item) => renderLedgerProjectedDetailRow(item, TABLE_IDS.lancamentosCardsDetail))
+      .map((item) => renderLedgerProjectedDetailRow(data, item, TABLE_IDS.lancamentosCardsDetail))
       .join(""),
   );
 }
@@ -529,6 +550,7 @@ function refreshLancamentosSections(
             filteredIncomes.map((item) =>
               renderIncomeTransactionTableRow(data, item, TABLE_IDS.lancamentosIncome, {
                 showRecurringIcon: transactionHasValidRecurringMatch(data, item.id),
+                recurringClass: recurrenceClassForTransaction(data, item.id),
               }),
             ).join(""),
           )}
@@ -561,6 +583,7 @@ function refreshLancamentosSections(
               .map((item) =>
                 renderTransactionTableRow(data, item, TABLE_IDS.lancamentosExpense, {
                   showRecurringIcon: transactionHasValidRecurringMatch(data, item.id),
+                  recurringClass: recurrenceClassForTransaction(data, item.id),
                 }),
               )
               .join(""),
@@ -913,15 +936,20 @@ export function applyFilters(items: Transaction[], state: LancamentosFilterState
 export function applyLancamentoFilters(
   rows: LancamentoRow[],
   state: LancamentosFilterState,
+  data?: AppData,
 ): LancamentoRow[] {
   let result = [...rows];
   const query = state.search.trim().toLowerCase();
   if (query.length > 0) {
-    result = result.filter(
-      (row) =>
+    result = result.filter((row) => {
+      if (row.rowKind === "projected" && data) {
+        return projectedInstallmentSearchHaystack(data, row.data).includes(query);
+      }
+      return (
         row.data.description.toLowerCase().includes(query) ||
-        row.data.category.toLowerCase().includes(query),
-    );
+        row.data.category.toLowerCase().includes(query)
+      );
+    });
   }
   if (state.kind !== "all") {
     result = result.filter((row) => {

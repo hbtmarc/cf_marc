@@ -2,8 +2,59 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 8.4.3 concluída — Aliases globais e consolidação visual do Planejamento  
+**Etapa atual:** Etapa 8.4.3.1 concluída — Modais, aliases em projeções e nomenclatura Fixas  
 **Próximo marco:** Etapa 9 — Balanço Mensal, Firebase, autenticação e sincronização
+
+---
+
+## Etapa 8.4.3.1 — modais, aliases em projeções e nomenclatura Fixas
+
+### Política global de formulários temporários
+
+Toda ação acionada por botão ou menu que abre um **formulário temporário** usa o modal do projeto (`openModal` / `openConfirmModal`). Exceções mantidas fora de modal: busca e filtros, complementação da revisão de importação, conteúdo permanente das páginas, tabelas/painéis de detalhe sem edição e seleção inline de candidatos de conciliação.
+
+No **Planejamento**, os fluxos **Nova regra**, **Editar** (fixa / receita prevista / assinatura), **Atualizar valor** e demais formulários temporários abrem em modal. O formulário inline abaixo das regras foi removido.
+
+Requisitos do modal: `role="dialog"`, `aria-modal="true"`, `aria-labelledby`, fundo inerte, foco inicial interno, Tab contido, Escape e botão de fechar, Cancelar, retorno de foco ao acionador, `body.modal-open`, erros por campo, Enter não salva inválido, anúncios via `aria-live`.
+
+### Taxonomia de produto (UI)
+
+| `recurrenceClass` | Singular | Plural (grupos) |
+|-------------------|----------|-----------------|
+| `income` | Receita prevista | Receitas previstas |
+| `fixed_bill` | Fixa | Fixas |
+| `card_subscription` | Assinatura | Assinaturas |
+| `other` | Outra previsão | Outras |
+
+Nomes técnicos internos (`RecurringRule`, `fixed_bill`, `recurrenceClass`, módulos) permanecem inalterados. Ícone de ciclo com `sr-only` contextual: “Lançamento de fixa”, “Lançamento de assinatura”, “Lançamento de receita prevista” ou fallback “Lançamento recorrente”.
+
+### Modal Atualizar valor
+
+Substitui `window.prompt`. Campos: valor atual (somente leitura), novo valor, competência de início (default = competência selecionada). Texto: “O valor anterior será preservado até a competência anterior.” Persistência via `updateRecurringRuleAmountFromMonth` (histórico, `seriesId`, matches e versionamento preservados).
+
+### Aliases em projeções
+
+`projectedInstallmentDisplayDescription` e `projectedInstallmentSearchHaystack` resolvem o nome exibido pela transação fonte (`sourceTransactionId`) ou descrição normalizada, sem alterar a origem persistida, IDs, fingerprints ou agrupamento técnico.
+
+Abrangência: parcelas projetadas em Lançamentos (tabela principal e detalhe de fatura/cartão), busca e ordenação de linhas projetadas, ocorrências derivadas no Planejamento (via `transactionDisplayDescriptionForSource` na descrição da regra quando aplicável). Dashboard agregado por cartão não lista descrições individuais de parcelas; transações recentes já usavam alias desde 8.4.3.
+
+### Garantias de não regressão
+
+Sem alteração em: `calculateCompetenceSummary`, `balanceRealizedCents`, `balancePlannedCents`, precedência `matched` / `covered_by_invoice` / `projected`, supressão por fatura real, idempotência de importação, reconciliação, geração de parcelas, renovação anual, versionamento de valor, `cfm.import.v1`, fingerprints ou descrição original das transações.
+
+### Ausência de dialogs nativos
+
+Não há uso em produção (`src/`) de `window.prompt`, `window.confirm`, `window.alert`, `prompt`, `confirm` ou `alert`. Confirmações destrutivas usam `openConfirmModal`.
+
+### Limitações remanescentes
+
+- Regras cadastradas manualmente com descrição própria não são renomeadas automaticamente por alias (comportamento intencional).
+- Painel “Parcelas projetadas” do Dashboard continua agregando por cartão, sem listar descrições linha a linha.
+- Título `title` em células com alias ainda expõe a descrição original para consulta rápida.
+
+### Evidências visuais
+
+Capturas em `docs/screenshots-etapa8.4.3.1/` (Planejamento Fixas/modais 1440 e 390 px; Lançamentos com parcela projetada e alias Moto).
 
 ---
 
@@ -55,14 +106,14 @@ Aliases são somente camada de apresentação persistida localmente. Não entram
 2. Resumo compacto da competência (grid denso)
 3. Sugestões agrupadas por classificação (linhas compactas, controle segmentado)
 4. Ocorrências do mês (tabela desktop / lista responsiva mobile)
-5. Regras mensais (filtros segmentados, receitas e despesas separadas)
-6. Formulário manual oculto até acionar **Nova regra**
+5. Regras mensais agrupadas: Receitas previstas, Fixas, Assinaturas, Outras (quando existirem)
 
-### Limitações conhecidas
+### Limitações conhecidas (histórico 8.4.3)
 
-- **Atualizar valor** em Planejamento ainda usa `window.prompt` (pré-existente da 8.4.2).
-- Aliases não se aplicam a parcelas projetadas (`projected:*`) nem a descrições de regras recorrentes já cadastradas manualmente.
+- ~~**Atualizar valor** em Planejamento ainda usa `window.prompt`~~ — resolvido na 8.4.3.1.
+- ~~Aliases não se aplicam a parcelas projetadas~~ — resolvido na 8.4.3.1.
 - Título `title` em células com alias ainda expõe a descrição original (comportamento intencional para consulta rápida).
+- Regras manuais com descrição própria não são sobrescritas por alias.
 
 ---
 

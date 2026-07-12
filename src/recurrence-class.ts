@@ -1,5 +1,6 @@
 import { annualCycleEndMonth } from "./recurrence-renewal";
 import type {
+  AppData,
   RecurrenceClass,
   RecurringBillingMode,
   RecurringRule,
@@ -38,18 +39,128 @@ export function inferRecurrenceClassFromRule(rule: RecurringRule): RecurrenceCla
 export function recurrenceClassLabel(recurrenceClass: RecurrenceClass): string {
   switch (recurrenceClass) {
     case "income":
-      return "Receita recorrente";
+      return "Receita prevista";
     case "fixed_bill":
-      return "Conta fixa";
+      return "Fixa";
     case "card_subscription":
-      return "Assinatura no cartão";
+      return "Assinatura";
     default:
-      return "Outra recorrência";
+      return "Outra previsão";
   }
 }
 
 export function suggestionGroupLabel(recurrenceClass: RecurrenceClass): string {
-  return recurrenceClassLabel(recurrenceClass);
+  switch (recurrenceClass) {
+    case "income":
+      return "Receitas previstas";
+    case "fixed_bill":
+      return "Fixas";
+    case "card_subscription":
+      return "Assinaturas";
+    default:
+      return "Outras";
+  }
+}
+
+export function rulesGroupHeading(recurrenceClass: RecurrenceClass): string {
+  return suggestionGroupLabel(recurrenceClass);
+}
+
+export function rulesGroupEmptyTitle(recurrenceClass: RecurrenceClass): string {
+  switch (recurrenceClass) {
+    case "income":
+      return "Nenhuma receita prevista";
+    case "fixed_bill":
+      return "Nenhuma fixa cadastrada";
+    case "card_subscription":
+      return "Nenhuma assinatura cadastrada";
+    default:
+      return "Nenhuma outra previsão cadastrada";
+  }
+}
+
+export function rulesGroupEmptyDescription(recurrenceClass: RecurrenceClass): string {
+  switch (recurrenceClass) {
+    case "income":
+      return "Cadastre uma receita prevista para projetar entradas mensais.";
+    case "fixed_bill":
+      return "Cadastre uma fixa para projetar saídas mensais diretas.";
+    case "card_subscription":
+      return "Cadastre uma assinatura para projetar cobranças no cartão.";
+    default:
+      return "Cadastre outra previsão quando nenhuma classificação padrão se aplicar.";
+  }
+}
+
+export function ruleEditModalTitle(rule: RecurringRule): string {
+  const recurrenceClass = inferRecurrenceClassFromRule(rule);
+  if (recurrenceClass === "income") {
+    return "Editar receita prevista";
+  }
+  if (recurrenceClass === "card_subscription") {
+    return "Editar assinatura";
+  }
+  if (recurrenceClass === "fixed_bill") {
+    return "Editar fixa";
+  }
+  return "Editar previsão";
+}
+
+export function ruleEditActionLabel(rule: RecurringRule): string {
+  const recurrenceClass = inferRecurrenceClassFromRule(rule);
+  if (recurrenceClass === "income") {
+    return "Editar receita";
+  }
+  if (recurrenceClass === "card_subscription") {
+    return "Editar assinatura";
+  }
+  if (recurrenceClass === "fixed_bill") {
+    return "Editar fixa";
+  }
+  return "Editar";
+}
+
+export function suggestionConfirmActionLabel(recurrenceClass: RecurrenceClass): string {
+  switch (recurrenceClass) {
+    case "income":
+      return "Criar receita prevista";
+    case "fixed_bill":
+      return "Criar fixa";
+    case "card_subscription":
+      return "Criar assinatura";
+    default:
+      return "Criar previsão";
+  }
+}
+
+export function recurringTransactionAccessibleLabel(recurrenceClass: RecurrenceClass): string {
+  switch (recurrenceClass) {
+    case "income":
+      return "Lançamento de receita prevista";
+    case "fixed_bill":
+      return "Lançamento de fixa";
+    case "card_subscription":
+      return "Lançamento de assinatura";
+    default:
+      return "Lançamento recorrente";
+  }
+}
+
+export function recurrenceClassForTransaction(
+  data: AppData,
+  transactionId: string,
+): RecurrenceClass | null {
+  const match = (data.recurringMatches ?? []).find(
+    (item) => item.transactionId === transactionId,
+  );
+  if (!match) {
+    return null;
+  }
+  const rule = (data.recurringRules ?? []).find((item) => item.id === match.ruleId);
+  if (!rule) {
+    return null;
+  }
+  return inferRecurrenceClassFromRule(rule);
 }
 
 export function suggestionGroupOrder(recurrenceClass: RecurrenceClass): number {

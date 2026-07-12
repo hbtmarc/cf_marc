@@ -1,5 +1,5 @@
 import { nowIso } from "./finance";
-import { normalizeInstallmentDescription } from "./installments";
+import { normalizeInstallmentDescription, type ProjectedInstallment } from "./installments";
 import type { AppData, Transaction, TransactionDescriptionAlias } from "./types";
 
 export function normalizeTransactionDescription(description: string): string {
@@ -44,6 +44,32 @@ export function transactionDescriptionTextAccessor(
     kind: "text",
     getValue: (item) => transactionDisplayDescription(data, item),
   };
+}
+
+export function projectedInstallmentDisplayDescription(
+  data: AppData,
+  item: ProjectedInstallment,
+): string {
+  const source = data.transactions.find(
+    (transaction) => transaction.id === item.sourceTransactionId,
+  );
+  if (source) {
+    return transactionDisplayDescription(data, source);
+  }
+  return transactionDisplayDescriptionForSource(data, item.description);
+}
+
+export function projectedInstallmentSearchHaystack(
+  data: AppData,
+  item: ProjectedInstallment,
+): string {
+  const source = data.transactions.find(
+    (transaction) => transaction.id === item.sourceTransactionId,
+  );
+  const display = projectedInstallmentDisplayDescription(data, item);
+  return [item.description, display, item.category, source?.description ?? ""]
+    .join(" ")
+    .toLowerCase();
 }
 
 export function validateTransactionDescriptionAliasDisplayName(

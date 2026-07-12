@@ -15,12 +15,15 @@ import {
   normalizeTransactionDescription,
   removeTransactionDescriptionAlias,
   transactionDescriptionAliasId,
+  projectedInstallmentDisplayDescription,
+  projectedInstallmentSearchHaystack,
   transactionDisplayDescription,
   transactionDisplayDescriptionForSource,
   upsertTransactionDescriptionAlias,
   validateTransactionDescriptionAliasDisplayName,
 } from "./transaction-aliases";
 import type { AppData, Transaction } from "./types";
+import type { ProjectedInstallment } from "./installments";
 
 const TIMESTAMP = "2026-07-01T00:00:00.000Z";
 const SOURCE = "BMI Serviços Digitais";
@@ -344,5 +347,46 @@ describe("transaction description aliases", () => {
       expect(loaded.data.transactionDescriptionAliases?.[0]?.displayName).toBe("Internet");
       expect(transactionDisplayDescriptionForSource(loaded.data, SOURCE)).toBe("Internet");
     }
+  });
+
+  it("applies alias to projected installment rows", () => {
+    const data = baseData({
+      transactions: [tx({ id: "src", description: "Auto Pan" })],
+    });
+    upsertTransactionDescriptionAlias(data, "Auto Pan", "Moto");
+    const item: ProjectedInstallment = {
+      id: "projected:src:2",
+      sourceTransactionId: "src",
+      competenceMonth: "2026-08",
+      description: "Auto Pan",
+      amountCents: 5000,
+      category: "Transporte",
+      cardId: "card-1",
+      installment: { current: 2, total: 12 },
+      projected: true,
+    };
+    expect(projectedInstallmentDisplayDescription(data, item)).toBe("Moto");
+    expect(item.description).toBe("Auto Pan");
+    expect(data.transactions[0]?.description).toBe("Auto Pan");
+  });
+
+  it("searches projected installments by alias and original description", () => {
+    const data = baseData({
+      transactions: [tx({ id: "src", description: "BMI Serviços Digitais" })],
+    });
+    upsertTransactionDescriptionAlias(data, "BMI Serviços Digitais", "Internet");
+    const item: ProjectedInstallment = {
+      id: "projected:src:2",
+      sourceTransactionId: "src",
+      competenceMonth: "2026-08",
+      description: "BMI Serviços Digitais",
+      amountCents: 5000,
+      category: "Moradia",
+      cardId: "card-1",
+      installment: { current: 2, total: 12 },
+      projected: true,
+    };
+    expect(projectedInstallmentSearchHaystack(data, item)).toContain("internet");
+    expect(projectedInstallmentSearchHaystack(data, item)).toContain("bmi");
   });
 });

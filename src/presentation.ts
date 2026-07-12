@@ -24,6 +24,11 @@ import {
   type ProjectedInstallment,
 } from "./installments";
 import { recurringCycleIcon } from "./icons";
+import { recurringTransactionAccessibleLabel } from "./recurrence-class";
+import {
+  projectedInstallmentDisplayDescription,
+  transactionDisplayDescription,
+} from "./transaction-aliases";
 import {
   buildDashboardCardSummary,
   buildDashboardRecurringSummary,
@@ -35,10 +40,10 @@ import type {
   Card,
   CompetenceSummary,
   Invoice,
+  RecurrenceClass,
   RoutePath,
   Transaction,
 } from "./types";
-import { transactionDisplayDescription } from "./transaction-aliases";
 import { escapeHtml, renderMoney, renderStatusChip } from "./ui";
 import { installmentDisplayLabel } from "./installment-label";
 import { renderSortableTh, tableColumnHeaderId, TABLE_IDS, type SortableColumnOption } from "./table-ui";
@@ -524,7 +529,7 @@ export function renderRecurringSummaryPanel(
       <div class="panel__body">
         ${
           recurring.lines.length === 0
-            ? `<p class="dashboard-recurring__empty">Nenhuma ocorrência recorrente nesta competência.</p>`
+            ? `<p class="dashboard-recurring__empty">Nenhuma previsão nesta competência.</p>`
             : `<ul class="dashboard-recurring-list">
               ${recurring.lines
                 .map((line) => {
@@ -1049,18 +1054,27 @@ function transactionTypeChipClass(item: Transaction): string {
   }
 }
 
-function renderRecurringIndicator(): string {
-  return `<span class="recurring-indicator" title="Recorrente">${recurringCycleIcon()}<span class="sr-only">Lançamento recorrente</span></span>`;
+function renderRecurringIndicator(recurrenceClass: RecurrenceClass | null = null): string {
+  const label = recurrenceClass
+    ? recurringTransactionAccessibleLabel(recurrenceClass)
+    : "Lançamento recorrente";
+  return `<span class="recurring-indicator" title="${escapeHtml(label)}">${recurringCycleIcon()}<span class="sr-only">${escapeHtml(label)}</span></span>`;
 }
 
 export function renderTransactionTableRow(
   data: AppData,
   item: Transaction,
   tableId: string = TABLE_IDS.lancamentos,
-  options?: { includeType?: boolean; showRecurringIcon?: boolean },
+  options?: {
+    includeType?: boolean;
+    showRecurringIcon?: boolean;
+    recurringClass?: RecurrenceClass | null;
+  },
 ): string {
   const includeType = options?.includeType !== false;
-  const recurringIcon = options?.showRecurringIcon ? `${renderRecurringIndicator()} ` : "";
+  const recurringIcon = options?.showRecurringIcon
+    ? `${renderRecurringIndicator(options.recurringClass ?? null)} `
+    : "";
   const statusLabel = transactionStatusLabel(item.kind, item.status, item.ledgerStatus);
   const statusVariant =
     item.ledgerStatus === "in_invoice"
@@ -1105,26 +1119,34 @@ export function renderIncomeTransactionTableRow(
   data: AppData,
   item: Transaction,
   tableId: string = TABLE_IDS.lancamentosIncome,
-  options?: { showRecurringIcon?: boolean },
+  options?: { showRecurringIcon?: boolean; recurringClass?: RecurrenceClass | null },
 ): string {
   return renderTransactionTableRow(data, item, tableId, {
     includeType: false,
-    ...(options?.showRecurringIcon ? { showRecurringIcon: true } : {}),
+    ...(options?.showRecurringIcon ? { showRecurringIcon: true, recurringClass: options.recurringClass ?? null } : {}),
   });
 }
 
 export function renderProjectedInstallmentRow(
+  data: AppData,
   item: ProjectedInstallment,
   tableId: string = TABLE_IDS.lancamentos,
 ): string {
   const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
   const installmentLabel = ` <span class="data-table__meta">${item.installment.current}/${item.installment.total}</span>`;
+  const display = projectedInstallmentDisplayDescription(data, item);
+  const source = data.transactions.find((transaction) => transaction.id === item.sourceTransactionId);
+  const titleSource = source?.description ?? item.description;
+  const titleAttr =
+    display !== titleSource || titleSource.length > 40
+      ? ` title="${escapeHtml(titleSource)}"`
+      : "";
 
   return `
     <tr class="cfm-table__row--projected" data-projected-id="${escapeHtml(item.id)}">
       <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatCompetenceLabel(item.competenceMonth))}</td>
       <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
-        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>${installmentLabel}
+        <span class="data-table__primary"${titleAttr}>${escapeHtml(display)}</span>${installmentLabel}
       </td>
       <td class="cfm-table__cell--category" ${h("category")} data-label="Categoria">${escapeHtml(item.category)}</td>
       <td class="cfm-table__cell--type" ${h("type")} data-label="Tipo">
@@ -1554,15 +1576,17 @@ export function renderLedgerCardBlock(input: {
 }
 
 export function renderLedgerProjectedDetailRow(
+  data: AppData,
   item: ProjectedInstallment,
   tableId: string = TABLE_IDS.lancamentosCardsDetail,
 ): string {
   const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
+  const display = projectedInstallmentDisplayDescription(data, item);
   return `
     <tr class="cfm-table__row--projected" data-projected-id="${escapeHtml(item.id)}">
       <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatCompetenceLabel(item.competenceMonth))}</td>
       <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
-        <span class="data-table__primary">${escapeHtml(item.description)}</span>
+        <span class="data-table__primary">${escapeHtml(display)}</span>
         <span class="status-chip status-chip--projected">${escapeHtml(PROJECTED_STATUS_LABEL.toUpperCase())}</span>
       </td>
       <td class="cfm-table__cell--installment" ${h("installment")} data-label="Parcela">${item.installment.current}/${item.installment.total}</td>

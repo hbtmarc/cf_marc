@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyImportPlan, buildImportPlan } from "./import";
 import { parseImportJson, validateImportDocument } from "./import-validate";
 import fixtureDocument from "./fixtures/cfm-import-v1-valid.json";
@@ -30,6 +30,16 @@ import {
   resetPlanejamentoUiStateForTests,
 } from "./pages/planejamento";
 import { normalizeRoute, ROUTE_LABELS } from "./router";
+import { initUiRoots } from "./ui";
+
+function ensureModalDom(): void {
+  document.body.innerHTML = `
+    <div class="app-shell"></div>
+    <div id="modal-root"></div>
+    <div id="live-region" aria-live="polite"></div>
+  `;
+  initUiRoots();
+}
 import { emptyAppData, serializeAppData } from "./storage";
 import type { AppData, RecurringRule, Transaction } from "./types";
 
@@ -122,7 +132,7 @@ describe("planejamento route and page", () => {
     expect(host.textContent).toContain("Regras mensais");
   });
 
-  it("orders page sections with manual form after rules", () => {
+  it("orders page sections without inline form host", () => {
     const host = document.createElement("div");
     renderPlanejamento(host, dataRef, mutations, () => {});
     const page = host.querySelector(".planejamento-page");
@@ -138,9 +148,7 @@ describe("planejamento route and page", () => {
     expect(ids.indexOf("planejamento-occurrences-host")).toBeLessThan(
       ids.indexOf("planejamento-rules-host"),
     );
-    expect(ids.indexOf("planejamento-rules-host")).toBeLessThan(
-      ids.indexOf("planejamento-form-host"),
-    );
+    expect(host.querySelector("#planejamento-form-host")).toBeNull();
   });
 
   it("shows suggestion actions and keeps Nova regra secondary", () => {
@@ -165,14 +173,16 @@ describe("planejamento route and page", () => {
     ).not.toBeNull();
   });
 
-  it("keeps manual form hidden until Nova regra is triggered", () => {
+  it("opens Nova regra in modal instead of inline form", () => {
+    ensureModalDom();
     const host = document.createElement("div");
     renderPlanejamento(host, dataRef, mutations, () => {});
-    const formHost = host.querySelector<HTMLElement>("#planejamento-form-host");
-    expect(formHost?.hidden).toBe(true);
     document.dispatchEvent(new CustomEvent("cfm:planejamento-new-rule"));
-    renderPlanejamento(host, dataRef, mutations, () => {});
-    expect(host.querySelector<HTMLElement>("#planejamento-form-host")?.hidden).toBe(false);
+    expect(host.querySelector("#planejamento-form-host")).toBeNull();
+    expect(document.getElementById("modal-root")?.classList.contains("modal-root--open")).toBe(
+      true,
+    );
+    expect(document.querySelector("#planejamento-rule-form")).not.toBeNull();
   });
 
   it("exposes segmented rule filters and occurrence states", () => {
@@ -639,34 +649,12 @@ describe("planejamento accessibility and focus", () => {
     expect(toggle?.getAttribute("aria-controls")).toBeTruthy();
   });
 
-  it("keeps form input node while typing description", () => {
-    vi.useFakeTimers();
+  it("uses mobile-friendly layout hooks without inline form panel", () => {
     const host = document.createElement("div");
-    const rerender = (): void => {
-      renderPlanejamento(host, dataRef, mutations, rerender);
-    };
-    rerender();
-    document.dispatchEvent(new CustomEvent("cfm:planejamento-new-rule"));
-    rerender();
-    const description = host.querySelector<HTMLInputElement>("#rule-description");
-    expect(description).not.toBeNull();
-    const inputRef = description!;
-    description!.focus();
-    description!.value = "Plano";
-    description!.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(host.querySelector("#rule-description")).toBe(inputRef);
-    vi.useRealTimers();
-  });
-
-  it("uses mobile-friendly single-column layout hooks", () => {
-    const host = document.createElement("div");
-    renderPlanejamento(host, dataRef, mutations, () => {});
-    document.dispatchEvent(new CustomEvent("cfm:planejamento-new-rule"));
     renderPlanejamento(host, dataRef, mutations, () => {});
     expect(host.querySelector(".planejamento-page")).not.toBeNull();
     expect(host.querySelector(".planejamento-summary__strip")).not.toBeNull();
-    expect(host.querySelector(".planejamento-form-panel")).not.toBeNull();
-    expect(host.querySelector(".choice-chip")).not.toBeNull();
+    expect(host.querySelector(".planejamento-form-panel")).toBeNull();
     expect(host.querySelector(".planejamento-suggestion-group, .empty-state")).not.toBeNull();
     expect(host.querySelector(".cfm-table--planejamento-occurrences")).not.toBeNull();
   });

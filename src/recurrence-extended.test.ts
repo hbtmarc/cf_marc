@@ -221,9 +221,9 @@ describe("recurrence extended etapa 8.4.2", () => {
     expect(data.recurringRules).toHaveLength(1);
   });
 
-  it("shows recurring icon for matched transaction", () => {
+  it("shows recurring icon for matched fixed_bill transaction", () => {
     data = baseData({
-      recurringRules: [rule({ id: "rule-1" })],
+      recurringRules: [rule({ id: "rule-1", recurrenceClass: "fixed_bill" })],
       transactions: [tx({ id: "tx-1" })],
       recurringMatches: [
         {
@@ -238,9 +238,10 @@ describe("recurrence extended etapa 8.4.2", () => {
     });
     const html = renderTransactionTableRow(data, data.transactions[0]!, "lancamentos-expense", {
       showRecurringIcon: transactionHasValidRecurringMatch(data, "tx-1"),
+      recurringClass: "fixed_bill",
     });
     expect(html).toContain("recurring-indicator");
-    expect(html).toContain("Lançamento recorrente");
+    expect(html).toContain("Lançamento de fixa");
   });
 
   it("does not show recurring icon without match", () => {
@@ -268,8 +269,9 @@ describe("recurrence extended etapa 8.4.2", () => {
     });
     const html = renderTransactionTableRow(data, data.transactions[0]!, "lancamentos-expense", {
       showRecurringIcon: true,
+      recurringClass: "fixed_bill",
     });
-    expect(html).toContain('title="Recorrente"');
+    expect(html).toContain('title="Lançamento de fixa"');
     expect(html).toContain('class="sr-only"');
   });
 

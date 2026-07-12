@@ -1323,6 +1323,23 @@ body.modal-open {
   width: min(calc(100% - 2rem), 30rem);
 }
 
+.modal-panel--form .planejamento-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+@media (min-width: 48rem) {
+  .modal-panel--form .planejamento-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .modal-panel--form .planejamento-form .field--full,
+  .modal-panel--form .planejamento-form .field--inline-options,
+  .modal-panel--form .planejamento-form .form-actions {
+    grid-column: 1 / -1;
+  }
+}
+
 .modal-panel__header {
   display: flex;
   align-items: center;
@@ -3144,27 +3161,6 @@ body.modal-open {
   align-items: center;
 }
 
-.planejamento-form-panel {
-  max-width: 42rem;
-}
-
-.planejamento-form-panel .planejamento-form {
-  display: grid;
-  gap: var(--space-4);
-}
-
-@media (min-width: 48rem) {
-  .planejamento-form-panel .planejamento-form {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .planejamento-form-panel .field--full,
-  .planejamento-form-panel .field--inline-options,
-  .planejamento-form-panel .form-actions {
-    grid-column: 1 / -1;
-  }
-}
-
 .planejamento-metric {
   display: flex;
   flex-direction: column;
@@ -3177,12 +3173,10 @@ body.modal-open {
 }
 
 .planejamento-section + .planejamento-section,
-.planejamento-form-panel,
 #planejamento-summary-host + #planejamento-suggestions-host,
 #planejamento-suggestions-host + #planejamento-invalid-host,
 #planejamento-invalid-host + #planejamento-occurrences-host,
-#planejamento-occurrences-host + #planejamento-rules-host,
-#planejamento-rules-host + #planejamento-form-host {
+#planejamento-occurrences-host + #planejamento-rules-host {
   margin-top: var(--space-5);
 }
 
@@ -3343,10 +3337,21 @@ body.modal-open {
   color: var(--color-text-secondary);
 }
 
-.planejamento-form-panel .planejamento-form {
+.update-value-modal {
   display: grid;
-  gap: var(--space-3);
-  max-width: 42rem;
+  gap: var(--space-4);
+}
+
+.update-value-modal__intro {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-small);
+}
+
+.update-value-modal__current {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
 }
 
 .field--inline-options {
