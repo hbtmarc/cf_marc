@@ -156,6 +156,20 @@ function isIgnoredRecurringSuggestion(value: unknown): boolean {
   );
 }
 
+function isTransactionDescriptionAlias(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    typeof value.sourceDescriptionNormalized === "string" &&
+    typeof value.sourceDescriptionSample === "string" &&
+    typeof value.displayName === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
 export function emptyAppData(): AppData {
   return {
     schemaVersion: "cfm.local.v2",
@@ -166,6 +180,7 @@ export function emptyAppData(): AppData {
     recurringRules: [],
     recurringMatches: [],
     ignoredRecurringSuggestions: [],
+    transactionDescriptionAliases: [],
   };
 }
 
@@ -230,6 +245,15 @@ export function validateAppData(value: unknown): value is AppData {
     }
   }
 
+  if (value.transactionDescriptionAliases !== undefined) {
+    if (
+      !Array.isArray(value.transactionDescriptionAliases) ||
+      !value.transactionDescriptionAliases.every(isTransactionDescriptionAlias)
+    ) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -245,6 +269,9 @@ function normalizeAppData(data: AppData): AppData {
   }
   if (!data.ignoredRecurringSuggestions) {
     data.ignoredRecurringSuggestions = [];
+  }
+  if (!data.transactionDescriptionAliases) {
+    data.transactionDescriptionAliases = [];
   }
   const seenIgnored = new Set<string>();
   data.ignoredRecurringSuggestions = data.ignoredRecurringSuggestions.filter((item) => {

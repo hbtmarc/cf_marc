@@ -36,6 +36,7 @@ import {
 } from "../table-sort";
 import { bindTableSortControls, renderMobileSortControl, type SortableColumnOption } from "../table-ui";
 import { createRowMenu, el, openConfirmModal } from "../ui";
+import { transactionDescriptionTextAccessor } from "../transaction-aliases";
 import { formatCardCount, formatInvoiceCount } from "../text";
 
 let expandedInvoiceId: string | null = null;
@@ -123,6 +124,15 @@ export function buildInvoiceSortAccessors(
     },
     total: { kind: "number", getValue: (item) => invoiceTotalCentsValue(item) },
     open: { kind: "number", getValue: (item) => invoiceOpenCents(item) },
+  };
+}
+
+export function getFaturasInvoiceDetailSortAccessors(
+  data: AppData,
+): Record<InvoiceDetailSortColumn, SortColumnAccessor<Transaction>> {
+  return {
+    ...invoiceDetailSortAccessors,
+    description: transactionDescriptionTextAccessor(data),
   };
 }
 
@@ -300,10 +310,11 @@ export function renderFaturas(
         const detailTransactions = sortTableItems(
           transactionsForInvoice(data.transactions, invoice.id),
           invoiceDetailSort,
-          invoiceDetailSortAccessors,
+          getFaturasInvoiceDetailSortAccessors(data),
         );
         const detailHost = el("div", "invoice-detail-host");
         detailHost.innerHTML = renderInvoiceDetailPanel({
+          data,
           invoice,
           cardName: cardNameById(data, invoice.cardId),
           transactions: detailTransactions,

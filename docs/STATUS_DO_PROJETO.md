@@ -2,7 +2,67 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 8 concluída — Planejamento automático e consolidação visual
+**Etapa atual:** Etapa 8.4.3 concluída — Aliases globais e consolidação visual do Planejamento  
+**Próximo marco:** Etapa 9 — Balanço Mensal, Firebase, autenticação e sincronização
+
+---
+
+## Etapa 8.4.3 — aliases globais e consolidação visual do Planejamento
+
+### Causa da ausência anterior
+
+Não existia camada persistida entre a descrição importada (`transaction.description`) e a apresentação nas telas. O único caminho era editar cada lançamento individualmente, o que alterava o dado de origem e quebrava idempotência, fingerprints e detecção de recorrências.
+
+### Modelo `TransactionDescriptionAlias`
+
+| Campo | Função |
+|-------|--------|
+| `id` | Determinístico: `txn-desc-alias:{descrição normalizada}` |
+| `sourceDescriptionNormalized` | Chave de agrupamento (mesma política de `normalizeInstallmentDescription`) |
+| `sourceDescriptionSample` | Amostra legível da origem |
+| `displayName` | Nome amigável escolhido pelo usuário |
+| `createdAt` / `updatedAt` | Auditoria local |
+
+Coleção em `AppData.transactionDescriptionAliases` (padrão `[]` em projetos antigos).
+
+### Fonte de verdade
+
+- `transaction.description` permanece **sempre** a descrição original.
+- Aliases **não** alteram fingerprint, ID, valor, categoria, parcela, cartão, fatura, status, idempotência nem matemática financeira.
+- Helper central: `transactionDisplayDescription(data, transaction)` — retorna `displayName` se houver alias, senão a descrição original.
+
+### Comportamento na importação
+
+- `applyImportPlan` preserva `transactionDescriptionAliases` (como regras, matches e sugestões ignoradas).
+- Contrato `cfm.import.v1` **não** foi alterado; aliases não entram no JSON importado.
+- Reimportação do mesmo arquivo mantém idempotência e continua exibindo o alias.
+
+### Abrangência da máscara
+
+Lançamentos (receitas, despesas, detalhes de fatura), Faturas, Dashboard (transações recentes), busca (alias **e** original), ordenação por descrição (nome exibido), Planejamento (sugestões, candidatos de conciliação). Sugestões e conciliação técnica continuam baseadas na descrição original; ao confirmar sugestão, o alias vira descrição inicial da regra. Regras manuais não são sobrescritas.
+
+### Como criar, alterar e remover
+
+Em **Lançamentos**, menu `...` de qualquer transação real → **Renomear exibição** → modal do projeto com descrição original (somente leitura), campo **Nome exibido**, **Salvar nome**, **Cancelar** e **Restaurar nome original** (quando já existir alias).
+
+### Garantia de não impacto financeiro
+
+Aliases são somente camada de apresentação persistida localmente. Não entram em `calculateCompetenceSummary`, projeções, matches, faturas reais nem importação.
+
+### Estrutura visual final do Planejamento
+
+1. Cabeçalho global (título, descrição, competência) + **Nova regra** secundária no `page-header`
+2. Resumo compacto da competência (grid denso)
+3. Sugestões agrupadas por classificação (linhas compactas, controle segmentado)
+4. Ocorrências do mês (tabela desktop / lista responsiva mobile)
+5. Regras mensais (filtros segmentados, receitas e despesas separadas)
+6. Formulário manual oculto até acionar **Nova regra**
+
+### Limitações conhecidas
+
+- **Atualizar valor** em Planejamento ainda usa `window.prompt` (pré-existente da 8.4.2).
+- Aliases não se aplicam a parcelas projetadas (`projected:*`) nem a descrições de regras recorrentes já cadastradas manualmente.
+- Título `title` em células com alias ainda expõe a descrição original (comportamento intencional para consulta rápida).
 
 ---
 

@@ -8,6 +8,7 @@ import {
   TABLE_IDS,
   tableColumnHeaderId,
 } from "./table-ui";
+import { emptyAppData } from "./storage";
 import type { Transaction } from "./types";
 
 function tx(partial: Partial<Transaction> & Pick<Transaction, "id">): Transaction {
@@ -44,7 +45,7 @@ describe("table-ui mobile accessibility", () => {
 
   it("associates table cells with column headers programmatically", () => {
     const item = tx({ id: "a", description: "Mercado" });
-    const row = renderTransactionTableRow(item);
+    const row = renderTransactionTableRow(emptyAppData(), item);
     const amountHeaderId = tableColumnHeaderId(TABLE_IDS.lancamentos, "amount");
 
     expect(row).toContain(`headers="${amountHeaderId}"`);

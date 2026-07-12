@@ -26,6 +26,7 @@ import {
 } from "./planejamento-presentation";
 import {
   renderPlanejamento,
+  renderPlanejamentoHeaderActions,
   resetPlanejamentoUiStateForTests,
 } from "./pages/planejamento";
 import { normalizeRoute, ROUTE_LABELS } from "./router";
@@ -151,11 +152,38 @@ describe("planejamento route and page", () => {
     });
     const host = document.createElement("div");
     renderPlanejamento(host, dataRef, mutations, () => {});
+    const headerActions = document.createElement("div");
+    renderPlanejamentoHeaderActions(headerActions);
     expect(host.querySelector("[data-action='confirm-suggestion']")).not.toBeNull();
     expect(host.querySelector("[data-action='ignore-suggestion']")).not.toBeNull();
-    expect(host.querySelector("[data-action='new-rule']")?.className).toContain("btn--secondary");
+    expect(headerActions.querySelector("[data-action='new-rule']")?.className).toContain(
+      "btn--secondary",
+    );
     expect(host.querySelector(".planejamento-suggestion-group")).not.toBeNull();
-    expect(host.querySelector(".choice-chip")).not.toBeNull();
+    expect(
+      host.querySelector(".segmented-control, .planejamento-suggestion-row__class-badge"),
+    ).not.toBeNull();
+  });
+
+  it("keeps manual form hidden until Nova regra is triggered", () => {
+    const host = document.createElement("div");
+    renderPlanejamento(host, dataRef, mutations, () => {});
+    const formHost = host.querySelector<HTMLElement>("#planejamento-form-host");
+    expect(formHost?.hidden).toBe(true);
+    document.dispatchEvent(new CustomEvent("cfm:planejamento-new-rule"));
+    renderPlanejamento(host, dataRef, mutations, () => {});
+    expect(host.querySelector<HTMLElement>("#planejamento-form-host")?.hidden).toBe(false);
+  });
+
+  it("exposes segmented rule filters and occurrence states", () => {
+    dataRef = baseData({
+      recurringRules: [rule({ id: "rule-1" })],
+    });
+    const host = document.createElement("div");
+    renderPlanejamento(host, dataRef, mutations, () => {});
+    expect(host.querySelector(".segmented-control--rules")).not.toBeNull();
+    expect(host.querySelector(".cfm-table--planejamento-occurrences")).not.toBeNull();
+    expect(host.textContent).toContain("PREVISTA");
   });
 });
 
@@ -618,7 +646,8 @@ describe("planejamento accessibility and focus", () => {
       renderPlanejamento(host, dataRef, mutations, rerender);
     };
     rerender();
-    host.querySelector<HTMLButtonElement>("[data-action='new-rule']")?.click();
+    document.dispatchEvent(new CustomEvent("cfm:planejamento-new-rule"));
+    rerender();
     const description = host.querySelector<HTMLInputElement>("#rule-description");
     expect(description).not.toBeNull();
     const inputRef = description!;
@@ -632,11 +661,13 @@ describe("planejamento accessibility and focus", () => {
   it("uses mobile-friendly single-column layout hooks", () => {
     const host = document.createElement("div");
     renderPlanejamento(host, dataRef, mutations, () => {});
-    host.querySelector<HTMLButtonElement>("[data-action='new-rule']")?.click();
+    document.dispatchEvent(new CustomEvent("cfm:planejamento-new-rule"));
+    renderPlanejamento(host, dataRef, mutations, () => {});
     expect(host.querySelector(".planejamento-page")).not.toBeNull();
-    expect(host.querySelector(".planejamento-summary__grid")).not.toBeNull();
+    expect(host.querySelector(".planejamento-summary__strip")).not.toBeNull();
     expect(host.querySelector(".planejamento-form-panel")).not.toBeNull();
     expect(host.querySelector(".choice-chip")).not.toBeNull();
-    expect(host.querySelector(".planejamento-suggestion-list, .empty-state")).not.toBeNull();
+    expect(host.querySelector(".planejamento-suggestion-group, .empty-state")).not.toBeNull();
+    expect(host.querySelector(".cfm-table--planejamento-occurrences")).not.toBeNull();
   });
 });

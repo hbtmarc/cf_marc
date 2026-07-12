@@ -236,7 +236,7 @@ describe("recurrence extended etapa 8.4.2", () => {
         },
       ],
     });
-    const html = renderTransactionTableRow(data.transactions[0]!, "lancamentos-expense", {
+    const html = renderTransactionTableRow(data, data.transactions[0]!, "lancamentos-expense", {
       showRecurringIcon: transactionHasValidRecurringMatch(data, "tx-1"),
     });
     expect(html).toContain("recurring-indicator");
@@ -245,7 +245,7 @@ describe("recurrence extended etapa 8.4.2", () => {
 
   it("does not show recurring icon without match", () => {
     data.transactions = [tx({ id: "tx-1" })];
-    const html = renderIncomeTransactionTableRow(data.transactions[0]!, "lancamentos-income", {
+    const html = renderIncomeTransactionTableRow(data, data.transactions[0]!, "lancamentos-income", {
       showRecurringIcon: transactionHasValidRecurringMatch(data, "tx-1"),
     });
     expect(html).not.toContain("recurring-indicator");
@@ -266,7 +266,7 @@ describe("recurrence extended etapa 8.4.2", () => {
         },
       ],
     });
-    const html = renderTransactionTableRow(data.transactions[0]!, "lancamentos-expense", {
+    const html = renderTransactionTableRow(data, data.transactions[0]!, "lancamentos-expense", {
       showRecurringIcon: true,
     });
     expect(html).toContain('title="Recorrente"');

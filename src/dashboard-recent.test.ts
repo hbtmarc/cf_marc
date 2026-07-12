@@ -165,7 +165,7 @@ describe("dashboard recent transactions", () => {
   });
 
   it("uses signed financial amounts in recent rows", () => {
-    const row = renderDashboardRecentRow({
+    const row = renderDashboardRecentRow(emptyAppData(), {
       id: "fee-1",
       kind: "expense",
       expenseKind: "fee",

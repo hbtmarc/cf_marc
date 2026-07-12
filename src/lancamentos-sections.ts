@@ -16,6 +16,7 @@ import {
   type ProjectedInstallment,
 } from "./installments";
 import type { AppData, Invoice, Transaction } from "./types";
+import { transactionDisplayDescription } from "./transaction-aliases";
 
 export type LedgerKindFilter = "all" | "income" | "expense" | "fee" | "refund";
 export type LedgerStatusFilter = "all" | "pending" | "settled" | "in_invoice" | "projected";
@@ -215,11 +216,13 @@ function transactionSearchHaystack(
   data: AppData,
   group?: LedgerCardGroup,
 ): string {
+  const displayDescription = transactionDisplayDescription(data, item);
   const cardName = item.cardId ? cardNameById(data, item.cardId) : "";
   const invoiceStatus =
     group?.invoice !== undefined ? invoiceStatusLabel(group.invoice) : "";
   return [
     item.description,
+    displayDescription,
     item.category,
     cardName,
     invoiceStatus,

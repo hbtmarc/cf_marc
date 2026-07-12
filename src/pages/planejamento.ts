@@ -60,6 +60,10 @@ import {
 } from "../recurring-suggestions";
 import { renderEmptyState, renderSectionHeader } from "../presentation";
 import { formatCentsToBRL, formatCompetenceLabel, formatDateLabel, parseMoneyToCents } from "../finance";
+import {
+  transactionDisplayDescription,
+  transactionDisplayDescriptionForSource,
+} from "../transaction-aliases";
 import type { AppData, RecurrenceClass, RecurringRule } from "../types";
 import {
   announce,
@@ -78,6 +82,20 @@ let linkPanelOccurrenceId: string | null = null;
 let lastRenderedCompetenceMonth: string | null = null;
 let formController: ProgressiveFormHandle | null = null;
 let pageAbort: AbortController | null = null;
+const PLANEJAMENTO_NEW_RULE_EVENT = "cfm:planejamento-new-rule";
+
+export function renderPlanejamentoHeaderActions(host: HTMLElement): void {
+  host.innerHTML = "";
+  const actions = el("div", "page-header__actions");
+  const newRuleButton = el("button", "btn btn--secondary", "Nova regra");
+  newRuleButton.type = "button";
+  newRuleButton.dataset.action = "new-rule";
+  newRuleButton.addEventListener("click", () => {
+    document.dispatchEvent(new CustomEvent(PLANEJAMENTO_NEW_RULE_EVENT));
+  });
+  actions.appendChild(newRuleButton);
+  host.appendChild(actions);
+}
 
 export function resetPlanejamentoUiStateForTests(): void {
   ruleFilter = "all";
@@ -106,11 +124,10 @@ function renderSummaryPanel(data: AppData, month: string): string {
   const summary = buildPlanejamentoSummary(data, month);
   return `
     <section class="panel planejamento-summary" aria-labelledby="planejamento-summary-title">
-      <div class="panel__header">
+      <div class="panel__header panel__header--compact">
         <h2 class="panel__title" id="planejamento-summary-title">Resumo da competência</h2>
-        <p class="panel__meta">${escapeHtml(formatCompetenceLabel(month))}</p>
       </div>
-      <div class="panel__body planejamento-summary__grid">
+      <div class="panel__body planejamento-summary__strip">
         <div class="planejamento-metric">
           <span class="planejamento-metric__label">Receitas previstas</span>
           <span class="money money--positive">${escapeHtml(formatCentsToBRL(summary.incomeProjectedCents))}</span>
@@ -121,18 +138,61 @@ function renderSummaryPanel(data: AppData, month: string): string {
         </div>
         <div class="planejamento-metric">
           <span class="planejamento-metric__label">Quantidade prevista</span>
-          <strong>${summary.projectedCount}</strong>
+          <strong class="planejamento-metric__value">${summary.projectedCount}</strong>
         </div>
         <div class="planejamento-metric">
           <span class="planejamento-metric__label">Quantidade conciliada</span>
-          <strong>${summary.matchedCount}</strong>
+          <strong class="planejamento-metric__value">${summary.matchedCount}</strong>
         </div>
         <div class="planejamento-metric">
           <span class="planejamento-metric__label">Cobertas por fatura</span>
-          <strong>${summary.coveredCount}</strong>
+          <strong class="planejamento-metric__value">${summary.coveredCount}</strong>
         </div>
       </div>
     </section>
+  `;
+}
+
+function renderSegmentedControl(input: {
+  items: Array<{ value: string; label: string; active: boolean }>;
+  action: string;
+  dataAttr: string;
+  ariaLabel: string;
+  className?: string;
+}): string {
+  const buttons = input.items
+    .map((item) => {
+      const active = item.active ? " is-active" : "";
+      return `<button type="button" class="segmented-control__option${active}" data-action="${escapeHtml(input.action)}" ${input.dataAttr}="${escapeHtml(item.value)}" aria-pressed="${item.active ? "true" : "false"}">${escapeHtml(item.label)}</button>`;
+    })
+    .join("");
+  const className = input.className ? ` ${input.className}` : "";
+  return `<div class="segmented-control${className}" role="group" aria-label="${escapeHtml(input.ariaLabel)}">${buttons}</div>`;
+}
+
+function renderSuggestionClassPicker(
+  suggestionId: string,
+  recurrenceClass: RecurrenceClass,
+  allowed: RecurrenceClass[],
+): string {
+  if (allowed.length <= 1) {
+    const only = allowed[0] ?? recurrenceClass;
+    return `<span class="planejamento-suggestion-row__class-badge">${escapeHtml(recurrenceClassLabel(only))}</span>`;
+  }
+  return `
+    <div class="planejamento-suggestion-row__class-picker" data-suggestion-id="${escapeHtml(suggestionId)}">
+      ${renderSegmentedControl({
+        items: allowed.map((item) => ({
+          value: item,
+          label: recurrenceClassLabel(item),
+          active: item === recurrenceClass,
+        })),
+        action: "pick-suggestion-class",
+        dataAttr: "data-suggestion-class",
+        ariaLabel: "Classificação da sugestão",
+      })}
+      <input type="hidden" name="suggestion-class-${escapeHtml(suggestionId)}" value="${escapeHtml(recurrenceClass)}" data-suggestion-class-value="${escapeHtml(suggestionId)}">
+    </div>
   `;
 }
 
@@ -140,34 +200,28 @@ function formatObservedCompetences(months: readonly string[]): string {
   return months.map((month) => formatCompetenceLabel(month)).join(", ");
 }
 
-function renderSuggestionClassPicker(suggestionId: string, recurrenceClass: RecurrenceClass, allowed: RecurrenceClass[]): string {
-  const chips = allowed
-    .map((item) => {
-      const checked = item === recurrenceClass ? " checked" : "";
-      const inputId = `suggestion-class-${suggestionId.replace(/[^a-zA-Z0-9_-]/g, "-")}-${item}`;
-      return `<label class="choice-chip" for="${escapeHtml(inputId)}"><input type="radio" name="suggestion-class-${escapeHtml(suggestionId)}" id="${escapeHtml(inputId)}" value="${escapeHtml(item)}"${checked}> ${escapeHtml(recurrenceClassLabel(item))}</label>`;
-    })
-    .join("");
-  return `<fieldset class="field field--inline-options planejamento-suggestion__class"><legend class="field__label">Classificação</legend>${chips}</fieldset>`;
-}
-
 function renderSuggestionRow(data: AppData, suggestion: ReturnType<typeof buildRecurringSuggestions>[number]): string {
+  const displayName = transactionDisplayDescriptionForSource(data, suggestion.description);
   const cardLabel =
-    suggestion.billingMode === "card" ? cardNameById(data, suggestion.cardId) : "Direta";
+    suggestion.billingMode === "card" ? cardNameById(data, suggestion.cardId) : "Cobrança direta";
   const moneyClass = suggestion.kind === "income" ? "money--positive" : "money--negative";
   const allowed = allowedRecurrenceClassesForSuggestion(suggestion);
+  const billingLabel =
+    suggestion.billingMode === "card" ? `Cartão · ${cardLabel}` : cardLabel;
   return `
     <div class="planejamento-suggestion-row" data-suggestion-id="${escapeHtml(suggestion.id)}">
       <div class="planejamento-suggestion-row__main">
-        <strong class="planejamento-suggestion-row__title">${escapeHtml(suggestion.description)}</strong>
-        <span class="planejamento-suggestion-row__meta">${escapeHtml(suggestion.category)} · ${escapeHtml(cardLabel)} · ${escapeHtml(formatObservedCompetences(suggestion.competenceMonths))} · dia ${suggestion.dayOfMonth}</span>
-        ${renderSuggestionClassPicker(suggestion.id, suggestion.proposedRecurrenceClass, allowed)}
+        <div class="planejamento-suggestion-row__head">
+          <strong class="planejamento-suggestion-row__title">${escapeHtml(displayName)}</strong>
+          ${renderSuggestionClassPicker(suggestion.id, suggestion.proposedRecurrenceClass, allowed)}
+        </div>
+        <span class="planejamento-suggestion-row__meta">${escapeHtml(suggestion.category)} · ${escapeHtml(billingLabel)} · ${escapeHtml(formatObservedCompetences(suggestion.competenceMonths))} · dia ${suggestion.dayOfMonth}</span>
       </div>
       <div class="planejamento-suggestion-row__aside">
         <span class="money ${moneyClass}">${escapeHtml(formatCentsToBRL(suggestion.amountCents))}</span>
         <div class="planejamento-suggestion-row__actions">
           <button type="button" class="btn btn--primary btn--small" data-action="confirm-suggestion" data-suggestion-id="${escapeHtml(suggestion.id)}">Criar recorrência</button>
-          <button type="button" class="btn btn--secondary btn--small" data-action="ignore-suggestion" data-suggestion-id="${escapeHtml(suggestion.id)}">Ignorar</button>
+          <button type="button" class="btn btn--ghost btn--small" data-action="ignore-suggestion" data-suggestion-id="${escapeHtml(suggestion.id)}">Ignorar</button>
         </div>
       </div>
     </div>
@@ -212,82 +266,104 @@ function renderSuggestionsSection(data: AppData): string {
   `;
 }
 
+function renderOccurrenceTableRow(
+  data: AppData,
+  resolution: ReturnType<typeof recurringResolutionsForMonth>[number],
+): string {
+  const occurrence = resolution.occurrence;
+  const rule = (data.recurringRules ?? []).find((item) => item.id === occurrence.ruleId);
+  const panelId = candidatesPanelId(occurrence.id);
+  const isLinkOpen = linkPanelOccurrenceId === occurrence.id;
+  const canLink = resolution.state === "projected" || resolution.state === "covered_by_invoice";
+  const classLabel = rule ? ruleRecurrenceClassLabel(rule) : formatOccurrenceType(occurrence.kind);
+  const actualCell =
+    resolution.state === "matched"
+      ? `<span class="money">${escapeHtml(formatCentsToBRL(resolution.actualAmountCents ?? 0))}</span>`
+      : "—";
+  const diffCell =
+    resolution.state === "matched"
+      ? escapeHtml(formatRecurringDifferenceLabel(resolution.differenceCents ?? 0))
+      : "—";
+  const actionCell = canLink
+    ? `<button type="button" class="btn btn--ghost btn--compact" data-action="toggle-link-panel" data-occurrence-id="${escapeHtml(occurrence.id)}" aria-expanded="${isLinkOpen ? "true" : "false"}" aria-controls="${escapeHtml(panelId)}">Vincular</button>`
+    : resolution.state === "matched"
+      ? `<button type="button" class="btn btn--ghost btn--compact" data-action="unlink-match" data-rule-id="${escapeHtml(occurrence.ruleId)}" data-competence-month="${escapeHtml(occurrence.competenceMonth)}">Desvincular</button>`
+      : "";
+  const candidatesRow =
+    isLinkOpen && canLink
+      ? `<tr class="planejamento-occurrence-candidates-row"><td colspan="8">${renderCandidatesPanel(data, occurrence, panelId)}</td></tr>`
+      : "";
+
+  return `
+    <tr class="planejamento-occurrence-row" data-occurrence-id="${escapeHtml(occurrence.id)}">
+      <td class="cfm-table__cell--date" data-label="Data esperada">${escapeHtml(formatDateLabel(occurrence.expectedDate))}</td>
+      <td class="cfm-table__cell--desc" data-label="Descrição">
+        <span class="data-table__primary">${escapeHtml(occurrence.description)}</span>
+      </td>
+      <td class="cfm-table__cell--class" data-label="Classificação">${escapeHtml(classLabel)}</td>
+      <td class="cfm-table__cell--amount" data-label="Previsto">
+        <span class="money">${escapeHtml(formatCentsToBRL(occurrence.amountCents))}</span>
+      </td>
+      <td class="cfm-table__cell--amount" data-label="Realizado">${actualCell}</td>
+      <td class="cfm-table__cell--diff" data-label="Diferença">${diffCell}</td>
+      <td class="cfm-table__cell--status" data-label="Estado">${renderStatusChip(resolutionStateLabel(resolution.state), resolutionStateVariant(resolution.state))}</td>
+      <td class="cfm-table__cell--actions" data-label="Ação">${actionCell}</td>
+    </tr>
+    ${candidatesRow}
+  `;
+}
+
 function renderOccurrencesSection(data: AppData, month: string): string {
   const resolutions = recurringResolutionsForMonth(data, month);
   const amountReviews = findAmountMismatchReviews(data, month);
-  const rows = resolutions
-    .map((resolution) => {
-      const occurrence = resolution.occurrence;
-      const panelId = candidatesPanelId(occurrence.id);
-      const isLinkOpen = linkPanelOccurrenceId === occurrence.id;
-      const canLink =
-        resolution.state === "projected" || resolution.state === "covered_by_invoice";
-      const cardLabel =
-        occurrence.billingMode === "card"
-          ? cardNameById(data, occurrence.cardId)
-          : "—";
-
-      const matchedDetails =
-        resolution.state === "matched"
-          ? `
-            <div class="planejamento-occurrence__details">
-              <p>Realizado: <span class="money">${escapeHtml(formatCentsToBRL(resolution.actualAmountCents ?? 0))}</span></p>
-              <p>${escapeHtml(formatRecurringDifferenceLabel(resolution.differenceCents ?? 0))}</p>
-              <p>Transação: ${escapeHtml(resolution.transactionId ?? "—")}</p>
-              <button type="button" class="btn btn--secondary btn--small" data-action="unlink-match" data-rule-id="${escapeHtml(occurrence.ruleId)}" data-competence-month="${escapeHtml(occurrence.competenceMonth)}">Desvincular</button>
-            </div>
-          `
-          : "";
-
-      const linkButton = canLink
-        ? `<button type="button" class="btn btn--secondary btn--small" data-action="toggle-link-panel" data-occurrence-id="${escapeHtml(occurrence.id)}" aria-expanded="${isLinkOpen ? "true" : "false"}" aria-controls="${escapeHtml(panelId)}">Vincular lançamento</button>`
-        : "";
-
-      const candidates =
-        isLinkOpen && canLink
-          ? renderCandidatesPanel(data, occurrence, panelId)
-          : "";
-
-      return `
-        <article class="planejamento-occurrence" data-occurrence-id="${escapeHtml(occurrence.id)}">
-          <div class="planejamento-occurrence__head">
-            <div>
-              <h3 class="planejamento-occurrence__title">${escapeHtml(occurrence.description)}</h3>
-              <p class="planejamento-occurrence__meta">${escapeHtml(formatOccurrenceType(occurrence.kind))} · ${escapeHtml(formatDateLabel(occurrence.expectedDate))} · ${escapeHtml(billingModeLabel(occurrence.billingMode))}${occurrence.billingMode === "card" ? ` · ${escapeHtml(cardLabel)}` : ""}</p>
-            </div>
-            <div class="planejamento-occurrence__aside">
-              <span class="money">${escapeHtml(formatCentsToBRL(occurrence.amountCents))}</span>
-              ${renderStatusChip(resolutionStateLabel(resolution.state), resolutionStateVariant(resolution.state))}
-            </div>
-          </div>
-          ${matchedDetails}
-          <div class="planejamento-occurrence__actions">${linkButton}</div>
-          ${candidates}
-        </article>
-      `;
-    })
-    .join("");
 
   const reviewRows = amountReviews
     .map(
       (review) => `
         <article class="planejamento-amount-review">
-          <p><strong>${escapeHtml(review.occurrence.description)}</strong> — possível valor alterado</p>
+          <p><strong>${escapeHtml(review.occurrence.description)}</strong> — revisão necessária</p>
           <p class="planejamento-amount-review__meta">Previsto: ${escapeHtml(formatCentsToBRL(review.expectedAmountCents))} · Observado: ${escapeHtml(formatCentsToBRL(review.actualAmountCents))} · ${escapeHtml(formatRecurringDifferenceLabel(review.differenceCents))}</p>
           <div class="planejamento-occurrence__actions">
             <button type="button" class="btn btn--secondary btn--small" data-action="link-amount-review" data-rule-id="${escapeHtml(review.occurrence.ruleId)}" data-transaction-id="${escapeHtml(review.transaction.id)}" data-competence-month="${escapeHtml(review.occurrence.competenceMonth)}">Vincular</button>
-            <button type="button" class="btn btn--ghost btn--small" data-action="update-rule-value" data-rule-id="${escapeHtml(review.occurrence.ruleId)}">Atualizar valor a partir desta competência</button>
+            <button type="button" class="btn btn--ghost btn--small" data-action="update-rule-value" data-rule-id="${escapeHtml(review.occurrence.ruleId)}">Atualizar valor</button>
           </div>
         </article>
       `,
     )
     .join("");
 
+  const tableBody = resolutions.map((resolution) => renderOccurrenceTableRow(data, resolution)).join("");
+
+  const tableMarkup =
+    resolutions.length > 0
+      ? `
+        <div class="cfm-table-wrap planejamento-occurrences-wrap">
+          <table class="cfm-table cfm-table--planejamento-occurrences" aria-label="Ocorrências do mês">
+            <thead>
+              <tr>
+                <th scope="col">Data esperada</th>
+                <th scope="col">Descrição</th>
+                <th scope="col">Classificação</th>
+                <th scope="col">Previsto</th>
+                <th scope="col">Realizado</th>
+                <th scope="col">Diferença</th>
+                <th scope="col">Estado</th>
+                <th scope="col"><span class="sr-only">Ação</span></th>
+              </tr>
+            </thead>
+            <tbody>${tableBody}</tbody>
+          </table>
+        </div>`
+      : renderEmptyState({
+          title: "Nenhuma ocorrência nesta competência",
+          description: "Crie ou reative regras recorrentes para gerar previsões neste mês.",
+        });
+
   return `
     <section class="planejamento-section" aria-labelledby="planejamento-occurrences-title">
       ${renderSectionHeader("Ocorrências do mês", { count: resolutions.length })}
       ${reviewRows ? `<div class="planejamento-amount-review-list">${reviewRows}</div>` : ""}
-      ${rows.length > 0 ? `<div class="planejamento-occurrence-list">${rows}</div>` : renderEmptyState({ title: "Nenhuma ocorrência nesta competência", description: "Crie ou reative regras recorrentes para gerar previsões neste mês." })}
+      ${tableMarkup}
     </section>
   `;
 }
@@ -307,7 +383,7 @@ function renderCandidatesPanel(
       (transaction) => `
         <div class="planejamento-candidate">
           <div>
-            <strong>${escapeHtml(transaction.description)}</strong>
+            <strong>${escapeHtml(transactionDisplayDescription(data, transaction))}</strong>
             <p class="planejamento-candidate__meta">${escapeHtml(formatTransactionDate(transaction))} · ${escapeHtml(transaction.category)} · ${escapeHtml(transactionPlanningStatusLabel(transaction))}${transaction.cardId ? ` · ${escapeHtml(cardNameById(data, transaction.cardId))}` : ""}</p>
           </div>
           <div class="planejamento-candidate__aside">
@@ -369,8 +445,8 @@ function renderRulesSection(data: AppData, month: string): string {
   const incomeRules = rules.filter((rule) => rule.kind === "income");
   const expenseRules = rules.filter((rule) => rule.kind === "expense");
 
-  const filterChips = (["all", "active", "paused", "ended"] as RuleFilter[])
-    .map((filter) => {
+  const filterControl = renderSegmentedControl({
+    items: (["all", "active", "paused", "ended"] as RuleFilter[]).map((filter) => {
       const label =
         filter === "all"
           ? "Todas"
@@ -379,16 +455,19 @@ function renderRulesSection(data: AppData, month: string): string {
             : filter === "paused"
               ? "Pausadas"
               : "Encerradas";
-      const active = ruleFilter === filter ? " is-active" : "";
-      return `<button type="button" class="filter-chip${active}" data-action="filter-rules" data-filter="${filter}">${label}</button>`;
-    })
-    .join("");
+      return { value: filter, label, active: ruleFilter === filter };
+    }),
+    action: "filter-rules",
+    dataAttr: "data-filter",
+    ariaLabel: "Filtrar regras",
+    className: "segmented-control--rules",
+  });
 
   return `
     <section class="planejamento-section" aria-labelledby="planejamento-rules-title">
-      <div class="section-header">
+      <div class="section-header section-header--with-controls">
         <h2 class="section-header__title" id="planejamento-rules-title">Regras mensais</h2>
-        <div class="toolbar-panel__filters">${filterChips}</div>
+        ${filterControl}
       </div>
       <div class="planejamento-rules-group">
         <h3 class="planejamento-rules-group__title">Receitas previstas</h3>
@@ -473,17 +552,19 @@ function mountRuleForm(
   formController?.destroy();
   formHost.replaceChildren();
 
+  const isEdit = rule !== undefined;
   const panelHeader = el("div", "panel__header");
   panelHeader.append(
-    el("h2", "panel__title", "Cadastro manual"),
+    el("h2", "panel__title", isEdit ? "Editar regra" : "Nova regra"),
     el(
       "p",
       "panel__meta",
-      "Use quando nenhuma sugestão automática se aplicar.",
+      isEdit
+        ? "Atualize os dados da regra recorrente."
+        : "Cadastre manualmente quando nenhuma sugestão automática se aplicar.",
     ),
   );
 
-  const isEdit = rule !== undefined;
   const form = el("form", "form planejamento-form");
   form.noValidate = true;
   form.id = "planejamento-rule-form";
@@ -754,6 +835,23 @@ function refreshPlanejamentoSections(host: HTMLElement, data: AppData, month: st
   }
 }
 
+function openNewRuleForm(
+  host: HTMLElement,
+  data: AppData,
+  month: string,
+  mutations: AppMutations,
+  rerender: () => void,
+): void {
+  formMode = "create";
+  editingRuleId = null;
+  const formHost = host.querySelector<HTMLElement>("#planejamento-form-host");
+  if (formHost) {
+    formHost.hidden = false;
+    mountRuleForm(formHost, data, month, mutations, rerender);
+    formHost.scrollIntoView?.({ block: "nearest", behavior: "auto" });
+  }
+}
+
 function bindPlanejamentoActions(
   host: HTMLElement,
   data: AppData,
@@ -764,6 +862,14 @@ function bindPlanejamentoActions(
   pageAbort = new AbortController();
   const { signal } = pageAbort;
   const month = data.selectedCompetenceMonth;
+
+  document.addEventListener(
+    PLANEJAMENTO_NEW_RULE_EVENT,
+    () => {
+      openNewRuleForm(host, data, month, mutations, rerender);
+    },
+    { signal },
+  );
 
   host.addEventListener(
     "click",
@@ -776,13 +882,28 @@ function bindPlanejamentoActions(
 
       const action = actionNode.dataset.action;
       if (action === "new-rule") {
-        formMode = "create";
-        editingRuleId = null;
-        const formHost = host.querySelector<HTMLElement>("#planejamento-form-host");
-        if (formHost) {
-          formHost.hidden = false;
-          mountRuleForm(formHost, data, month, mutations, rerender);
-          formHost.scrollIntoView?.({ block: "nearest", behavior: "auto" });
+        openNewRuleForm(host, data, month, mutations, rerender);
+        return;
+      }
+
+      if (action === "pick-suggestion-class") {
+        const classValue = actionNode.dataset.suggestionClass as RecurrenceClass | undefined;
+        const suggestionRow = actionNode.closest<HTMLElement>("[data-suggestion-id]");
+        if (!classValue || !suggestionRow) {
+          return;
+        }
+        suggestionRow
+          .querySelectorAll<HTMLElement>('[data-action="pick-suggestion-class"]')
+          .forEach((button) => {
+            const active = button.dataset.suggestionClass === classValue;
+            button.classList.toggle("is-active", active);
+            button.setAttribute("aria-pressed", active ? "true" : "false");
+          });
+        const hidden = suggestionRow.querySelector<HTMLInputElement>(
+          "[data-suggestion-class-value]",
+        );
+        if (hidden) {
+          hidden.value = classValue;
         }
         return;
       }
@@ -800,11 +921,12 @@ function bindPlanejamentoActions(
             return;
           }
           const suggestionRow = actionNode.closest("[data-suggestion-id]");
-          const selectedClass = suggestionRow?.querySelector<HTMLInputElement>(
-            `input[name="suggestion-class-${CSS.escape(suggestionId)}"]:checked`,
-          )?.value as RecurrenceClass | undefined;
+          const hidden = suggestionRow?.querySelector<HTMLInputElement>(
+            "[data-suggestion-class-value]",
+          );
+          const selectedClass = (hidden?.value ?? suggestion.proposedRecurrenceClass) as RecurrenceClass;
           const result = confirmRecurringSuggestion(appData, suggestionId, {
-            recurrenceClass: selectedClass ?? suggestion.proposedRecurrenceClass,
+            recurrenceClass: selectedClass,
             selectedCompetenceMonth: month,
           });
           if (Object.keys(result.errors).length > 0) {
@@ -1088,21 +1210,6 @@ export function renderPlanejamento(
     status.setAttribute("role", "status");
     status.setAttribute("aria-live", "polite");
 
-    const toolbar = el("section", "toolbar-panel planejamento-toolbar");
-    const toolbarRow = el("div", "toolbar-panel__row planejamento-toolbar__row");
-    const toolbarIntro = el(
-      "p",
-      "planejamento-toolbar__intro",
-      "Sugestões derivadas dos lançamentos existentes. Confirme para criar uma regra ou ignore para ocultar.",
-    );
-    const toolbarActions = el("div", "toolbar-panel__actions");
-    const newRuleButton = el("button", "btn btn--secondary", "Nova regra");
-    newRuleButton.type = "button";
-    newRuleButton.dataset.action = "new-rule";
-    toolbarActions.appendChild(newRuleButton);
-    toolbarRow.append(toolbarIntro, toolbarActions);
-    toolbar.appendChild(toolbarRow);
-
     const summaryHost = el("div");
     summaryHost.id = "planejamento-summary-host";
     const suggestionsHost = el("div");
@@ -1120,7 +1227,6 @@ export function renderPlanejamento(
 
     page.append(
       status,
-      toolbar,
       summaryHost,
       suggestionsHost,
       invalidHost,

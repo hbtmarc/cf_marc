@@ -259,6 +259,7 @@ describe("invoice detail and lines", () => {
 
   it("labels fee and refund and installment in detail rows", () => {
     const html = renderInvoiceDetailPanel({
+      data: sampleData(),
       invoice: mercadoCreditor,
       cardName: "Mercado Pago",
       transactions: transactionsForInvoice(sampleTransactions, "inv-mp-jun"),

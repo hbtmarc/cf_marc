@@ -3,6 +3,7 @@ import { CASH_INSTALLMENT_LABEL, installmentDisplayLabel, installmentSortValue }
 import { renderInvoiceTransactionRow } from "./presentation";
 import { sortTableItems } from "./table-sort";
 import { invoiceDetailSortAccessors } from "./pages/faturas";
+import { emptyAppData } from "./storage";
 import type { Transaction } from "./types";
 
 function tx(partial: Partial<Transaction> & Pick<Transaction, "id">): Transaction {
@@ -23,13 +24,14 @@ function tx(partial: Partial<Transaction> & Pick<Transaction, "id">): Transactio
 
 describe("invoice installment labels", () => {
   it('shows "À vista" for purchases without installment metadata', () => {
-    const html = renderInvoiceTransactionRow(tx({ id: "cash" }));
+    const html = renderInvoiceTransactionRow(emptyAppData(), tx({ id: "cash" }));
     expect(html).toContain(CASH_INSTALLMENT_LABEL);
     expect(html).not.toContain("—");
   });
 
   it("keeps N/T display for installment purchases", () => {
     const html = renderInvoiceTransactionRow(
+      emptyAppData(),
       tx({ id: "installment", installment: { current: 2, total: 6 } }),
     );
     expect(html).toContain("2/6");

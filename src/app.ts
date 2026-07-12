@@ -3,7 +3,7 @@ import { renderDashboard } from "./pages/dashboard";
 import { renderFaturas, renderFaturasHeaderActions } from "./pages/faturas";
 import { renderImportar, resetImportarPage } from "./pages/importar";
 import { renderLancamentos } from "./pages/lancamentos";
-import { renderPlanejamento } from "./pages/planejamento";
+import { renderPlanejamento, renderPlanejamentoHeaderActions } from "./pages/planejamento";
 import {
   navigate,
   registerRoute,
@@ -118,12 +118,21 @@ function renderPageHeaderActions(rerender: () => void): void {
     return;
   }
   clearChildren(pageActionsHost);
-  if (state.storageError || state.route !== "/faturas") {
+  if (state.storageError) {
     pageActionsHost.classList.add("is-hidden");
     return;
   }
-  pageActionsHost.classList.remove("is-hidden");
-  renderFaturasHeaderActions(pageActionsHost, state.data, mutations, rerender);
+  if (state.route === "/faturas") {
+    pageActionsHost.classList.remove("is-hidden");
+    renderFaturasHeaderActions(pageActionsHost, state.data, mutations, rerender);
+    return;
+  }
+  if (state.route === "/planejamento") {
+    pageActionsHost.classList.remove("is-hidden");
+    renderPlanejamentoHeaderActions(pageActionsHost);
+    return;
+  }
+  pageActionsHost.classList.add("is-hidden");
 }
 
 function renderNavigation(route: RoutePath): void {

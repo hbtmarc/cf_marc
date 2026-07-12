@@ -17,6 +17,7 @@ import {
   type DashboardRecentSortColumn,
 } from "../presentation";
 import { filterTransactionsByCompetence, transactionDisplayedAmountCents, transactionStatusLabel } from "../finance";
+import { transactionDescriptionTextAccessor } from "../transaction-aliases";
 import {
   sortTableItems,
   toggleTableSort,
@@ -32,6 +33,15 @@ let dashboardRecentSort: TableSortState<DashboardRecentSortColumn> = {
   column: "date",
   direction: "desc",
 };
+
+export function getDashboardRecentSortAccessors(
+  data: AppData,
+): Record<DashboardRecentSortColumn, SortColumnAccessor<Transaction>> {
+  return {
+    ...dashboardRecentSortAccessors,
+    description: transactionDescriptionTextAccessor(data),
+  };
+}
 
 export const dashboardRecentSortAccessors: Record<
   DashboardRecentSortColumn,
@@ -71,7 +81,11 @@ function renderRecentTransactionsBlock(
     return "";
   }
 
-  const sorted = sortTableItems(recentPool, dashboardRecentSort, dashboardRecentSortAccessors);
+  const sorted = sortTableItems(
+    recentPool,
+    dashboardRecentSort,
+    getDashboardRecentSortAccessors(data),
+  );
 
   return `
     <section class="dashboard-recent">
@@ -80,7 +94,7 @@ function renderRecentTransactionsBlock(
         <table class="cfm-table cfm-table--dashboard-recent" aria-label="Transações recentes">
           ${renderDashboardRecentTableHead(dashboardRecentSort)}
           <tbody>
-            ${sorted.map((item) => renderDashboardRecentRow(item)).join("")}
+            ${sorted.map((item) => renderDashboardRecentRow(data, item)).join("")}
           </tbody>
         </table>
       </div>

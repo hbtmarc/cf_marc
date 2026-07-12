@@ -38,6 +38,7 @@ import type {
   RoutePath,
   Transaction,
 } from "./types";
+import { transactionDisplayDescription } from "./transaction-aliases";
 import { escapeHtml, renderMoney, renderStatusChip } from "./ui";
 import { installmentDisplayLabel } from "./installment-label";
 import { renderSortableTh, tableColumnHeaderId, TABLE_IDS, type SortableColumnOption } from "./table-ui";
@@ -919,7 +920,21 @@ export function renderDashboardRecentHeader(summary: CompetenceSummary): string 
     </header>`;
 }
 
-export function renderDashboardRecentRow(item: Transaction): string {
+function transactionDescriptionCell(
+  data: AppData,
+  item: Transaction,
+): { display: string; titleAttr: string } {
+  const display = transactionDisplayDescription(data, item);
+  const showOriginal = display !== item.description;
+  const titleSource = showOriginal ? item.description : item.description;
+  const titleAttr =
+    showOriginal || titleSource.length > 40
+      ? ` title="${escapeHtml(titleSource)}"`
+      : "";
+  return { display, titleAttr };
+}
+
+export function renderDashboardRecentRow(data: AppData, item: Transaction): string {
   const statusLabel = transactionStatusLabel(item.kind, item.status, item.ledgerStatus);
   const statusVariant =
     item.ledgerStatus === "in_invoice"
@@ -932,12 +947,13 @@ export function renderDashboardRecentRow(item: Transaction): string {
   const signedAmount = transactionDisplayedAmountCents(item);
   const tableId = TABLE_IDS.dashboardRecent;
   const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
+  const descriptionCell = transactionDescriptionCell(data, item);
 
   return `
     <tr data-transaction-id="${escapeHtml(item.id)}">
       <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatDateLabel(item.date))}</td>
       <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
-        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>
+        <span class="data-table__primary"${descriptionCell.titleAttr}>${escapeHtml(descriptionCell.display)}</span>
         <span class="data-table__secondary">${escapeHtml(item.category)}</span>
       </td>
       <td class="cfm-table__cell--type" ${h("type")} data-label="Tipo">
@@ -1038,6 +1054,7 @@ function renderRecurringIndicator(): string {
 }
 
 export function renderTransactionTableRow(
+  data: AppData,
   item: Transaction,
   tableId: string = TABLE_IDS.lancamentos,
   options?: { includeType?: boolean; showRecurringIcon?: boolean },
@@ -1058,6 +1075,7 @@ export function renderTransactionTableRow(
     : "";
   const signedAmount = transactionDisplayedAmountCents(item);
   const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
+  const descriptionCell = transactionDescriptionCell(data, item);
   const typeCell = includeType
     ? `<td class="cfm-table__cell--type" ${h("type")} data-label="Tipo">
         <span class="type-chip type-chip--${typeChipClass}">${typeLabel}</span>
@@ -1068,7 +1086,7 @@ export function renderTransactionTableRow(
     <tr data-transaction-id="${escapeHtml(item.id)}">
       <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatDateLabel(item.date))}</td>
       <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
-        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${recurringIcon}${escapeHtml(item.description)}</span>${installmentLabel}
+        <span class="data-table__primary"${descriptionCell.titleAttr}>${recurringIcon}${escapeHtml(descriptionCell.display)}</span>${installmentLabel}
       </td>
       <td class="cfm-table__cell--category" ${h("category")} data-label="Categoria">${escapeHtml(item.category)}</td>
       ${typeCell}
@@ -1084,11 +1102,12 @@ export function renderTransactionTableRow(
 }
 
 export function renderIncomeTransactionTableRow(
+  data: AppData,
   item: Transaction,
   tableId: string = TABLE_IDS.lancamentosIncome,
   options?: { showRecurringIcon?: boolean },
 ): string {
-  return renderTransactionTableRow(item, tableId, {
+  return renderTransactionTableRow(data, item, tableId, {
     includeType: false,
     ...(options?.showRecurringIcon ? { showRecurringIcon: true } : {}),
   });
@@ -1253,6 +1272,7 @@ export function renderInvoiceTableViewHead(tableId: string = TABLE_IDS.invoices)
 }
 
 export function renderInvoiceTransactionRow(
+  data: AppData,
   item: Transaction,
   tableId: string = TABLE_IDS.invoiceDetail,
 ): string {
@@ -1261,12 +1281,13 @@ export function renderInvoiceTransactionRow(
   const installment = installmentDisplayLabel(item);
   const amountVariant = item.expenseKind === "refund" ? "positive" : "neutral";
   const h = (columnId: string): string => tableCellHeaders(tableId, columnId);
+  const descriptionCell = transactionDescriptionCell(data, item);
 
   return `
     <tr class="cfm-table__row--invoice-line">
       <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatDateLabel(item.date))}</td>
       <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
-        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>
+        <span class="data-table__primary"${descriptionCell.titleAttr}>${escapeHtml(descriptionCell.display)}</span>
       </td>
       <td class="cfm-table__cell--installment" ${h("installment")} data-label="Parcela">${escapeHtml(installment)}</td>
       <td class="cfm-table__cell--category" ${h("category")} data-label="Categoria">${escapeHtml(item.category)}</td>
@@ -1279,6 +1300,7 @@ export function renderInvoiceTransactionRow(
 }
 
 export function renderInvoiceDetailPanel(input: {
+  data: AppData;
   invoice: Invoice;
   cardName: string;
   transactions: Transaction[];
@@ -1289,6 +1311,7 @@ export function renderInvoiceDetailPanel(input: {
   mobileSortMarkup: string;
 }): string {
   const {
+    data,
     invoice,
     cardName,
     transactions,
@@ -1324,7 +1347,7 @@ export function renderInvoiceDetailPanel(input: {
         <table class="cfm-table cfm-table--invoice-lines" aria-label="Lançamentos da fatura" data-sort-table="${escapeHtml(mobileSortControlId)}">
           ${renderInvoiceTransactionTableHead(sortColumns, sortState)}
           <tbody>
-            ${transactions.map((item) => renderInvoiceTransactionRow(item)).join("")}
+            ${transactions.map((item) => renderInvoiceTransactionRow(data, item)).join("")}
           </tbody>
         </table>`;
 

@@ -63,6 +63,8 @@ import {
 } from "../table-sort";
 import { bindTableSortControls, renderMobileSortControl, TABLE_IDS, type SortableColumnOption } from "../table-ui";
 import { announce, createRowMenu, el, escapeHtml, openConfirmModal } from "../ui";
+import { transactionDescriptionTextAccessor, transactionDisplayDescription } from "../transaction-aliases";
+import { openTransactionDisplayAliasModal } from "../transaction-alias-modal";
 
 type KindFilter = LancamentosFilterState["kind"];
 type StatusFilter = LancamentosFilterState["status"];
@@ -108,6 +110,33 @@ export const LANCAMENTOS_SORT_COLUMNS: SortableColumnOption<LancamentosSortColum
   { id: "status", label: "Status" },
   { id: "amount", label: "Valor" },
 ];
+
+export function getIncomeSortAccessors(
+  data: AppData,
+): Record<IncomeSortColumn, SortColumnAccessor<Transaction>> {
+  return {
+    ...incomeSortAccessors,
+    description: transactionDescriptionTextAccessor(data),
+  };
+}
+
+export function getExpenseSortAccessors(
+  data: AppData,
+): Record<LancamentosSortColumn, SortColumnAccessor<Transaction>> {
+  return {
+    ...expenseSortAccessors,
+    description: transactionDescriptionTextAccessor(data),
+  };
+}
+
+export function getInvoiceDetailSortAccessors(
+  data: AppData,
+): Record<InvoiceDetailSortColumn, SortColumnAccessor<Transaction>> {
+  return {
+    ...invoiceDetailSortAccessors,
+    description: transactionDescriptionTextAccessor(data),
+  };
+}
 
 export const incomeSortAccessors: Record<IncomeSortColumn, SortColumnAccessor<Transaction>> = {
   date: { kind: "date", getValue: (item) => item.date },
@@ -362,18 +391,21 @@ function buildProjectedDetailSortAccessors(): Record<
 const projectedDetailSortAccessors = buildProjectedDetailSortAccessors();
 
 function renderCardDetailPanelFixed(group: LedgerCardGroup, data: AppData): string {
+  const detailAccessors = getInvoiceDetailSortAccessors(data);
   if (group.mode === "real") {
     const lines = sortTableItems(
       groupDetailLines(group, data),
       cardDetailSort,
-      invoiceDetailSortAccessors,
+      detailAccessors,
     );
     return renderSectionTable(
       INVOICE_DETAIL_SORT_COLUMNS,
       cardDetailSort,
       TABLE_IDS.lancamentosCardsDetail,
       `${ledgerDetailMobileSortId(group.key)}`,
-      lines.map((item) => renderInvoiceTransactionRow(item, TABLE_IDS.lancamentosCardsDetail)).join(""),
+      lines
+        .map((item) => renderInvoiceTransactionRow(data, item, TABLE_IDS.lancamentosCardsDetail))
+        .join(""),
     );
   }
 
@@ -449,12 +481,12 @@ function refreshLancamentosSections(
   const filteredIncomes = sortTableItems(
     filterIncomeTransactions(incomePool, filters, data),
     incomeSort,
-    incomeSortAccessors,
+    getIncomeSortAccessors(data),
   );
   const filteredExpenses = sortTableItems(
     filterDirectExpenseTransactions(expensePool, filters, data),
     expenseSort,
-    expenseSortAccessors,
+    getExpenseSortAccessors(data),
   );
   const filteredCards = sortTableItems(
     filterLedgerCardGroups(cardPool, filters, data),
@@ -495,7 +527,7 @@ function refreshLancamentosSections(
             TABLE_IDS.lancamentosIncome,
             INCOME_MOBILE_SORT_ID,
             filteredIncomes.map((item) =>
-              renderIncomeTransactionTableRow(item, TABLE_IDS.lancamentosIncome, {
+              renderIncomeTransactionTableRow(data, item, TABLE_IDS.lancamentosIncome, {
                 showRecurringIcon: transactionHasValidRecurringMatch(data, item.id),
               }),
             ).join(""),
@@ -527,7 +559,7 @@ function refreshLancamentosSections(
             EXPENSE_MOBILE_SORT_ID,
             filteredExpenses
               .map((item) =>
-                renderTransactionTableRow(item, TABLE_IDS.lancamentosExpense, {
+                renderTransactionTableRow(data, item, TABLE_IDS.lancamentosExpense, {
                   showRecurringIcon: transactionHasValidRecurringMatch(data, item.id),
                 }),
               )
@@ -801,6 +833,17 @@ function bindRowActions(
           },
         },
         {
+          label: "Renomear exibição",
+          onClick: () => {
+            openTransactionDisplayAliasModal({
+              data,
+              transaction: item,
+              mutations,
+              onSaved: rerender,
+            });
+          },
+        },
+        {
           label: toggleLabel,
           onClick: () => {
             toggleTransactionStatus(mutations, item, rerender);
@@ -827,15 +870,18 @@ function bindRowActions(
 }
 
 /** @deprecated Legacy unified list filter for tests. */
-export function applyFilters(items: Transaction[], state: LancamentosFilterState): Transaction[] {
+export function applyFilters(items: Transaction[], state: LancamentosFilterState, data?: AppData): Transaction[] {
   let result = [...items];
   const query = state.search.trim().toLowerCase();
   if (query.length > 0) {
-    result = result.filter(
-      (item) =>
+    result = result.filter((item) => {
+      const display = data ? transactionDisplayDescription(data, item) : item.description;
+      return (
         item.description.toLowerCase().includes(query) ||
-        item.category.toLowerCase().includes(query),
-    );
+        display.toLowerCase().includes(query) ||
+        item.category.toLowerCase().includes(query)
+      );
+    });
   }
   if (state.kind !== "all") {
     result = result.filter((item) => {

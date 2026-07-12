@@ -138,6 +138,15 @@ export interface IgnoredRecurringSuggestion {
   ignoredAt: string;
 }
 
+export interface TransactionDescriptionAlias {
+  id: string;
+  sourceDescriptionNormalized: string;
+  sourceDescriptionSample: string;
+  displayName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type RecurringOccurrenceResolutionState =
   | "projected"
   | "matched"
@@ -163,6 +172,7 @@ export interface AppData {
   recurringRules?: RecurringRule[];
   recurringMatches?: RecurringMatch[];
   ignoredRecurringSuggestions?: IgnoredRecurringSuggestion[];
+  transactionDescriptionAliases?: TransactionDescriptionAlias[];
 }
 
 export type RoutePath =

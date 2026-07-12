@@ -9,6 +9,7 @@ import {
 } from "./recurring-operations";
 import { nowIso } from "./finance";
 import { centsToInputValue } from "./ui";
+import { transactionDisplayDescriptionForSource } from "./transaction-aliases";
 import type {
   AppData,
   IgnoredRecurringSuggestion,
@@ -289,10 +290,17 @@ export function buildRecurringSuggestions(data: AppData): RecurringSuggestion[] 
   );
 }
 
-export function suggestionToRuleDraft(suggestion: RecurringSuggestion): RecurringRuleDraft {
+export function suggestionToRuleDraft(
+  data: AppData,
+  suggestion: RecurringSuggestion,
+): RecurringRuleDraft {
+  const displayDescription = transactionDisplayDescriptionForSource(
+    data,
+    suggestion.description,
+  );
   return {
     kind: suggestion.kind,
-    description: suggestion.description,
+    description: displayDescription,
     amountInput: centsToInputValue(suggestion.amountCents),
     category: suggestion.category,
     dayOfMonth: String(suggestion.dayOfMonth),
@@ -365,7 +373,7 @@ export function confirmRecurringSuggestion(
   }
 
   const draft: RecurringRuleDraft = {
-    ...suggestionToRuleDraft(suggestion),
+    ...suggestionToRuleDraft(data, suggestion),
     recurrenceClass: options.recurrenceClass,
   };
 
