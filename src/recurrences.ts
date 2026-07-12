@@ -1,8 +1,11 @@
 import { isValidCompetenceMonth } from "./finance";
+import { isOccurrenceWithinRenewal } from "./recurrence-renewal";
 import type {
   AppData,
   ProjectedRecurringOccurrence,
   RecurringRule,
+  RenewalPolicy,
+  RecurrenceClass,
 } from "./types";
 
 export function recurringOccurrenceId(
@@ -128,6 +131,10 @@ export function buildRecurringOccurrences(
         continue;
       }
 
+      if (!isOccurrenceWithinRenewal(rule, competenceMonth)) {
+        continue;
+      }
+
       occurrences.push(occurrenceForRuleMonth(rule, competenceMonth));
     }
   }
@@ -228,6 +235,45 @@ export function validateRecurringRule(
 
   if (rule.billingMode === "direct" && rule.cardId !== undefined) {
     errors.cardId = "Cartão não deve ser informado para cobrança direta.";
+  }
+
+  if (
+    rule.renewalPolicy === "manual_annual" &&
+    (rule.renewedThroughMonth === undefined ||
+      !isValidCompetenceMonth(rule.renewedThroughMonth))
+  ) {
+    errors.renewedThroughMonth = "Assinatura renovável exige competência aprovada.";
+  }
+
+  if (
+    rule.renewalPolicy === "none" &&
+    rule.renewedThroughMonth !== undefined &&
+    rule.recurrenceClass === "card_subscription"
+  ) {
+    // renewedThroughMonth only meaningful with manual_annual
+  }
+
+  if (rule.recurrenceClass !== undefined) {
+    const validClasses: RecurrenceClass[] = [
+      "income",
+      "fixed_bill",
+      "card_subscription",
+      "other",
+    ];
+    if (!validClasses.includes(rule.recurrenceClass)) {
+      errors.recurrenceClass = "Classificação inválida.";
+    }
+  }
+
+  if (rule.renewalPolicy !== undefined) {
+    const validPolicies: RenewalPolicy[] = ["none", "manual_annual"];
+    if (!validPolicies.includes(rule.renewalPolicy)) {
+      errors.renewalPolicy = "Política de renovação inválida.";
+    }
+  }
+
+  if (rule.seriesId !== undefined && rule.seriesId.trim().length === 0) {
+    errors.seriesId = "Série inválida.";
   }
 
   return errors;

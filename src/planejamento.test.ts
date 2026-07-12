@@ -106,17 +106,56 @@ describe("planejamento route and page", () => {
     expect(ROUTE_LABELS["/planejamento"]).toBe("Planejamento");
   });
 
-  it("renders summary, occurrences and rules sections", () => {
+  it("renders summary, suggestions, occurrences and rules sections", () => {
     dataRef = baseData({ recurringRules: [rule({ id: "rule-1" })] });
     const host = document.createElement("div");
     renderPlanejamento(host, dataRef, mutations, () => {});
 
     expect(host.querySelector("#planejamento-summary-host")).not.toBeNull();
+    expect(host.querySelector("#planejamento-suggestions-host")).not.toBeNull();
     expect(host.querySelector("#planejamento-occurrences-host")).not.toBeNull();
     expect(host.querySelector("#planejamento-rules-host")).not.toBeNull();
     expect(host.textContent).toContain("Resumo da competência");
+    expect(host.textContent).toContain("Sugestões encontradas");
     expect(host.textContent).toContain("Ocorrências do mês");
     expect(host.textContent).toContain("Regras mensais");
+  });
+
+  it("orders page sections with manual form after rules", () => {
+    const host = document.createElement("div");
+    renderPlanejamento(host, dataRef, mutations, () => {});
+    const page = host.querySelector(".planejamento-page");
+    const ids = Array.from(page?.children ?? [])
+      .map((node) => (node as HTMLElement).id)
+      .filter(Boolean);
+    expect(ids.indexOf("planejamento-summary-host")).toBeLessThan(
+      ids.indexOf("planejamento-suggestions-host"),
+    );
+    expect(ids.indexOf("planejamento-suggestions-host")).toBeLessThan(
+      ids.indexOf("planejamento-occurrences-host"),
+    );
+    expect(ids.indexOf("planejamento-occurrences-host")).toBeLessThan(
+      ids.indexOf("planejamento-rules-host"),
+    );
+    expect(ids.indexOf("planejamento-rules-host")).toBeLessThan(
+      ids.indexOf("planejamento-form-host"),
+    );
+  });
+
+  it("shows suggestion actions and keeps Nova regra secondary", () => {
+    dataRef = baseData({
+      transactions: [
+        tx({ id: "tx-1", competenceMonth: "2026-06", date: "2026-06-10" }),
+        tx({ id: "tx-2", competenceMonth: "2026-07", date: "2026-07-10" }),
+      ],
+    });
+    const host = document.createElement("div");
+    renderPlanejamento(host, dataRef, mutations, () => {});
+    expect(host.querySelector("[data-action='confirm-suggestion']")).not.toBeNull();
+    expect(host.querySelector("[data-action='ignore-suggestion']")).not.toBeNull();
+    expect(host.querySelector("[data-action='new-rule']")?.className).toContain("btn--secondary");
+    expect(host.querySelector(".planejamento-suggestion-group")).not.toBeNull();
+    expect(host.querySelector(".choice-chip")).not.toBeNull();
   });
 });
 
@@ -594,8 +633,10 @@ describe("planejamento accessibility and focus", () => {
     const host = document.createElement("div");
     renderPlanejamento(host, dataRef, mutations, () => {});
     host.querySelector<HTMLButtonElement>("[data-action='new-rule']")?.click();
+    expect(host.querySelector(".planejamento-page")).not.toBeNull();
     expect(host.querySelector(".planejamento-summary__grid")).not.toBeNull();
     expect(host.querySelector(".planejamento-form-panel")).not.toBeNull();
     expect(host.querySelector(".choice-chip")).not.toBeNull();
+    expect(host.querySelector(".planejamento-suggestion-list, .empty-state")).not.toBeNull();
   });
 });

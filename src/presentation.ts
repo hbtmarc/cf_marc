@@ -23,6 +23,7 @@ import {
   PROJECTED_STATUS_LABEL,
   type ProjectedInstallment,
 } from "./installments";
+import { recurringCycleIcon } from "./icons";
 import {
   buildDashboardCardSummary,
   buildDashboardRecurringSummary,
@@ -1032,12 +1033,17 @@ function transactionTypeChipClass(item: Transaction): string {
   }
 }
 
+function renderRecurringIndicator(): string {
+  return `<span class="recurring-indicator" title="Recorrente">${recurringCycleIcon()}<span class="sr-only">Lançamento recorrente</span></span>`;
+}
+
 export function renderTransactionTableRow(
   item: Transaction,
   tableId: string = TABLE_IDS.lancamentos,
-  options?: { includeType?: boolean },
+  options?: { includeType?: boolean; showRecurringIcon?: boolean },
 ): string {
   const includeType = options?.includeType !== false;
+  const recurringIcon = options?.showRecurringIcon ? `${renderRecurringIndicator()} ` : "";
   const statusLabel = transactionStatusLabel(item.kind, item.status, item.ledgerStatus);
   const statusVariant =
     item.ledgerStatus === "in_invoice"
@@ -1062,7 +1068,7 @@ export function renderTransactionTableRow(
     <tr data-transaction-id="${escapeHtml(item.id)}">
       <td class="cfm-table__cell--date" ${h("date")} data-label="Data">${escapeHtml(formatDateLabel(item.date))}</td>
       <td class="cfm-table__cell--desc" ${h("description")} data-label="Descrição">
-        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${escapeHtml(item.description)}</span>${installmentLabel}
+        <span class="data-table__primary"${item.description.length > 40 ? ` title="${escapeHtml(item.description)}"` : ""}>${recurringIcon}${escapeHtml(item.description)}</span>${installmentLabel}
       </td>
       <td class="cfm-table__cell--category" ${h("category")} data-label="Categoria">${escapeHtml(item.category)}</td>
       ${typeCell}
@@ -1080,8 +1086,12 @@ export function renderTransactionTableRow(
 export function renderIncomeTransactionTableRow(
   item: Transaction,
   tableId: string = TABLE_IDS.lancamentosIncome,
+  options?: { showRecurringIcon?: boolean },
 ): string {
-  return renderTransactionTableRow(item, tableId, { includeType: false });
+  return renderTransactionTableRow(item, tableId, {
+    includeType: false,
+    ...(options?.showRecurringIcon ? { showRecurringIcon: true } : {}),
+  });
 }
 
 export function renderProjectedInstallmentRow(

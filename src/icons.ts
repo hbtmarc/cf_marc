@@ -42,3 +42,7 @@ export function navIconForRoute(route: string): string {
 export function overflowIcon(): string {
   return `<svg ${SVG_ATTRS}><path d="M144,128a16,16,0,1,1-16-16A16,16,0,0,1,144,128ZM64,112a16,16,0,1,0,16,16A16,16,0,0,0,64,112Zm128,0a16,16,0,1,0,16,16A16,16,0,0,0,192,112Z"/></svg>`;
 }
+
+export function recurringCycleIcon(className = "recurring-icon"): string {
+  return `<svg class="${className}" ${SVG_ATTRS}><path d="M200,48H163.74a8,8,0,0,0-5.66,2.34l-80,80a8,8,0,0,1-11.32,0L54.34,87.78A8,8,0,0,0,48.69,86H24a8,8,0,0,0,0,16H47.31l22.63,22.63a24,24,0,0,0,33.94,0L152,88.69V128a8,8,0,0,0,16,0V56A8,8,0,0,0,200,48ZM232,136H208.69l-22.63-22.62a24,24,0,0,0-33.94,0L104,167.31V128a8,8,0,0,0-16,0v72a8,8,0,0,0,8,8h36.26a8,8,0,0,0,5.66-2.34l80-80a8,8,0,0,1,11.32,0l11.32,11.32A8,8,0,0,0,207.31,170H232a8,8,0,0,0,0-16Z"/></svg>`;
+}

@@ -1,5 +1,6 @@
 import { mergeImportCardDays } from "./import-card-review";
 import { createId, isValidDate, nowIso } from "./finance";
+import { runAutoReconciliation } from "./recurrence-auto-match";
 import { ensureImportMeta, hasFingerprint, rememberFingerprint } from "./import-meta";
 import type {
   ImportCard,
@@ -474,6 +475,7 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
     transactions: [...data.transactions],
     recurringRules: [...(data.recurringRules ?? [])],
     recurringMatches: [...(data.recurringMatches ?? [])],
+    ignoredRecurringSuggestions: [...(data.ignoredRecurringSuggestions ?? [])],
     importMeta: {
       fingerprints: [...(data.importMeta?.fingerprints ?? [])],
     },
@@ -605,6 +607,7 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
   }
 
   Object.assign(data, nextData);
+  runAutoReconciliation(data);
 
   return {
     created,

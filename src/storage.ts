@@ -1,4 +1,5 @@
 import { currentCompetenceMonth } from "./finance";
+import { normalizeLegacyRecurringRule } from "./recurrence-class";
 import type { AppData } from "./types";
 
 export const STORAGE_KEY = "cfm:v2:appData";
@@ -90,6 +91,20 @@ function isRecurringRule(value: unknown): boolean {
     value.resumedFromMonth === undefined || typeof value.resumedFromMonth === "string";
   const cardIdValid =
     value.cardId === undefined || typeof value.cardId === "string";
+  const recurrenceClassValid =
+    value.recurrenceClass === undefined ||
+    value.recurrenceClass === "income" ||
+    value.recurrenceClass === "fixed_bill" ||
+    value.recurrenceClass === "card_subscription" ||
+    value.recurrenceClass === "other";
+  const renewalPolicyValid =
+    value.renewalPolicy === undefined ||
+    value.renewalPolicy === "none" ||
+    value.renewalPolicy === "manual_annual";
+  const renewedThroughMonthValid =
+    value.renewedThroughMonth === undefined || typeof value.renewedThroughMonth === "string";
+  const seriesIdValid =
+    value.seriesId === undefined || typeof value.seriesId === "string";
 
   return (
     typeof value.id === "string" &&
@@ -107,6 +122,10 @@ function isRecurringRule(value: unknown): boolean {
     (value.status === "active" || value.status === "paused") &&
     (value.billingMode === "direct" || value.billingMode === "card") &&
     cardIdValid &&
+    recurrenceClassValid &&
+    renewalPolicyValid &&
+    renewedThroughMonthValid &&
+    seriesIdValid &&
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string"
   );
@@ -126,6 +145,17 @@ function isRecurringMatch(value: unknown): boolean {
   );
 }
 
+function isIgnoredRecurringSuggestion(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.signature === "string" &&
+    typeof value.evidenceFingerprint === "string" &&
+    typeof value.ignoredAt === "string"
+  );
+}
+
 export function emptyAppData(): AppData {
   return {
     schemaVersion: "cfm.local.v2",
@@ -135,6 +165,7 @@ export function emptyAppData(): AppData {
     invoices: [],
     recurringRules: [],
     recurringMatches: [],
+    ignoredRecurringSuggestions: [],
   };
 }
 
@@ -190,6 +221,15 @@ export function validateAppData(value: unknown): value is AppData {
     }
   }
 
+  if (value.ignoredRecurringSuggestions !== undefined) {
+    if (
+      !Array.isArray(value.ignoredRecurringSuggestions) ||
+      !value.ignoredRecurringSuggestions.every(isIgnoredRecurringSuggestion)
+    ) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -202,6 +242,20 @@ function normalizeAppData(data: AppData): AppData {
   }
   if (!data.recurringMatches) {
     data.recurringMatches = [];
+  }
+  if (!data.ignoredRecurringSuggestions) {
+    data.ignoredRecurringSuggestions = [];
+  }
+  const seenIgnored = new Set<string>();
+  data.ignoredRecurringSuggestions = data.ignoredRecurringSuggestions.filter((item) => {
+    if (seenIgnored.has(item.signature)) {
+      return false;
+    }
+    seenIgnored.add(item.signature);
+    return true;
+  });
+  for (const rule of data.recurringRules) {
+    normalizeLegacyRecurringRule(rule);
   }
   return data;
 }

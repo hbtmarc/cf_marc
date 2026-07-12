@@ -1,11 +1,17 @@
 import { createId, nowIso, parseMoneyToCents } from "./finance";
 import {
+  applyRecurrenceClassToRule,
+  normalizeLegacyRecurringRule,
+} from "./recurrence-class";
+import { renewRuleForTwelveMonths } from "./recurrence-renewal";
+import {
   recurringMatchId,
   validateRecurringMatch,
 } from "./recurrence-reconciliation";
 import { validateRecurringRule } from "./recurrences";
 import type {
   AppData,
+  RecurrenceClass,
   RecurringBillingMode,
   RecurringRule,
   RecurringRuleKind,
@@ -21,6 +27,7 @@ export interface RecurringRuleDraft {
   endMonth: string;
   billingMode: RecurringBillingMode;
   cardId: string;
+  recurrenceClass?: RecurrenceClass;
 }
 
 function draftToRule(
@@ -28,6 +35,7 @@ function draftToRule(
   id: string,
   timestamps: { createdAt: string; updatedAt: string },
   status: RecurringRule["status"] = "active",
+  seriesId?: string,
 ): RecurringRule | null {
   const amountCents = parseMoneyToCents(draft.amountInput);
   const day = Number(draft.dayOfMonth);
@@ -45,6 +53,7 @@ function draftToRule(
     startMonth: draft.startMonth.trim(),
     status,
     billingMode: draft.kind === "income" ? "direct" : draft.billingMode,
+    seriesId: seriesId ?? id,
     createdAt: timestamps.createdAt,
     updatedAt: timestamps.updatedAt,
   };
@@ -58,7 +67,11 @@ function draftToRule(
     rule.cardId = draft.cardId.trim();
   }
 
-  return rule;
+  if (draft.recurrenceClass) {
+    rule.recurrenceClass = draft.recurrenceClass;
+  }
+
+  return normalizeLegacyRecurringRule(rule);
 }
 
 export function validateRecurringRuleDraft(
@@ -114,6 +127,12 @@ export function validateRecurringRuleDraft(
 export function createRecurringRule(
   data: AppData,
   draft: RecurringRuleDraft,
+  options?: {
+    recurrenceClass?: RecurrenceClass;
+    selectedCompetenceMonth?: string;
+    seriesId?: string;
+    ruleId?: string;
+  },
 ): Record<string, string> {
   const cardIds = data.cards.map((card) => card.id);
   const errors = validateRecurringRuleDraft(draft, cardIds);
@@ -122,16 +141,40 @@ export function createRecurringRule(
   }
 
   const timestamp = nowIso();
-  const rule = draftToRule(draft, createId(), {
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  });
+  const ruleId = options?.ruleId ?? createId();
+  const rule = draftToRule(
+    draft,
+    ruleId,
+    {
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    },
+    "active",
+    options?.seriesId,
+  );
   if (!rule) {
     return { amount: "Informe um valor maior que zero." };
   }
 
+  if (options?.recurrenceClass && options.selectedCompetenceMonth) {
+    applyRecurrenceClassToRule(rule, options.recurrenceClass, options.selectedCompetenceMonth);
+  } else if (draft.recurrenceClass && options?.selectedCompetenceMonth) {
+    applyRecurrenceClassToRule(rule, draft.recurrenceClass, options.selectedCompetenceMonth);
+  } else {
+    normalizeLegacyRecurringRule(rule);
+  }
+
+  const ruleErrors = validateRecurringRule(rule, { cardIds });
+  if (Object.keys(ruleErrors).length > 0) {
+    return ruleErrors;
+  }
+
   if (!data.recurringRules) {
     data.recurringRules = [];
+  }
+  const duplicate = data.recurringRules.find((item) => item.id === rule.id);
+  if (duplicate) {
+    return {};
   }
   data.recurringRules.push(rule);
   return {};
@@ -162,7 +205,12 @@ export function updateRecurringRule(
     return { amount: "Informe um valor maior que zero." };
   }
 
-  Object.assign(existing, updated);
+  Object.assign(existing, updated, {
+    seriesId: existing.seriesId ?? existing.id,
+    recurrenceClass: existing.recurrenceClass ?? updated.recurrenceClass,
+    renewalPolicy: existing.renewalPolicy ?? updated.renewalPolicy,
+    renewedThroughMonth: existing.renewedThroughMonth ?? updated.renewedThroughMonth,
+  });
   return {};
 }
 
@@ -262,4 +310,55 @@ export function removeRecurringMatchById(data: AppData, matchId: string): void {
     return;
   }
   data.recurringMatches = data.recurringMatches.filter((item) => item.id !== matchId);
+}
+
+export function renewRecurringRule(
+  data: AppData,
+  ruleId: string,
+  referenceMonth: string,
+): Record<string, string> {
+  const rule = (data.recurringRules ?? []).find((item) => item.id === ruleId);
+  if (!rule) {
+    return { rule: "Regra não encontrada." };
+  }
+  normalizeLegacyRecurringRule(rule);
+  if (rule.renewalPolicy !== "manual_annual") {
+    return { renewal: "Esta regra não possui renovação anual." };
+  }
+  renewRuleForTwelveMonths(rule, referenceMonth);
+  rule.updatedAt = nowIso();
+  return {};
+}
+
+export function createEvidenceMatchIfAbsent(
+  data: AppData,
+  ruleId: string,
+  competenceMonth: string,
+  transactionId: string,
+): { created: boolean; reviewReason?: string } {
+  const existingForTransaction = (data.recurringMatches ?? []).find(
+    (item) => item.transactionId === transactionId,
+  );
+  if (
+    existingForTransaction &&
+    !(
+      existingForTransaction.ruleId === ruleId &&
+      existingForTransaction.competenceMonth === competenceMonth
+    )
+  ) {
+    return { created: false, reviewReason: "Transação já vinculada a outra regra." };
+  }
+
+  const matchId = recurringMatchId(ruleId, competenceMonth);
+  const existing = (data.recurringMatches ?? []).find((item) => item.id === matchId);
+  if (existing) {
+    return { created: false };
+  }
+
+  const errors = createRecurringMatch(data, ruleId, competenceMonth, transactionId);
+  if (Object.keys(errors).length > 0) {
+    const reason = Object.values(errors)[0];
+    return reason ? { created: false, reviewReason: reason } : { created: false };
+  }
+  return { created: true };
 }

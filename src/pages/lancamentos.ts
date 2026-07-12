@@ -29,12 +29,13 @@ import {
   type LedgerCardGroup,
 } from "../lancamentos-sections";
 import type { AppData, Transaction } from "../types";
-import type { AppMutations } from "../forms";
+import { transactionHasValidRecurringMatch } from "../recurrence-auto-match";
 import {
   deleteTransaction,
   openTransactionChoiceModal,
   openTransactionForm,
   toggleTransactionStatus,
+  type AppMutations,
 } from "../forms";
 import {
   INVOICE_DETAIL_SORT_COLUMNS,
@@ -493,7 +494,11 @@ function refreshLancamentosSections(
             incomeSort,
             TABLE_IDS.lancamentosIncome,
             INCOME_MOBILE_SORT_ID,
-            filteredIncomes.map((item) => renderIncomeTransactionTableRow(item)).join(""),
+            filteredIncomes.map((item) =>
+              renderIncomeTransactionTableRow(item, TABLE_IDS.lancamentosIncome, {
+                showRecurringIcon: transactionHasValidRecurringMatch(data, item.id),
+              }),
+            ).join(""),
           )}
         </div>
       </section>`);
@@ -522,7 +527,9 @@ function refreshLancamentosSections(
             EXPENSE_MOBILE_SORT_ID,
             filteredExpenses
               .map((item) =>
-                renderTransactionTableRow(item, TABLE_IDS.lancamentosExpense),
+                renderTransactionTableRow(item, TABLE_IDS.lancamentosExpense, {
+                  showRecurringIcon: transactionHasValidRecurringMatch(data, item.id),
+                }),
               )
               .join(""),
           )}

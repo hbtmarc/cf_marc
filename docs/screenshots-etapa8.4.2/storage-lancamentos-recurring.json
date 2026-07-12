@@ -1,0 +1,14 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:5173",
+      "localStorage": [
+        {
+          "name": "cfm:v2:appData",
+          "value": "{\"schemaVersion\":\"cfm.local.v2\",\"selectedCompetenceMonth\":\"2026-07\",\"transactions\":[{\"id\":\"tx-gym-6\",\"kind\":\"expense\",\"description\":\"Academia\",\"amountCents\":9900,\"date\":\"2026-06-20\",\"competenceMonth\":\"2026-06\",\"category\":\"Saúde\",\"status\":\"settled\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"},{\"id\":\"tx-gym-7\",\"kind\":\"expense\",\"description\":\"Academia\",\"amountCents\":9900,\"date\":\"2026-07-20\",\"competenceMonth\":\"2026-07\",\"category\":\"Saúde\",\"status\":\"settled\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"},{\"id\":\"tx-income\",\"kind\":\"income\",\"description\":\"Salário\",\"amountCents\":850000,\"date\":\"2026-07-05\",\"competenceMonth\":\"2026-07\",\"category\":\"Trabalho\",\"status\":\"settled\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"}],\"cards\":[{\"id\":\"card-1\",\"name\":\"Nubank\",\"closingDay\":25,\"dueDay\":3,\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"}],\"invoices\":[],\"recurringRules\":[{\"id\":\"rule-gym\",\"kind\":\"expense\",\"description\":\"Academia\",\"amountCents\":9900,\"category\":\"Saúde\",\"dayOfMonth\":20,\"startMonth\":\"2026-06\",\"status\":\"active\",\"billingMode\":\"direct\",\"recurrenceClass\":\"fixed_bill\",\"renewalPolicy\":\"none\",\"seriesId\":\"rule-gym\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"}],\"recurringMatches\":[{\"id\":\"recurring-match:rule-gym:2026-07\",\"ruleId\":\"rule-gym\",\"competenceMonth\":\"2026-07\",\"transactionId\":\"tx-gym-7\",\"createdAt\":\"2026-07-01T00:00:00.000Z\",\"updatedAt\":\"2026-07-01T00:00:00.000Z\"}],\"ignoredRecurringSuggestions\":[]}"
+        }
+      ]
+    }
+  ]
+}

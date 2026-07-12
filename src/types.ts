@@ -81,6 +81,10 @@ export type RecurringRuleStatus = "active" | "paused";
 
 export type RecurringBillingMode = "direct" | "card";
 
+export type RecurrenceClass = "income" | "fixed_bill" | "card_subscription" | "other";
+
+export type RenewalPolicy = "none" | "manual_annual";
+
 export interface RecurringRule {
   id: string;
   kind: RecurringRuleKind;
@@ -97,6 +101,10 @@ export interface RecurringRule {
   resumedFromMonth?: string;
   billingMode: RecurringBillingMode;
   cardId?: string;
+  recurrenceClass?: RecurrenceClass;
+  seriesId?: string;
+  renewalPolicy?: RenewalPolicy;
+  renewedThroughMonth?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -124,6 +132,12 @@ export interface RecurringMatch {
   updatedAt: string;
 }
 
+export interface IgnoredRecurringSuggestion {
+  signature: string;
+  evidenceFingerprint: string;
+  ignoredAt: string;
+}
+
 export type RecurringOccurrenceResolutionState =
   | "projected"
   | "matched"
@@ -148,6 +162,7 @@ export interface AppData {
   importMeta?: ImportMeta;
   recurringRules?: RecurringRule[];
   recurringMatches?: RecurringMatch[];
+  ignoredRecurringSuggestions?: IgnoredRecurringSuggestion[];
 }
 
 export type RoutePath =

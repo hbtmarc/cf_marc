@@ -1,9 +1,11 @@
 import { formatCentsToBRL, formatCompetenceLabel, formatDateLabel, transactionStatusLabel } from "./finance";
+import { isRenewalExpired } from "./recurrence-renewal";
+import { inferRecurrenceClassFromRule, recurrenceClassLabel } from "./recurrence-class";
 import { buildRecurringOccurrences } from "./recurrences";
 import { recurringResolutionsForMonth } from "./recurrence-reconciliation";
 import type { AppData, RecurringOccurrenceResolutionState, RecurringRule, Transaction } from "./types";
 
-export type RuleDisplayStatus = "active" | "paused" | "ended";
+export type RuleDisplayStatus = "active" | "paused" | "ended" | "renewal_pending";
 
 export type RuleFilter = "all" | "active" | "paused" | "ended";
 
@@ -25,6 +27,9 @@ export function ruleDisplayStatus(
   if (rule.endMonth !== undefined && rule.endMonth < referenceMonth) {
     return "ended";
   }
+  if (isRenewalExpired(rule, referenceMonth)) {
+    return "renewal_pending";
+  }
   return "active";
 }
 
@@ -35,7 +40,21 @@ export function ruleDisplayStatusLabel(status: RuleDisplayStatus): string {
   if (status === "ended") {
     return "Encerrada";
   }
+  if (status === "renewal_pending") {
+    return "Renovação pendente";
+  }
   return "Ativa";
+}
+
+export function ruleRecurrenceClassLabel(rule: RecurringRule): string {
+  return recurrenceClassLabel(inferRecurrenceClassFromRule(rule));
+}
+
+export function ruleRenewalSummary(rule: RecurringRule): string | null {
+  if (rule.renewalPolicy !== "manual_annual" || !rule.renewedThroughMonth) {
+    return null;
+  }
+  return `Renovada até ${formatCompetenceLabel(rule.renewedThroughMonth)}`;
 }
 
 export function ruleMatchesFilter(
@@ -45,6 +64,10 @@ export function ruleMatchesFilter(
 ): boolean {
   if (filter === "all") {
     return true;
+  }
+  if (filter === "active") {
+    const status = ruleDisplayStatus(rule, referenceMonth);
+    return status === "active" || status === "renewal_pending";
   }
   return ruleDisplayStatus(rule, referenceMonth) === filter;
 }

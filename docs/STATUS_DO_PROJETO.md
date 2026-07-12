@@ -2,11 +2,156 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 8.4 — Integração financeira e Dashboard executivo
+**Etapa atual:** Etapa 8 concluída — Planejamento automático e consolidação visual
 
 ---
 
-## Etapa 8.4 — integração financeira e Dashboard executivo
+## Etapa 8.4.2 — automatizar e consolidar Planejamento
+
+### Objetivo
+
+Tornar a página Planejamento prioritariamente automática: sugestões derivadas dos lançamentos persistidos, confirmação explícita para criar regras, cadastro manual como exceção, sem impacto financeiro até a confirmação.
+
+### Regra de detecção de sugestões
+
+Uma sugestão candidata agrupa transações que compartilham **todos** os critérios:
+
+1. mesma descrição normalizada (`trim` → minúsculas → espaços colapsados);
+2. mesmo `kind` (`income` ou `expense`);
+3. mesmo `billingMode` derivado (`direct` ou `card`);
+4. mesmo `cardId` quando `billingMode === "card"`;
+5. mesmo `amountCents`;
+6. ocorrências em **pelo menos duas** `competenceMonth` distintas (no máximo uma transação por competência no grupo).
+
+Campos propostos na sugestão:
+
+- `dayOfMonth` — dia da observação mais recente;
+- `startMonth` — primeira competência observada;
+- `category` — categoria da observação mais recente;
+- `id` / `signature` — identificador determinístico derivado dos critérios acima.
+
+**Exclusões obrigatórias:** `expenseKind` `fee` ou `refund`; transações com `installment` válido; IDs `projected:*`; duplicatas na mesma competência; equivalência a `RecurringRule` existente; transações incompatíveis com o `billingMode` derivado (ex.: receita com cartão/fatura; despesa direta com `cardId`).
+
+**Não implementado:** IA, fuzzy matching, tolerância de valores, criação automática de regras, novas dependências.
+
+### Confirmar e ignorar
+
+| Ação | Comportamento |
+|------|----------------|
+| **Criar recorrência** | Cria **exatamente uma** `RecurringRule` via `createRecurringRule()`; nenhuma regra é criada antes da confirmação |
+| **Ignorar sugestão** | Persiste `{ signature, evidenceFingerprint, ignoredAt }` em `ignoredRecurringSuggestions` |
+| **Reaparecer** | Ignorada não volta enquanto assinatura **e** evidência permanecem iguais; nova competência ou transação altera `evidenceFingerprint` e pode gerar nova apresentação |
+| **Importação** | Reimportação preserva regras, matches e sugestões ignoradas; não duplica regras |
+
+Sugestões **não** são persistidas como ocorrências nem transações. Não há CRUD próprio para sugestões.
+
+### Distinção parcela × cobrança recorrente
+
+- **Parcela** (`installment` válido): pertence ao motor de parcelas; excluída das sugestões; não pode virar assinatura nem conta fixa.
+- **Primeira cobrança observada**: primeira transação histórica da sugestão define `startMonth` (não usar o termo “primeira parcela” para assinatura).
+
+### Classificação das recorrências (`recurrenceClass`)
+
+| Origem sugerida | Classe padrão | `renewalPolicy` padrão |
+|-----------------|---------------|------------------------|
+| Receita | `income` | `none` |
+| Despesa direta | `fixed_bill` | `none` |
+| Despesa no cartão | `card_subscription` | `manual_annual` |
+
+O usuário pode escolher **Outra recorrência** antes de confirmar (controle segmentado visível). Legado normaliza: `income` → receita; `expense` + `direct` → conta fixa; `expense` + `card` → assinatura; `seriesId = rule.id`; `renewalPolicy = none`.
+
+### Confirmação com histórico
+
+Ao confirmar: cria uma `RecurringRule` + `RecurringMatch` determinístico para cada evidência compatível; não sobrescreve vínculo existente; confirmação repetida é idempotente.
+
+### Renovação anual de assinaturas
+
+- `renewedThroughMonth` (YYYY-MM) limita projeções; distinto de `endMonth` (encerramento definitivo).
+- Ciclo anual: `annualCycleEndMonth(startMonth, competênciaAtual)` — ex.: primeira cobrança 2026-06, competência 2026-07 → aprovada até 2027-05.
+- Após vencer: não projeta, não entra no Dashboard nem em `calculateCompetenceSummary`; histórico e matches preservados; ação **Renovar por 12 meses** estende `renewedThroughMonth` em exatamente 12 competências (sem recriar histórico).
+
+### Versionamento de contas fixas
+
+**Atualizar valor a partir de Mmm/AAAA**: encerra versão anterior em `competência − 1`, cria nova regra com mesmo `seriesId`, migra matches da competência efetiva em diante; passado mantém valor antigo; sobreposição de versões impedida. Na própria `startMonth` sem histórico, atualiza in-place.
+
+### Auto-conciliação segura
+
+Executada após importação e ao abrir Planejamento. Vincula automaticamente somente com **um** candidato exato (mesma competência, kind, billing, cartão, descrição normalizada, valor, estrutura compatível, sem match prévio, sem fee/refund/installment/projeção). Zero candidatos → `projected`; dois ou mais → revisão manual; valor diferente → revisão com previsto/observado/diferença (sem alterar regra automaticamente).
+
+### Ícone em Lançamentos
+
+Transação com `RecurringMatch` válido exibe ícone de ciclo (Phosphor-style) ao lado da descrição, com `sr-only` “Lançamento recorrente” e `title="Recorrente"`. Projeções e parcelas não recebem o ícone.
+
+### Ausência de impacto financeiro
+
+- Sugestões **não** entram em `calculateCompetenceSummary` nem no Dashboard.
+- Somente `RecurringRule` confirmada gera ocorrência (`projected`).
+- `matched` continua contado pela transação real; `covered_by_invoice` pela fatura.
+- Parcelas e faturas mantêm precedência da Etapa 8.4.1; sem dupla contagem.
+
+### Hierarquia da página `#/planejamento`
+
+1. Resumo da competência  
+2. Sugestões encontradas  
+3. Ocorrências do mês  
+4. Regras mensais  
+5. Cadastro manual (botão **Nova regra** secundário)
+
+### Consolidação visual
+
+Toolbar com intro, formulário com largura controlada (`max-width: 42rem`), controles segmentados Receita/Despesa e Direta/Cartão, labels visíveis, estados vazios compactos, foco preservado no formulário, layout sem scroll horizontal em 390 px.
+
+Screenshots sintéticos: `docs/screenshots-etapa8.4.2/`.
+
+### Demonstração matemática corrigida (Etapa 8.4.1)
+
+Cenário integrado:
+
+| Item | Valor |
+|------|------:|
+| Receita recebida | 5.000 |
+| Receita recorrente prevista (`projected`) | 1.000 |
+| Despesa paga total | 650 |
+| Fatura em aberto | 800 |
+| Parcela projetada | 300 |
+| Despesa recorrente prevista (`projected`) | 200 |
+
+**Despesas pendentes / comprometidas** = 800 + 300 + 200 = **1.300** (a receita prevista **não** entra aqui).
+
+**Saldo realizado** = 5.000 − 650 = **4.350**.
+
+**Saldo projetado** = 4.350 + 1.000 − 1.300 = **4.050**.
+
+Fórmula implementada (`balancePlannedCents`):
+
+```
+balanceRealizedCents
++ pendingIncomeTxCents
++ recurringIncomeProjectedCents
+− pendingExpenseTxCents
+− openInvoicesCents
+− projectedInstallmentsCents
+− recurringExpenseProjectedCents
+```
+
+### Limitações mantidas
+
+- Múltiplas pausas: um único intervalo `pausedFromMonth` → `resumedFromMonth`.
+- Sugestões exigem repetição exata (descrição, valor, tipo, cobrança); sem tolerância.
+- Motor de sugestões analisa apenas transações persistidas.
+- Contrato `cfm.import.v1` inalterado.
+
+### Conclusão da Etapa 8
+
+**Etapa 8 concluída.** Motor (8.1), conciliação (8.2), interface Planejamento (8.3), integração financeira/Dashboard (8.4.1) e automatização/consolidação do Planejamento (8.4.2) entregues.
+
+### Próximo marco — Etapa 9
+
+Balanço mensal.
+
+---
+
+## Etapa 8.4.1 — integração financeira e Dashboard executivo
 
 ### Objetivo
 
@@ -55,7 +200,9 @@ Fórmulas:
 
 **Saldo projetado final** (`balancePlannedCents`):
 `incomePlannedCents − expensePlannedCents`, equivalente ao fechamento visual:
-`balanceRealizedCents + receitas pendentes/projetadas − despesas diretas pendentes − faturas em aberto − parcelas projetadas − recorrências projetadas`.
+`balanceRealizedCents + receitas pendentes + receitas recorrentes projetadas − despesas diretas pendentes − faturas em aberto − parcelas projetadas − despesas recorrentes projetadas`.
+
+Exemplo numérico (valores em reais inteiros): receita recebida 5.000; receita recorrente prevista 1.000; despesa paga 650; fatura aberta 800; parcela projetada 300; despesa recorrente prevista 200 → comprometido = 1.300; saldo realizado = 4.350; saldo projetado = 4.050.
 
 **Limitação — múltiplas pausas:** o modelo suporta um único intervalo `pausedFromMonth` → `resumedFromMonth`; nova pausa sobrescreve `pausedFromMonth` e limpa `resumedFromMonth`. Calendário de pausas múltiplas não implementado.
 
@@ -82,15 +229,17 @@ Valores `projected` usam estilo secundário (`money--projected`, chip tracejado)
 
 Screenshots sintéticos: `docs/screenshots-etapa8.4/`.
 
-### Conclusão da Etapa 8
+### Conclusão parcial (8.4.1)
 
-Motor (8.1), conciliação (8.2), interface Planejamento (8.3) e integração financeira/Dashboard (8.4) concluídos.
+Integração financeira e Dashboard executivo entregues na subdivisão 8.4.1; conclusão definitiva da Etapa 8 na 8.4.2.
 
-### Próximo marco — Etapa 9
+### Próximo passo — Etapa 8.4.2
 
-Balanço mensal.
+Automatizar sugestões no Planejamento e consolidar visual (concluído).
 
 ---
+
+## Etapa 8.4 — integração financeira e Dashboard executivo (histórico)
 
 ## Regra permanente — campos interativos
 
