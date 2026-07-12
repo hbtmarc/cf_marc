@@ -177,16 +177,21 @@ export function pauseRecurringRule(
   }
   rule.status = "paused";
   rule.pausedFromMonth = fromMonth;
+  delete rule.resumedFromMonth;
   rule.updatedAt = nowIso();
 }
 
-export function resumeRecurringRule(data: AppData, ruleId: string): void {
+export function resumeRecurringRule(
+  data: AppData,
+  ruleId: string,
+  fromMonth: string,
+): void {
   const rule = (data.recurringRules ?? []).find((item) => item.id === ruleId);
   if (!rule) {
     return;
   }
   rule.status = "active";
-  delete rule.pausedFromMonth;
+  rule.resumedFromMonth = fromMonth;
   rule.updatedAt = nowIso();
 }
 

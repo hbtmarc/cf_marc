@@ -2,7 +2,93 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 8.3 — Página de Planejamento recorrente
+**Etapa atual:** Etapa 8.4 — Integração financeira e Dashboard executivo
+
+---
+
+## Etapa 8.4 — integração financeira e Dashboard executivo
+
+### Objetivo
+
+Integrar recorrências ao cálculo mensal via `recurringResolutionsForMonth()` e transformar o Dashboard em visão executiva da competência, sem nova rota e sem alterar `cfm.import.v1`.
+
+### Regra financeira
+
+| Estado | Efeito nos totais |
+|--------|-------------------|
+| `projected` + receita | Entra em receita planejada e pendente; **não** entra no realizado |
+| `projected` + despesa | Entra em despesa planejada e comprometida; **não** entra no pago |
+| `matched` | **Não** soma de novo — a transação real já conta |
+| `covered_by_invoice` | **Não** soma de novo — a fatura real já conta |
+
+Fórmulas:
+
+- **Receita planejada** = receitas reais/pendentes + recorrências de receita ainda `projected`
+- **Despesa planejada** = pagas + diretas pendentes + faturas em aberto + parcelas projetadas não cobertas + despesas recorrentes `projected` não cobertas
+- **Saldo realizado** = receitas recebidas − despesas pagas
+- **Saldo projetado** = receita planejada − despesa planejada
+
+`CompetenceSummary` ganhou campos derivados (não persistidos): `recurringIncomeProjectedCents`, `recurringExpenseProjectedCents`, `recurringProjectedCount`.
+
+### Fórmulas oficiais (`calculateCompetenceSummary` + `buildDashboardContext`)
+
+**Saldo realizado** (`balanceRealizedCents`):
+`incomeSettledCents − expensePaidCents`, onde
+`incomeSettledCents` = soma de transações `income` com `status === "settled"`;
+`expensePaidCents` = `expenseTransactionsPaid` (despesas diretas `settled`, excl. `in_invoice`) + `invoicePaidCents` (`amountPaidCents` das faturas).
+
+**Receitas previstas** (painel — duas linhas quando aplicável):
+- `pendingIncomeCents` = transações `income` `pending` (`buildDashboardContext`);
+- `recurringIncomeProjectedCents` = somente resoluções `projected` de receita (`buildPlanejamentoSummary`).
+
+**Despesas pendentes / comprometidas** (`expensePendingCents`):
+`expenseTransactionsPending` (diretas `pending`, excl. `in_invoice`)
++ `invoiceDueCents` (`invoiceCommittedCents` / `invoiceDebtCents` por fatura)
++ `projectedInstallmentsCents` (`projectedInstallmentCentsForMonth`, suprimidas se fatura real no cartão)
++ `recurringExpenseProjectedCents` (somente resoluções `projected` de despesa).
+
+**Faturas em aberto** (linha do fechamento): soma de `invoiceDebtCents` para faturas `open` ou `partial` (`buildDashboardContext.openInvoicesCents`).
+
+**Parcelas projetadas**: `projectedInstallmentCentsForMonth` (excluídas quando `hasInvoiceForCardMonth`).
+
+**Recorrências projetadas**: `buildPlanejamentoSummary.expenseProjectedCents` (estado `projected` apenas).
+
+**Saldo projetado final** (`balancePlannedCents`):
+`incomePlannedCents − expensePlannedCents`, equivalente ao fechamento visual:
+`balanceRealizedCents + receitas pendentes/projetadas − despesas diretas pendentes − faturas em aberto − parcelas projetadas − recorrências projetadas`.
+
+**Limitação — múltiplas pausas:** o modelo suporta um único intervalo `pausedFromMonth` → `resumedFromMonth`; nova pausa sobrescreve `pausedFromMonth` e limpa `resumedFromMonth`. Calendário de pausas múltiplas não implementado.
+
+### Prioridade da transação e da fatura real
+
+- Parcelas projetadas entram no comprometido somente sem fatura real para o cartão/competência.
+- Compras internas da fatura não são somadas novamente.
+- Saldo credor não vira receita; pagamento de fatura não vira nova despesa.
+- Fatura real substitui projeção do mesmo cartão (parcelas + recorrências `projected` de cartão).
+
+### Pausa e reativação
+
+- **Pausar** (`pausedFromMonth`, inclusivo): preserva histórico; interrompe projeções a partir da competência da pausa.
+- **Reativar** (`resumedFromMonth`): retoma projeções na competência da reativação; **não recria** meses entre pausa e reativação (ex.: pausa em março, reativação em junho → março–maio permanecem vazios).
+- Matches históricos permanecem válidos.
+
+### Painéis do Dashboard
+
+1. **Recorrências do mês** — resumo + até 5 ocorrências (PREVISTA / CONCILIADA / COBERTA PELA FATURA); ação **Ver planejamento**.
+2. **Cartões e faturas** — fatura real ou **Fatura projetada** (badge PROJETADA); ação **Ver faturas**.
+3. **Fechamento projetado** — linhas reconciliadas com saldo projetado (sem linhas zeradas).
+
+Valores `projected` usam estilo secundário (`money--projected`, chip tracejado) — não parecem realizados.
+
+Screenshots sintéticos: `docs/screenshots-etapa8.4/`.
+
+### Conclusão da Etapa 8
+
+Motor (8.1), conciliação (8.2), interface Planejamento (8.3) e integração financeira/Dashboard (8.4) concluídos.
+
+### Próximo marco — Etapa 9
+
+Balanço mensal.
 
 ---
 
@@ -18,7 +104,7 @@ Aplicada na revisão de importação (dias de cartão), na busca de Lançamentos
 
 ### Objetivo
 
-Rota `#/planejamento` para administrar regras recorrentes mensais, visualizar ocorrências da competência e confirmar vínculos com lançamentos reais. Sem integração ao Dashboard nem a `calculateCompetenceSummary`.
+Rota `#/planejamento` para administrar regras recorrentes mensais, visualizar ocorrências da competência e confirmar vínculos com lançamentos reais. Integração ao Dashboard concluída na Etapa 8.4.
 
 ### Fluxo da página
 
@@ -30,7 +116,8 @@ Rota `#/planejamento` para administrar regras recorrentes mensais, visualizar oc
 ### CRUD permitido
 
 - Criar e editar regra em formulário inline único (validação da Etapa 8.1).
-- Pausar a partir da competência selecionada (`pausedFromMonth`, inclusivo): preserva ocorrências e vínculos anteriores; somente a competência da pausa e meses futuros deixam de ser projetados. Reativar retoma projeções futuras.
+- Pausar a partir da competência selecionada (`pausedFromMonth`, inclusivo): preserva ocorrências e vínculos anteriores; somente a competência da pausa e meses futuros deixam de ser projetados.
+- Reativar na competência selecionada (`resumedFromMonth`): retoma projeções sem recriar meses entre pausa e reativação.
 - Encerrar define `endMonth` na competência selecionada (inclusivo); histórico e matches anteriores preservados.
 - Sem exclusão permanente nesta etapa.
 
@@ -55,18 +142,13 @@ Em `matched`: valor previsto, realizado, diferença neutra e transação vincula
 
 Área **Vínculos que precisam de revisão** quando `findInvalidRecurringMatches()` retorna itens, com motivo e ação **Remover vínculo inválido**.
 
-### Limitações da Etapa 8.3
+### Limitações remanescentes (Planejamento)
 
-- Resumo e ocorrências são informativos; não alteram totais do Dashboard.
 - Ocorrências e resoluções continuam derivadas e não persistidas.
 - Sem associação automática por descrição ou valor.
 - Encerrar não apaga matches históricos.
 
 Screenshots sintéticos: `docs/screenshots-etapa8.3/`.
-
-### Próximo passo — Etapa 8.4
-
-Dashboard executivo com integração financeira das recorrências (somente `projected` como previsão adicional).
 
 ---
 

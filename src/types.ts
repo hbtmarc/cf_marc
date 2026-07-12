@@ -93,6 +93,8 @@ export interface RecurringRule {
   status: RecurringRuleStatus;
   /** Competência a partir da qual a regra deixa de projetar ocorrências (inclusiva). */
   pausedFromMonth?: string;
+  /** Competência em que a regra foi reativada; meses entre pausa e reativação não são recriados. */
+  resumedFromMonth?: string;
   billingMode: RecurringBillingMode;
   cardId?: string;
   createdAt: string;
@@ -166,6 +168,9 @@ export interface CompetenceSummary {
   expensePendingCents: number;
   balancePlannedCents: number;
   balanceRealizedCents: number;
+  recurringIncomeProjectedCents: number;
+  recurringExpenseProjectedCents: number;
+  recurringProjectedCount: number;
 }
 
 export interface FieldErrors {

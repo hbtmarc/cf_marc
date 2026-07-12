@@ -9,6 +9,8 @@ import {
   renderEmptyState,
   renderProjectionPanel,
   renderProjectedInstallmentsPanel,
+  renderRecurringSummaryPanel,
+  renderCardSummaryPanel,
   renderRhythmPanel,
   renderSituationPanel,
   transactionTypeLabel,
@@ -101,6 +103,8 @@ export function renderDashboard(
       <div class="dashboard-grid__primary">
         ${renderSituationPanel(ctx)}
         ${renderRhythmPanel(ctx.rhythm)}
+        ${renderRecurringSummaryPanel(ctx.recurringSummary)}
+        ${renderCardSummaryPanel(ctx.cardSummary)}
         ${renderProjectedInstallmentsPanel(ctx.projectedInstallments)}
         ${recentBlock}
       </div>

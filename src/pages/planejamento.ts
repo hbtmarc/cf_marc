@@ -680,7 +680,7 @@ function bindPlanejamentoActions(
         if (!ruleId) {
           return;
         }
-        mutations.update((appData) => resumeRecurringRule(appData, ruleId));
+        mutations.update((appData) => resumeRecurringRule(appData, ruleId, month));
         announce("Regra reativada.");
         rerender();
         return;

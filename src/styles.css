@@ -96,6 +96,9 @@
 
 html {
   font-size: 100%;
+  scroll-padding-bottom: calc(
+    var(--bottom-nav-height) + var(--space-6) + env(safe-area-inset-bottom, 0px)
+  );
 }
 
 body {
@@ -954,6 +957,98 @@ body.modal-open {
   background: color-mix(in srgb, var(--color-action) 12%, var(--color-surface-raised));
   color: var(--color-action);
   border: 1px dashed color-mix(in srgb, var(--color-action) 35%, transparent);
+}
+
+.money--projected {
+  color: var(--color-action);
+  font-style: italic;
+}
+
+.projection-breakdown__row--projected .projection-breakdown__value .money {
+  color: var(--color-action);
+  font-style: italic;
+}
+
+.panel--dashboard-recurring .panel__context,
+.panel--dashboard-cards .panel__context {
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+}
+
+.dashboard-recurring-list,
+.dashboard-card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.dashboard-recurring-list__item,
+.dashboard-card-list__item {
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.dashboard-recurring-list__item:last-child,
+.dashboard-card-list__item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.dashboard-recurring-list__main,
+.dashboard-card-list__main {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.dashboard-recurring-list__tail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.dashboard-recurring-list__date,
+.dashboard-card-list__meta {
+  font-size: var(--text-micro);
+  color: var(--color-text-muted);
+}
+
+.dashboard-recurring-list__card {
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+}
+
+.dashboard-card-list__name {
+  font-weight: var(--weight-semibold);
+}
+
+.dashboard-card-list__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.dashboard-card-list__metrics dt {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--color-text-muted);
+}
+
+.dashboard-card-list__metrics dd {
+  margin: var(--space-1) 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-recurring__empty {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-body);
 }
 
 .cfm-table__row--projected {

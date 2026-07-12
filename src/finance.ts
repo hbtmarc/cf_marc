@@ -6,6 +6,7 @@ import type {
   Transaction,
 } from "./types";
 import { projectedInstallmentCentsForMonth } from "./installments";
+import { buildPlanejamentoSummary } from "./planejamento-presentation";
 
 const MONTH_NAMES = [
   "Janeiro",
@@ -244,19 +245,23 @@ export function calculateCompetenceSummary(
   );
   const ledgerExpenses = expenses.filter((transaction) => !isInvoiceLinkedExpense(transaction));
 
-  const incomePlannedCents = sumCents(
-    incomes.map((transaction) => transaction.amountCents),
-  );
+  const projectedInstallmentsCents = projectedInstallmentCentsForMonth(data, competenceMonth);
+  const recurringSummary = buildPlanejamentoSummary(data, competenceMonth);
+
+  const incomePlannedCents =
+    sumCents(incomes.map((transaction) => transaction.amountCents)) +
+    recurringSummary.incomeProjectedCents;
   const incomeSettledCents = sumCents(
     incomes
       .filter((transaction) => transaction.status === "settled")
       .map((transaction) => transaction.amountCents),
   );
-  const incomePendingCents = sumCents(
-    incomes
-      .filter((transaction) => transaction.status === "pending")
-      .map((transaction) => transaction.amountCents),
-  );
+  const incomePendingCents =
+    sumCents(
+      incomes
+        .filter((transaction) => transaction.status === "pending")
+        .map((transaction) => transaction.amountCents),
+    ) + recurringSummary.incomeProjectedCents;
 
   const expenseTransactionsPaid = sumCents(
     ledgerExpenses
@@ -275,11 +280,13 @@ export function calculateCompetenceSummary(
   const invoiceDueCents = sumCents(
     invoices.map((invoice) => invoiceCommittedCents(invoice)),
   );
-  const projectedInstallmentsCents = projectedInstallmentCentsForMonth(data, competenceMonth);
 
   const expensePaidCents = expenseTransactionsPaid + invoicePaidCents;
   const expensePendingCents =
-    expenseTransactionsPending + invoiceDueCents + projectedInstallmentsCents;
+    expenseTransactionsPending +
+    invoiceDueCents +
+    projectedInstallmentsCents +
+    recurringSummary.expenseProjectedCents;
   const expensePlannedCents = expensePaidCents + expensePendingCents;
 
   return {
@@ -292,6 +299,9 @@ export function calculateCompetenceSummary(
     expensePendingCents,
     balancePlannedCents: incomePlannedCents - expensePlannedCents,
     balanceRealizedCents: incomeSettledCents - expensePaidCents,
+    recurringIncomeProjectedCents: recurringSummary.incomeProjectedCents,
+    recurringExpenseProjectedCents: recurringSummary.expenseProjectedCents,
+    recurringProjectedCount: recurringSummary.projectedCount,
   };
 }
 

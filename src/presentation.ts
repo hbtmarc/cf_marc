@@ -23,6 +23,12 @@ import {
   PROJECTED_STATUS_LABEL,
   type ProjectedInstallment,
 } from "./installments";
+import {
+  buildDashboardCardSummary,
+  buildDashboardRecurringSummary,
+  type DashboardCardSummary,
+  type DashboardRecurringSummary,
+} from "./dashboard-executive";
 import type {
   AppData,
   Card,
@@ -53,8 +59,11 @@ export interface DashboardProjectedInstallments {
 export interface DashboardProjection {
   realizedCents: number;
   pendingIncomeCents: number;
+  recurringIncomeProjectedCents: number;
   pendingExpenseTxCents: number;
   openInvoicesCents: number;
+  projectedInstallmentsCents: number;
+  recurringExpenseProjectedCents: number;
   projectedCents: number;
 }
 
@@ -97,6 +106,8 @@ export interface DashboardContext {
   attention: DashboardAttentionItem[];
   hasMovement: boolean;
   projectedInstallments: DashboardProjectedInstallments | null;
+  recurringSummary: DashboardRecurringSummary | null;
+  cardSummary: DashboardCardSummary | null;
 }
 
 export function balanceTone(cents: number): BalanceTone {
@@ -181,12 +192,23 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
   );
   const projectedInstallmentsCents = projectedInstallmentCentsForMonth(data, competenceMonth);
   const projectedItems = projectedInstallmentsForMonth(data, competenceMonth);
+  const recurringSummary = buildDashboardRecurringSummary(data, competenceMonth);
+  const cardSummary = buildDashboardCardSummary(data, competenceMonth);
+
+  const pendingIncomeTxCents = sumCents(
+    incomes
+      .filter((item) => item.status === "pending")
+      .map((item) => item.amountCents),
+  );
 
   const projection: DashboardProjection = {
     realizedCents: summary.balanceRealizedCents,
-    pendingIncomeCents: summary.incomePendingCents,
+    pendingIncomeCents: pendingIncomeTxCents,
+    recurringIncomeProjectedCents: summary.recurringIncomeProjectedCents,
     pendingExpenseTxCents,
     openInvoicesCents,
+    projectedInstallmentsCents,
+    recurringExpenseProjectedCents: summary.recurringExpenseProjectedCents,
     projectedCents: summary.balancePlannedCents,
   };
 
@@ -319,8 +341,14 @@ export function buildDashboardContext(data: AppData, competenceMonth: string): D
     rhythm,
     upcoming,
     attention,
-    hasMovement: transactions.length > 0 || invoices.length > 0 || projectedItems.length > 0,
+    hasMovement:
+      transactions.length > 0 ||
+      invoices.length > 0 ||
+      projectedItems.length > 0 ||
+      (recurringSummary?.lines.length ?? 0) > 0,
     projectedInstallments,
+    recurringSummary,
+    cardSummary,
   };
 }
 
@@ -330,7 +358,8 @@ export function renderSituationPanel(ctx: DashboardContext): string {
     ctx.summary.incomePendingCents +
     ctx.projection.pendingExpenseTxCents +
     ctx.projection.openInvoicesCents +
-    (ctx.projectedInstallments?.totalCents ?? 0);
+    (ctx.projectedInstallments?.totalCents ?? 0) +
+    ctx.summary.recurringExpenseProjectedCents;
   return `
     <section class="panel panel--situation" aria-labelledby="situation-title">
       <header class="panel__header">
@@ -368,28 +397,60 @@ export function renderProjectionPanel(ctx: DashboardContext): string {
     label: string;
     value: number;
     sign: string;
-    tone: "positive" | "negative" | "neutral" | "deduction";
+    tone: "positive" | "negative" | "neutral" | "deduction" | "projected";
   }> = [
     { label: "Saldo realizado", value: ctx.projection.realizedCents, sign: "", tone: realizedTone },
-    {
+  ];
+
+  if (ctx.projection.pendingIncomeCents > 0) {
+    rows.push({
       label: "Receitas previstas",
       value: ctx.projection.pendingIncomeCents,
       sign: "+",
-      tone: ctx.projection.pendingIncomeCents === 0 ? "neutral" : "neutral",
-    },
-    {
-      label: "Despesas pendentes",
+      tone: "neutral",
+    });
+  }
+  if (ctx.projection.recurringIncomeProjectedCents > 0) {
+    rows.push({
+      label: "Recorrências de receita",
+      value: ctx.projection.recurringIncomeProjectedCents,
+      sign: "+",
+      tone: "projected",
+    });
+  }
+  if (ctx.projection.pendingExpenseTxCents > 0) {
+    rows.push({
+      label: "Despesas diretas pendentes",
       value: ctx.projection.pendingExpenseTxCents,
       sign: "−",
-      tone: ctx.projection.pendingExpenseTxCents === 0 ? "neutral" : "deduction",
-    },
-    {
+      tone: "deduction",
+    });
+  }
+  if (ctx.projection.openInvoicesCents > 0) {
+    rows.push({
       label: "Faturas em aberto",
       value: ctx.projection.openInvoicesCents,
       sign: "−",
-      tone: ctx.projection.openInvoicesCents === 0 ? "neutral" : "deduction",
-    },
-  ];
+      tone: "deduction",
+    });
+  }
+  if (ctx.projection.projectedInstallmentsCents > 0) {
+    rows.push({
+      label: "Parcelas projetadas",
+      value: ctx.projection.projectedInstallmentsCents,
+      sign: "−",
+      tone: "projected",
+    });
+  }
+  if (ctx.projection.recurringExpenseProjectedCents > 0) {
+    rows.push({
+      label: "Recorrências projetadas",
+      value: ctx.projection.recurringExpenseProjectedCents,
+      sign: "−",
+      tone: "projected",
+    });
+  }
+
   const projectedTone = balanceTone(ctx.projection.projectedCents);
 
   return `
@@ -417,6 +478,140 @@ export function renderProjectionPanel(ctx: DashboardContext): string {
             <span class="projection-breakdown__value">${renderMoney(ctx.projection.projectedCents)}</span>
           </li>
         </ol>
+      </div>
+    </section>
+  `;
+}
+
+function recurringStateVariant(
+  state: DashboardRecurringSummary["lines"][number]["state"],
+): "success" | "neutral" | "warning" {
+  if (state === "matched") {
+    return "success";
+  }
+  if (state === "covered_by_invoice") {
+    return "neutral";
+  }
+  return "warning";
+}
+
+export function renderRecurringSummaryPanel(
+  recurring: DashboardRecurringSummary | null,
+): string {
+  if (!recurring) {
+    return "";
+  }
+
+  return `
+    <section class="panel panel--dashboard-recurring" aria-labelledby="dashboard-recurring-title">
+      <header class="panel__header panel__header--split">
+        <div>
+          <p class="text-overline" id="dashboard-recurring-title">Recorrências do mês</p>
+          <p class="panel__context">
+            Previstas:
+            <span class="money money--positive">${escapeHtml(formatCentsToBRL(recurring.incomeProjectedCents))}</span>
+            ·
+            <span class="money money--projected">${escapeHtml(formatCentsToBRL(recurring.expenseProjectedCents))}</span>
+            · ${escapeHtml(formatTransactionCount(recurring.projectedCount))} prevista${recurring.projectedCount === 1 ? "" : "s"}
+            · ${recurring.matchedCount} conciliada${recurring.matchedCount === 1 ? "" : "s"}
+            · ${recurring.coveredCount} coberta${recurring.coveredCount === 1 ? "" : "s"} por fatura
+          </p>
+        </div>
+        <a class="btn btn--ghost btn--compact" href="#/planejamento">Ver planejamento</a>
+      </header>
+      <div class="panel__body">
+        ${
+          recurring.lines.length === 0
+            ? `<p class="dashboard-recurring__empty">Nenhuma ocorrência recorrente nesta competência.</p>`
+            : `<ul class="dashboard-recurring-list">
+              ${recurring.lines
+                .map((line) => {
+                  const moneyClass =
+                    line.kind === "income"
+                      ? line.state === "projected"
+                        ? "money money--projected"
+                        : "money money--positive"
+                      : line.state === "projected"
+                        ? "money money--projected"
+                        : "money money--negative";
+                  const cardMeta =
+                    line.cardName !== undefined
+                      ? `<span class="dashboard-recurring-list__card">${escapeHtml(line.cardName)}</span>`
+                      : "";
+                  return `
+                <li class="dashboard-recurring-list__item">
+                  <div class="dashboard-recurring-list__main">
+                    <span class="dashboard-recurring-list__date">${escapeHtml(formatDateLabel(line.expectedDate))}</span>
+                    <span class="dashboard-recurring-list__label">${escapeHtml(line.description)}</span>
+                    ${cardMeta}
+                  </div>
+                  <div class="dashboard-recurring-list__tail">
+                    <span class="${moneyClass}">${escapeHtml(formatCentsToBRL(line.amountCents))}</span>
+                    ${renderStatusChip(line.stateLabel, recurringStateVariant(line.state))}
+                  </div>
+                </li>`;
+                })
+                .join("")}
+            </ul>`
+        }
+      </div>
+    </section>
+  `;
+}
+
+export function renderCardSummaryPanel(cardSummary: DashboardCardSummary | null): string {
+  if (!cardSummary || cardSummary.cards.length === 0) {
+    return "";
+  }
+
+  return `
+    <section class="panel panel--dashboard-cards" aria-labelledby="dashboard-cards-title">
+      <header class="panel__header panel__header--split">
+        <div>
+          <p class="text-overline" id="dashboard-cards-title">Cartões e faturas</p>
+          <p class="panel__context">
+            Total ${escapeHtml(formatCentsToBRL(cardSummary.footerTotalCents))}
+            · Em aberto ${escapeHtml(formatCentsToBRL(cardSummary.footerOpenCents))}
+            · ${escapeHtml(formatCardCount(cardSummary.attentionCount))} exig${cardSummary.attentionCount === 1 ? "e" : "em"} atenção
+          </p>
+        </div>
+        <a class="btn btn--ghost btn--compact" href="#/faturas">Ver faturas</a>
+      </header>
+      <div class="panel__body">
+        <ul class="dashboard-card-list">
+          ${cardSummary.cards
+            .slice(0, 5)
+            .map((card) => {
+              const statusVariant =
+                card.mode === "projected"
+                  ? "neutral"
+                  : card.needsAttention
+                    ? "warning"
+                    : "success";
+              const statusChip =
+                card.mode === "projected"
+                  ? `<span class="status-chip status-chip--projected">PROJETADA</span>`
+                  : renderStatusChip(card.statusLabel, statusVariant);
+              return `
+            <li class="dashboard-card-list__item">
+              <div class="dashboard-card-list__main">
+                <span class="dashboard-card-list__name">${escapeHtml(card.cardName)}</span>
+                <span class="dashboard-card-list__meta">${
+                  card.mode === "projected"
+                    ? "Fatura projetada"
+                    : `Venc. ${escapeHtml(card.dueDate)}`
+                }</span>
+              </div>
+              <dl class="dashboard-card-list__metrics">
+                <div><dt>Total</dt><dd>${renderNominalMoney(card.totalCents)}</dd></div>
+                <div><dt>Pago</dt><dd>${renderNominalMoney(card.paidCents)}</dd></div>
+                <div><dt>Em aberto</dt><dd>${renderNominalMoney(card.openCents, card.openCents > 0 ? "negative" : "neutral")}</dd></div>
+                <div><dt>Status</dt><dd>${statusChip}</dd></div>
+              </dl>
+            </li>`;
+            })
+            .join("")}
+        </ul>
       </div>
     </section>
   `;
@@ -1208,8 +1403,11 @@ export function renderFinanceSynthesis(summary: CompetenceSummary): string {
       projection: {
         realizedCents: summary.balanceRealizedCents,
         pendingIncomeCents: summary.incomePendingCents,
+        recurringIncomeProjectedCents: summary.recurringIncomeProjectedCents,
         pendingExpenseTxCents: 0,
         openInvoicesCents: 0,
+        projectedInstallmentsCents: 0,
+        recurringExpenseProjectedCents: summary.recurringExpenseProjectedCents,
         projectedCents: summary.balancePlannedCents,
       },
       rhythm: {
@@ -1227,6 +1425,8 @@ export function renderFinanceSynthesis(summary: CompetenceSummary): string {
       attention: [],
       hasMovement: true,
       projectedInstallments: null,
+      recurringSummary: null,
+      cardSummary: null,
     },
   );
 }

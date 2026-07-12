@@ -80,6 +80,9 @@ describe("dashboard recent transactions", () => {
       expensePendingCents: 0,
       balancePlannedCents: 350_000,
       balanceRealizedCents: 350_000,
+      recurringIncomeProjectedCents: 0,
+      recurringExpenseProjectedCents: 0,
+      recurringProjectedCount: 0,
     });
     expect(header).toContain("Receitas do mês");
     expect(header).toContain("Despesas do mês");
@@ -157,7 +160,8 @@ describe("dashboard recent transactions", () => {
     const host = document.createElement("div");
     renderDashboard(host, data, mutations, () => {});
     expect(host.querySelector(".cfm-table--dashboard-recent")).toBeNull();
-    expect(host.textContent).not.toContain("PROJETADA");
+    const recentSection = host.querySelector(".dashboard-recent");
+    expect(recentSection).toBeNull();
   });
 
   it("uses signed financial amounts in recent rows", () => {

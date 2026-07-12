@@ -228,9 +228,10 @@ describe("recurring rule operations", () => {
     expect(dataRef.recurringRules?.[0]?.status).toBe("paused");
     expect(dataRef.recurringRules?.[0]?.pausedFromMonth).toBe("2026-08");
 
-    resumeRecurringRule(dataRef, created!.id);
+    resumeRecurringRule(dataRef, created!.id, "2026-08");
     expect(dataRef.recurringRules?.[0]?.status).toBe("active");
-    expect(dataRef.recurringRules?.[0]?.pausedFromMonth).toBeUndefined();
+    expect(dataRef.recurringRules?.[0]?.resumedFromMonth).toBe("2026-08");
+    expect(dataRef.recurringRules?.[0]?.pausedFromMonth).toBe("2026-08");
 
     endRecurringRule(dataRef, created!.id, "2026-08");
     expect(dataRef.recurringRules?.[0]?.endMonth).toBe("2026-08");
@@ -295,9 +296,10 @@ describe("planejamento occurrences and reconciliation", () => {
         }),
       ],
     });
-    resumeRecurringRule(dataRef, "rule-resume");
-    expect(recurringResolutionsForMonth(dataRef, "2026-03")).toHaveLength(1);
-    expect(recurringResolutionsForMonth(dataRef, "2026-04")).toHaveLength(1);
+    resumeRecurringRule(dataRef, "rule-resume", "2026-06");
+    expect(recurringResolutionsForMonth(dataRef, "2026-03")).toHaveLength(0);
+    expect(recurringResolutionsForMonth(dataRef, "2026-04")).toHaveLength(0);
+    expect(recurringResolutionsForMonth(dataRef, "2026-06")).toHaveLength(1);
   });
 
   it("ends a rule inclusively at endMonth without dropping prior months", () => {

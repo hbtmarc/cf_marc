@@ -118,6 +118,16 @@ export function buildRecurringOccurrences(
         continue;
       }
 
+      if (
+        rule.status === "active" &&
+        rule.pausedFromMonth !== undefined &&
+        rule.resumedFromMonth !== undefined &&
+        compareCompetenceMonths(competenceMonth, rule.pausedFromMonth) >= 0 &&
+        compareCompetenceMonths(competenceMonth, rule.resumedFromMonth) < 0
+      ) {
+        continue;
+      }
+
       occurrences.push(occurrenceForRuleMonth(rule, competenceMonth));
     }
   }
