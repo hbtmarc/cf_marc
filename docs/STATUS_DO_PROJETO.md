@@ -1,8 +1,8 @@
 # Status do Projeto
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
-**Última atualização:** 11 de julho de 2026  
-**Etapa atual:** Etapa 7 — Projeção de parcelas futuras e organização de Lançamentos
+**Última atualização:** 12 de julho de 2026  
+**Etapa atual:** Etapa 8.1 — Motor de recorrências mensais
 
 ---
 
@@ -11,6 +11,66 @@
 Campos interativos não podem estar dentro de subárvores substituídas a cada evento de input. Durante digitação, atualizar somente o estado e os elementos dependentes, preservando o nó DOM, o foco e a posição do cursor.
 
 Aplicada na revisão de importação (dias de cartão) e na busca de Lançamentos.
+
+---
+
+## Etapa 8.1 — motor de recorrências mensais
+
+### Objetivo
+
+Criar o modelo local e o motor derivado de receitas previstas e despesas recorrentes mensais. Nesta etapa não há interface, rota, formulário ou integração visual com o Dashboard.
+
+### Estrutura `RecurringRule`
+
+Campo opcional em `AppData`: `recurringRules?: RecurringRule[]`. Dados antigos sem o campo carregam com `recurringRules: []`.
+
+| Campo | Tipo | Regras |
+|-------|------|--------|
+| `id` | string | Identificador único |
+| `kind` | `income` \| `expense` | Tipo da recorrência |
+| `description` | string | Obrigatória |
+| `amountCents` | number | Inteiro > 0 |
+| `category` | string | Categoria |
+| `dayOfMonth` | number | 1–31 |
+| `startMonth` | string | `YYYY-MM`, inclusivo |
+| `endMonth` | string? | `YYYY-MM`, inclusivo; não pode ser anterior a `startMonth` |
+| `status` | `active` \| `paused` | Somente `active` gera ocorrências |
+| `billingMode` | `direct` \| `card` | `income` exige `direct`; `expense` aceita ambos |
+| `cardId` | string? | Obrigatório em `card`; proibido em `direct` |
+| `createdAt` / `updatedAt` | string | ISO |
+
+### Regras suportadas (MVP)
+
+- Periodicidade **somente mensal**.
+- Valor **somente fixo** (`amountCents`).
+- Sem semanal, anual, valor variável ou calendário complexo.
+- Validação em `validateRecurringRule()` (`src/recurrences.ts`).
+
+### Ocorrências derivadas (não persistidas)
+
+Tipo `ProjectedRecurringOccurrence`, calculado em memória por `buildRecurringOccurrences()` e `recurringOccurrencesForMonth()`.
+
+- **Não** entram em `AppData` nem no `localStorage`.
+- **Não** criam `Transaction` nem `Invoice`.
+- **Não** conciliam com lançamentos reais nesta etapa.
+
+**ID determinístico:** `recurring:<ruleId>:<competenceMonth>` (ex.: `recurring:rule_internet:2026-08`).
+
+**Datas:** `recurringOccurrenceDate(competenceMonth, dayOfMonth)` usa o último dia válido do mês quando `dayOfMonth` excede o calendário (ex.: dia 31 em fevereiro → 28/02; abril → 30/04). Virada de ano (dez → jan) via iteração por competência `YYYY-MM`, sem `setMonth` sobre datas com dia 29–31.
+
+### Limitações do MVP (Etapa 8.1)
+
+- Sem UI, formulários, rotas ou impacto no Dashboard.
+- Sem integração com cálculos financeiros (`calculateCompetenceSummary` inalterado).
+- Sem conciliação com transações/faturas reais.
+- Sem recorrências semanais, anuais ou de valor variável.
+
+### Próximos passos — Etapa 8.2
+
+- Formulários e CRUD de regras recorrentes.
+- Exibição em Lançamentos e/ou Dashboard.
+- Integração com totais planejados da competência.
+- Conciliação opcional com lançamentos reais.
 
 ---
 

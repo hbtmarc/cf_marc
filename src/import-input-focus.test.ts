@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fixtureDocument from "./fixtures/cfm-import-v1-valid.json";
-import { buildImportPlan, cloneAppData } from "./import";
+import { buildImportPlan } from "./import";
 import { validateImportDocument } from "./import-validate";
 import { emptyAppData } from "./storage";
 import type { ImportPayload } from "./import-types";

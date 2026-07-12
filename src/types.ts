@@ -75,6 +75,42 @@ export interface ImportMeta {
   fingerprints: string[];
 }
 
+export type RecurringRuleKind = "income" | "expense";
+
+export type RecurringRuleStatus = "active" | "paused";
+
+export type RecurringBillingMode = "direct" | "card";
+
+export interface RecurringRule {
+  id: string;
+  kind: RecurringRuleKind;
+  description: string;
+  amountCents: number;
+  category: string;
+  dayOfMonth: number;
+  startMonth: string;
+  endMonth?: string;
+  status: RecurringRuleStatus;
+  billingMode: RecurringBillingMode;
+  cardId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectedRecurringOccurrence {
+  id: string;
+  ruleId: string;
+  kind: RecurringRuleKind;
+  competenceMonth: string;
+  expectedDate: string;
+  description: string;
+  amountCents: number;
+  category: string;
+  billingMode: RecurringBillingMode;
+  cardId?: string;
+  projected: true;
+}
+
 export interface AppData {
   schemaVersion: "cfm.local.v2";
   selectedCompetenceMonth: string;
@@ -82,6 +118,7 @@ export interface AppData {
   cards: Card[];
   invoices: Invoice[];
   importMeta?: ImportMeta;
+  recurringRules?: RecurringRule[];
 }
 
 export type RoutePath =

@@ -78,6 +78,34 @@ function isInvoice(value: unknown): boolean {
   );
 }
 
+function isRecurringRule(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const endMonthValid =
+    value.endMonth === undefined || typeof value.endMonth === "string";
+  const cardIdValid =
+    value.cardId === undefined || typeof value.cardId === "string";
+
+  return (
+    typeof value.id === "string" &&
+    (value.kind === "income" || value.kind === "expense") &&
+    typeof value.description === "string" &&
+    typeof value.amountCents === "number" &&
+    Number.isInteger(value.amountCents) &&
+    typeof value.category === "string" &&
+    typeof value.dayOfMonth === "number" &&
+    Number.isInteger(value.dayOfMonth) &&
+    typeof value.startMonth === "string" &&
+    endMonthValid &&
+    (value.status === "active" || value.status === "paused") &&
+    (value.billingMode === "direct" || value.billingMode === "card") &&
+    cardIdValid &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
 export function emptyAppData(): AppData {
   return {
     schemaVersion: "cfm.local.v2",
@@ -85,6 +113,7 @@ export function emptyAppData(): AppData {
     transactions: [],
     cards: [],
     invoices: [],
+    recurringRules: [],
   };
 }
 
@@ -122,7 +151,26 @@ export function validateAppData(value: unknown): value is AppData {
     }
   }
 
+  if (value.recurringRules !== undefined) {
+    if (
+      !Array.isArray(value.recurringRules) ||
+      !value.recurringRules.every(isRecurringRule)
+    ) {
+      return false;
+    }
+  }
+
   return true;
+}
+
+function normalizeAppData(data: AppData): AppData {
+  if (!data.importMeta) {
+    data.importMeta = { fingerprints: [] };
+  }
+  if (!data.recurringRules) {
+    data.recurringRules = [];
+  }
+  return data;
 }
 
 export function loadAppData(): StorageLoadResult {
@@ -161,12 +209,7 @@ export function loadAppData(): StorageLoadResult {
     };
   }
 
-  const data = parsed as AppData;
-  if (!data.importMeta) {
-    data.importMeta = { fingerprints: [] };
-  }
-
-  return { ok: true, data };
+  return { ok: true, data: normalizeAppData(parsed as AppData) };
 }
 
 export function saveAppData(data: AppData): boolean {
@@ -211,10 +254,5 @@ export function parseAppDataJson(raw: string): StorageLoadResult {
     };
   }
 
-  const data = parsed as AppData;
-  if (!data.importMeta) {
-    data.importMeta = { fingerprints: [] };
-  }
-
-  return { ok: true, data };
+  return { ok: true, data: normalizeAppData(parsed as AppData) };
 }
