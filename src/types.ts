@@ -111,6 +111,30 @@ export interface ProjectedRecurringOccurrence {
   projected: true;
 }
 
+export interface RecurringMatch {
+  id: string;
+  ruleId: string;
+  competenceMonth: string;
+  transactionId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RecurringOccurrenceResolutionState =
+  | "projected"
+  | "matched"
+  | "covered_by_invoice";
+
+export interface RecurringOccurrenceResolution {
+  occurrence: ProjectedRecurringOccurrence;
+  state: RecurringOccurrenceResolutionState;
+  matchId?: string;
+  transactionId?: string;
+  expectedAmountCents: number;
+  actualAmountCents?: number;
+  differenceCents?: number;
+}
+
 export interface AppData {
   schemaVersion: "cfm.local.v2";
   selectedCompetenceMonth: string;
@@ -119,6 +143,7 @@ export interface AppData {
   invoices: Invoice[];
   importMeta?: ImportMeta;
   recurringRules?: RecurringRule[];
+  recurringMatches?: RecurringMatch[];
 }
 
 export type RoutePath =

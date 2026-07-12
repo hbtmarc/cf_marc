@@ -472,6 +472,8 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
     cards: [...data.cards],
     invoices: [...data.invoices],
     transactions: [...data.transactions],
+    recurringRules: [...(data.recurringRules ?? [])],
+    recurringMatches: [...(data.recurringMatches ?? [])],
     importMeta: {
       fingerprints: [...(data.importMeta?.fingerprints ?? [])],
     },

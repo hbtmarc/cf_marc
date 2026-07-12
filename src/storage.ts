@@ -106,6 +106,20 @@ function isRecurringRule(value: unknown): boolean {
   );
 }
 
+function isRecurringMatch(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    typeof value.ruleId === "string" &&
+    typeof value.competenceMonth === "string" &&
+    typeof value.transactionId === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
 export function emptyAppData(): AppData {
   return {
     schemaVersion: "cfm.local.v2",
@@ -114,6 +128,7 @@ export function emptyAppData(): AppData {
     cards: [],
     invoices: [],
     recurringRules: [],
+    recurringMatches: [],
   };
 }
 
@@ -160,6 +175,15 @@ export function validateAppData(value: unknown): value is AppData {
     }
   }
 
+  if (value.recurringMatches !== undefined) {
+    if (
+      !Array.isArray(value.recurringMatches) ||
+      !value.recurringMatches.every(isRecurringMatch)
+    ) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -169,6 +193,9 @@ function normalizeAppData(data: AppData): AppData {
   }
   if (!data.recurringRules) {
     data.recurringRules = [];
+  }
+  if (!data.recurringMatches) {
+    data.recurringMatches = [];
   }
   return data;
 }

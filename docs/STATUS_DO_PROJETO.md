@@ -2,7 +2,7 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 8.1 — Motor de recorrências mensais
+**Etapa atual:** Etapa 8.2 — Conciliação de recorrências com lançamentos
 
 ---
 
@@ -11,6 +11,71 @@
 Campos interativos não podem estar dentro de subárvores substituídas a cada evento de input. Durante digitação, atualizar somente o estado e os elementos dependentes, preservando o nó DOM, o foco e a posição do cursor.
 
 Aplicada na revisão de importação (dias de cartão) e na busca de Lançamentos.
+
+---
+
+## Etapa 8.2 — conciliação de recorrências com lançamentos
+
+### Objetivo
+
+Vincular explicitamente uma ocorrência recorrente prevista a uma transação real já existente. A associação é persistida; as ocorrências continuam derivadas e não persistidas. Nesta etapa não há interface, rota, formulário ou integração com o Dashboard.
+
+### Estrutura `RecurringMatch`
+
+Campo opcional em `AppData`: `recurringMatches?: RecurringMatch[]`. Dados antigos sem o campo carregam com `recurringMatches: []`.
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `id` | string | `recurring-match:<ruleId>:<competenceMonth>` |
+| `ruleId` | string | Regra recorrente vinculada |
+| `competenceMonth` | string | `YYYY-MM` da ocorrência |
+| `transactionId` | string | Transação real confirmada pelo usuário |
+| `createdAt` / `updatedAt` | string | ISO |
+
+A transação permanece como fato financeiro original. O match representa somente a confirmação de que aquela transação corresponde à ocorrência prevista. Não há campos de recorrência adicionados às transações importadas.
+
+### Associação explícita
+
+- Match válido somente quando regra, transação e ocorrência existem e são estruturalmente compatíveis.
+- Máximo um match por `ruleId + competenceMonth`.
+- Uma transação não pode aparecer em dois matches.
+- **Sem associação automática:** `compatibleTransactionsForRecurringOccurrence()` lista candidatos estruturalmente compatíveis, mas não cria match nem usa pontuação por descrição/valor.
+
+### Estados de resolução (`RecurringOccurrenceResolution`)
+
+Calculados em memória por `recurringResolutionsForMonth()`:
+
+| Estado | Condição |
+|--------|----------|
+| `matched` | Existe `RecurringMatch` válido; preenche `actualAmountCents` e `differenceCents` |
+| `covered_by_invoice` | Despesa em cartão sem match, mas com fatura real para `cardId + competenceMonth` |
+| `projected` | Sem match e sem fatura real cobrindo a recorrência de cartão |
+
+### Diferença entre previsto e realizado
+
+Quando `state: matched`:
+
+`differenceCents = actualAmountCents - expectedAmountCents`
+
+Diferença de valor **não invalida** o match. Não há classificação favorável/desfavorável nesta etapa. Em `covered_by_invoice`, diferença não é calculada sem transação vinculada.
+
+### Regra futura contra dupla contagem
+
+`calculateCompetenceSummary` **não foi alterado** nesta etapa. O motor já identifica claramente:
+
+- `projected` → previsão futura;
+- `matched` → representado pela transação real;
+- `covered_by_invoice` → representado pela fatura real.
+
+Na integração financeira (Etapa 8.3+), somente `projected` entrará como previsão adicional.
+
+### Importação e preservação
+
+`applyImportPlan` preserva `recurringRules` e `recurringMatches`. O contrato `cfm.import.v1` não inclui esses dados — permanecem locais e controlados pelo usuário.
+
+### Próximo passo — Etapa 8.3
+
+Interface de Planejamento: CRUD de regras, criação de matches e exibição das resoluções.
 
 ---
 
