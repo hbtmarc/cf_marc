@@ -110,3 +110,6 @@ src/**/*-real*.test.ts
 *_real.json
 *_privado.json
 *_financeiro.json
+
+# Perfil Playwright para validação localhost (sessão anônima)
+.playwright-owner-profile/

@@ -1,6 +1,3 @@
-import type { User } from "firebase/auth";
-import { renderAuthLoading, renderAuthScreen } from "./auth-screen";
-import { signInWithGoogle, signOutUser, subscribeAuthState, completeRedirectSignIn, AuthRedirectStartedError } from "./auth-service";
 import { renderAjustes } from "./pages/ajustes";
 import { renderBalanco } from "./pages/balanco";
 import { renderDashboard } from "./pages/dashboard";
@@ -17,22 +14,19 @@ import {
   startRouter,
 } from "./router";
 import {
-  bootstrapUserData,
-  bindCloudUser,
-  migrateLocalDataToCloud,
+  dismissConflictBackup,
+  getConflictBackup,
+  hasConflictBackup,
   persistAppData,
   retryCloudSync,
+  setDataChangeListener,
+  startBackgroundSync,
   subscribeSyncStatus,
   waitForPendingCloudWrite,
   type SyncStatusState,
 } from "./data-store";
-import { isFirebaseConfigured } from "./firebase-config";
 import { initFirebase } from "./firebase";
-import {
-  emptyAppData,
-  loadAppData,
-  type LoadError,
-} from "./storage";
+import { emptyAppData, loadAppData, type LoadError } from "./storage";
 import type { AppData, RoutePath } from "./types";
 import type { AppMutations } from "./forms";
 import {
@@ -40,7 +34,6 @@ import {
   bindCompetenceShortcuts,
   clearChildren,
   initUiRoots,
-  openConfirmModal,
   renderCompetenceBar,
   renderNav,
   renderStorageError,
@@ -60,11 +53,7 @@ let mainHost: HTMLElement | null = null;
 let competenceHost: HTMLElement | null = null;
 let pageActionsHost: HTMLElement | null = null;
 let pageOverline: HTMLElement | null = null;
-let appShell: HTMLElement | null = null;
-let authHost: HTMLElement | null = null;
 let syncStatusHost: HTMLElement | null = null;
-let currentUser: User | null = null;
-let authResolved = false;
 
 const COMPETENCE_ROUTES: RoutePath[] = [
   "/dashboard",
@@ -130,28 +119,6 @@ function renderSyncStatus(stateSync: SyncStatusState): void {
     ?.addEventListener("click", () => {
       void retryCloudSync(state.data);
     });
-}
-
-function showAuthView(node: HTMLElement): void {
-  if (appShell) {
-    appShell.hidden = true;
-  }
-  if (!authHost) {
-    return;
-  }
-  clearChildren(authHost);
-  authHost.hidden = false;
-  authHost.appendChild(node);
-}
-
-function showAppShell(): void {
-  if (authHost) {
-    authHost.hidden = true;
-    clearChildren(authHost);
-  }
-  if (appShell) {
-    appShell.hidden = false;
-  }
 }
 
 function renderCompetence(): void {
@@ -269,10 +236,17 @@ function renderMain(): void {
           persistAppData(state.data);
           render();
         },
-        isFirebaseConfigured() && currentUser !== null,
-        async () => {
-          await waitForPendingCloudWrite();
-          await signOutUser();
+        hasConflictBackup(),
+        () => {
+          const backup = getConflictBackup();
+          if (!backup) {
+            return;
+          }
+          announce(
+            "Cópia local preservada disponível. Os dados atuais refletem a versão mais recente da nuvem.",
+          );
+          dismissConflictBackup();
+          render();
         },
       );
       break;
@@ -338,8 +312,7 @@ function buildShell(): void {
   }
 
   app.innerHTML = `
-    <div id="auth-host" hidden></div>
-    <div class="app-shell" hidden>
+    <div class="app-shell">
       <a class="skip-link" href="#main-content">Ir para o conteúdo</a>
       <aside class="sidebar" aria-label="Navegação principal">
         <div class="sidebar__brand">
@@ -375,8 +348,6 @@ function buildShell(): void {
     </div>
   `;
 
-  authHost = document.getElementById("auth-host");
-  appShell = app.querySelector<HTMLElement>(".app-shell");
   mainHost = document.getElementById("main-content");
   competenceHost = document.getElementById("competence-host");
   pageActionsHost = document.getElementById("page-actions-host");
@@ -384,78 +355,7 @@ function buildShell(): void {
   syncStatusHost = document.getElementById("sync-status-host");
 }
 
-function promptMigration(data: AppData, uid: string): Promise<void> {
-  return new Promise((resolve) => {
-    openConfirmModal({
-      title: "Levar dados deste dispositivo para a nuvem",
-      message:
-        "Foram encontrados dados financeiros salvos neste dispositivo. Eles serão copiados para a sua conta autenticada. Os dados locais permanecem como cache.",
-      confirmLabel: "Levar para a nuvem",
-      cancelLabel: "Agora não",
-      onConfirm: () => {
-        void migrateLocalDataToCloud(uid, data).finally(resolve);
-      },
-      onCancel: () => {
-        resolve();
-      },
-    });
-  });
-}
-
-async function activateUser(user: User): Promise<void> {
-  currentUser = user;
-  bindCloudUser(user.uid);
-  showAuthView(renderAuthLoading());
-
-  try {
-    const boot = await bootstrapUserData(user.uid);
-    if (boot.needsMigration) {
-      await promptMigration(boot.data, user.uid);
-    }
-
-    state = {
-      data: boot.data,
-      storageError: null,
-      route: resolveRoute(),
-      ready: true,
-    };
-    showAppShell();
-    registerRoutes();
-    if (!routerStarted) {
-      startRouter((route) => {
-        state.route = route;
-      });
-      routerStarted = true;
-    }
-    render();
-    announce("Aplicação carregada.");
-  } catch {
-    const local = loadAppData();
-    state = {
-      data: local.ok ? local.data : emptyAppData(),
-      storageError: local.ok
-        ? null
-        : {
-            ok: false,
-            message: "Não foi possível carregar os dados remotos.",
-            raw: null,
-          },
-      route: resolveRoute(),
-      ready: true,
-    };
-    showAppShell();
-    registerRoutes();
-    if (!routerStarted) {
-      startRouter((route) => {
-        state.route = route;
-      });
-      routerStarted = true;
-    }
-    render();
-  }
-}
-
-function startLocalOnlyApp(): void {
+function mountLocalFirst(): void {
   const loaded = loadAppData();
   state = {
     data: loaded.ok ? loaded.data : emptyAppData(),
@@ -463,7 +363,7 @@ function startLocalOnlyApp(): void {
     route: resolveRoute(),
     ready: true,
   };
-  showAppShell();
+
   registerRoutes();
   if (!routerStarted) {
     startRouter((route) => {
@@ -484,68 +384,15 @@ export function startApp(): void {
     void waitForPendingCloudWrite();
   });
 
-  if (!isFirebaseConfigured()) {
-    startLocalOnlyApp();
-    return;
-  }
-
-  initFirebase();
-  showAuthView(renderAuthLoading());
-  void bootstrapAuth();
-}
-
-async function bootstrapAuth(): Promise<void> {
-  try {
-    await completeRedirectSignIn();
-  } catch {
-    // Falha no retorno do redirect não impede nova tentativa de login.
-  }
-
-  subscribeAuthState((user) => {
-    if (user) {
-      authResolved = true;
-      void activateUser(user);
+  setDataChangeListener((data) => {
+    if (!state.ready) {
       return;
     }
-
-    if (!authResolved) {
-      authResolved = true;
-    }
-
-    currentUser = null;
-    bindCloudUser(null);
-    state = {
-      data: emptyAppData(),
-      storageError: null,
-      route: "/dashboard",
-      ready: false,
-    };
-    showLoginScreen();
+    state.data = data;
+    render();
   });
-}
 
-function bindGoogleSignIn(): void {
-  const button = authHost?.querySelector<HTMLButtonElement>("#auth-google-button");
-  if (!button || button.dataset.bound === "true") {
-    return;
-  }
-  button.dataset.bound = "true";
-  button.addEventListener("click", () => {
-    button.disabled = true;
-    button.textContent = "Entrando…";
-    void signInWithGoogle().catch((error: unknown) => {
-      if (error instanceof AuthRedirectStartedError) {
-        return;
-      }
-      const message =
-        error instanceof Error ? error.message : "Não foi possível entrar com Google.";
-      showAuthView(renderAuthScreen({ error: message }));
-      bindGoogleSignIn();
-    });
-  });
-}
-
-function showLoginScreen(): void {
-  showAuthView(renderAuthScreen({}));
-  bindGoogleSignIn();
+  mountLocalFirst();
+  initFirebase();
+  void startBackgroundSync();
 }

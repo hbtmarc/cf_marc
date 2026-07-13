@@ -3,7 +3,7 @@
  * Não incluir credenciais administrativas neste arquivo.
  */
 export const FIREBASE_WEB_CONFIG = {
-  apiKey: "AIzaSyAUayHhNhXgL4KlkQCG1ZXbY0wtKPnz5Go",
+  apiKey: "AIzaSyAUahyHNhXgL4KlkQCG1ZXbY0wtKPnz5Go",
   authDomain: "cfmarc-marc35.firebaseapp.com",
   databaseURL: "https://cfmarc-marc35-default-rtdb.firebaseio.com",
   projectId: "cfmarc-marc35",

@@ -1,7 +1,14 @@
-import { get, ref, set } from "firebase/database";
+import {
+  get,
+  onValue,
+  ref,
+  runTransaction,
+  type DatabaseReference,
+  type Unsubscribe,
+} from "firebase/database";
 import {
   createFinanceEnvelope,
-  financePathForUser,
+  FINANCE_RTD_PATH,
   parseFinanceEnvelope,
   type FinanceEnvelope,
 } from "./cloud-envelope";
@@ -15,8 +22,19 @@ export class RemoteFinanceInvalidError extends Error {
   }
 }
 
-export async function fetchRemoteFinance(uid: string): Promise<FinanceEnvelope | null> {
-  const snapshot = await get(ref(getFirebaseDatabase(), financePathForUser(uid)));
+export class RemoteWriteConflictError extends Error {
+  constructor() {
+    super("Conflito de revisão remota.");
+    this.name = "RemoteWriteConflictError";
+  }
+}
+
+function financeRef(): DatabaseReference {
+  return ref(getFirebaseDatabase(), FINANCE_RTD_PATH);
+}
+
+export async function fetchRemoteFinance(): Promise<FinanceEnvelope | null> {
+  const snapshot = await get(financeRef());
   if (!snapshot.exists()) {
     return null;
   }
@@ -27,9 +45,68 @@ export async function fetchRemoteFinance(uid: string): Promise<FinanceEnvelope |
   return parsed;
 }
 
-export async function writeRemoteFinance(uid: string, data: AppData): Promise<void> {
-  const envelope = createFinanceEnvelope(data);
-  await set(ref(getFirebaseDatabase(), financePathForUser(uid)), envelope);
+export function subscribeFinanceListener(
+  listener: (envelope: FinanceEnvelope | null) => void,
+): Unsubscribe {
+  return onValue(financeRef(), (snapshot) => {
+    if (!snapshot.exists()) {
+      listener(null);
+      return;
+    }
+    const parsed = parseFinanceEnvelope(snapshot.val());
+    if (!parsed) {
+      listener(null);
+      return;
+    }
+    listener(parsed);
+  });
+}
+
+export function subscribeConnectivity(listener: (connected: boolean) => void): Unsubscribe {
+  return onValue(ref(getFirebaseDatabase(), ".info/connected"), (snapshot) => {
+    listener(snapshot.val() === true);
+  });
+}
+
+export async function writeRemoteFinance(
+  data: AppData,
+  writerId: string,
+  pendingBaseRevision: number,
+): Promise<FinanceEnvelope> {
+  const result = await runTransaction(financeRef(), (current) => {
+    const hasData =
+      current !== null &&
+      typeof current.exists === "function" &&
+      current.exists();
+
+    if (!hasData) {
+      if (pendingBaseRevision > 0) {
+        return;
+      }
+      return createFinanceEnvelope(data, writerId, 1);
+    }
+
+    const parsed = parseFinanceEnvelope(current.val());
+    if (!parsed) {
+      return;
+    }
+
+    if (parsed.revision > pendingBaseRevision) {
+      return;
+    }
+
+    return createFinanceEnvelope(data, writerId, parsed.revision + 1);
+  });
+
+  if (!result.committed || !result.snapshot.exists()) {
+    throw new RemoteWriteConflictError();
+  }
+
+  const envelope = parseFinanceEnvelope(result.snapshot.val());
+  if (!envelope) {
+    throw new RemoteFinanceInvalidError();
+  }
+  return envelope;
 }
 
 export function isOfflineError(error: unknown): boolean {

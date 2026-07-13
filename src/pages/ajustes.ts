@@ -11,22 +11,28 @@ export function renderAjustes(
   mutations: AppMutations,
   rerender: () => void,
   onClearData: () => void,
-  showSignOut = false,
-  onSignOut?: () => void | Promise<void>,
+  showConflictBackup = false,
+  onViewConflictBackup?: () => void,
 ): void {
   host.innerHTML = "";
   const flow = el("div", "settings-layout");
 
-  if (showSignOut) {
-    const accountSection = el("section", "settings-section");
-    accountSection.innerHTML = renderSectionHeader("Conta");
-    const signOutButton = el("button", "btn btn--secondary", "Sair");
-    signOutButton.type = "button";
-    signOutButton.addEventListener("click", () => {
-      void onSignOut?.();
+  if (showConflictBackup) {
+    const conflictSection = el("section", "settings-section");
+    conflictSection.innerHTML = renderSectionHeader("Sincronização");
+    const conflictText = el(
+      "p",
+      "text-body",
+      "Uma cópia local foi preservada quando dados mais recentes chegaram da nuvem.",
+    );
+    const conflictButton = el("button", "btn btn--secondary", "Verificar cópia local preservada");
+    conflictButton.type = "button";
+    conflictButton.addEventListener("click", () => {
+      onViewConflictBackup?.();
     });
-    accountSection.appendChild(signOutButton);
-    flow.appendChild(accountSection);
+    conflictSection.appendChild(conflictText);
+    conflictSection.appendChild(conflictButton);
+    flow.appendChild(conflictSection);
   }
 
   const cardsSection = el("section", "settings-section");
@@ -94,11 +100,7 @@ export function renderAjustes(
   storageSection.innerHTML = `
     ${renderSectionHeader("Armazenamento local")}
     <p class="text-body">
-      ${
-        showSignOut
-          ? "Os dados são sincronizados na nuvem e mantidos em cache neste navegador."
-          : "Seus dados ficam armazenados neste navegador e não são sincronizados automaticamente com outros dispositivos."
-      }
+      Os dados ficam em cache neste navegador e são sincronizados com a nuvem quando há conexão.
     </p>
     <details class="settings-details">
       <summary>Detalhes técnicos</summary>

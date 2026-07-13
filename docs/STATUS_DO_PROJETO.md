@@ -1,47 +1,99 @@
 # Status do Projeto
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
-**Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 11 concluída — Firebase real, autenticação e sincronização  
+**Última atualização:** 13 de julho de 2026  
+**Etapa atual:** Etapa 11 — correção final (local-first, auth anônima invisível, sync contínua)  
 **Próximo marco:** a definir (fora do escopo desta entrega)
 
 ---
 
-## Etapa 11 — concluída
+## Etapa 11 — correção final (em validação)
 
 ### Objetivo
 
-Concluir a infraestrutura na nuvem com o projeto Firebase real `cfmarc-marc35`: configuração versionada no cliente, Security Rules publicadas (substituindo regras públicas), Authentication Google via CLI, envelope com `updatedAt` numérico, testes ampliados e deploy de `database` + `auth`.
+Eliminar o bloqueio em “Conectando…”, abrir o Dashboard imediatamente com cache local válido, sincronizar continuamente com o RTDB em `personal/finance` via sessão anônima técnica invisível, e publicar Security Rules privadas com owner uid explícito.
 
-### Preservado da Etapa 10
+### Decisões de produto
 
-Arquitetura de sync (`data-store`, `cloud-sync`, `cloud-envelope`), auth gate, modal de migração, estados de sincronização, tela de login, logout em Ajustes, GitHub Pages, debounce 600 ms e cache local — ajustados, não recriados.
+| Item | Comportamento |
+|------|---------------|
+| Tela de login | **Removida** — sem Google, popup, redirect ou logout visível |
+| Bootstrap | **Local-first** — `localStorage` monta a app antes da rede |
+| Autenticação | `signInAnonymously` em segundo plano, somente para Rules |
+| Caminho RTDB | `personal/finance` (fixo, sem `uid` no path) |
+| Envelope | `schemaVersion`, `revision`, `updatedAt`, `writerId`, `data` |
+| Modal de migração | **Removido** — primeira gravação automática quando remoto vazio |
 
-### Lacunas corrigidas
+### Causa do “Conectando…” permanente
 
-| Item | Correção |
-|------|----------|
-| Config Firebase | Hardcoded em `firebase-config.ts` (público); removidos secrets do workflow |
-| Security Rules | `.read`/`.write` somente em `finance`; `updatedAt` numérico; **deploy real** |
-| Regras públicas | Substituídas em `cfmarc-marc35-default-rtdb` |
-| Auth | Google habilitado via `firebase deploy --only auth`; domínios `localhost`, `hbtmarc.github.io` |
-| Login | Popup + redirect fallback; `browserLocalPersistence`; `getRedirectResult` no bootstrap |
-| Envelope | `updatedAt: number` (epoch ms) |
-| Remoto inválido | `RemoteFinanceInvalidError`; cache local preservado |
-| Testes | 354 unitários + 14 rules (`src/firebase-rules.test.ts`) + 6 auth |
+1. **Auth gate visual** aguardando Google Sign-In antes de montar o Dashboard
+2. **apiKey incorreta** no código (`…ay…` vs `…ahy…`) causando `auth/api-key-not-valid`
 
-### Deploy Firebase (autorizado)
+### Arquitetura corrigida
 
-- `firebase deploy --only database --project cfmarc-marc35` — **sucesso**
-- `firebase deploy --only auth --project cfmarc-marc35` — **sucesso** (Google Sign-In habilitado)
+| Camada | Responsabilidade |
+|--------|------------------|
+| `app.ts` | Monta shell e Dashboard imediatamente; `startBackgroundSync()` em background |
+| `auth-service.ts` | Apenas `signInAnonymously` + `browserLocalPersistence` |
+| `firebase-owner.ts` | UID anônimo autorizado nas Rules (`OUfl…xw93`) |
+| `cloud-envelope.ts` | Envelope `cfm.cloud.v1` em `personal/finance` |
+| `cloud-sync.ts` | `onValue`, `runTransaction`, `.info/connected` |
+| `sync-meta.ts` | `cfm:v2:syncMeta`, `pendingSync`, conflitos |
+| `data-store.ts` | Reconciliação, debounce 600 ms, prevenção de loop |
 
-### Comandos NPM
+### Security Rules
 
-`firebase:login`, `firebase:projects`, `firebase:emulators`, `firebase:test-rules`, `firebase:deploy-database`, `firebase:deploy-auth`
+```json
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "personal": {
+      "finance": {
+        ".read": "auth != null && auth.uid === '<OWNER_UID>'",
+        ".write": "auth != null && auth.uid === '<OWNER_UID>' && newData.exists()",
+        ".validate": "… envelope cfm.cloud.v1 …"
+      }
+    }
+  }
+}
+```
+
+- **19 testes** em `npm run firebase:test-rules` (vitest.rules.config.ts)
+- Deploy: `firebase deploy --only database --project cfmarc-marc35`
+
+### Estados de sincronização
+
+`Conectando à nuvem…` (timeout ~12 s, não bloqueia) · `Salvo neste dispositivo e na nuvem` · `Sincronizando…` · `Offline — alterações salvas neste dispositivo` · `Erro ao sincronizar` · `Dados mais recentes recebidos da nuvem`
+
+### Limitações documentadas
+
+- Sessão anônima vinculada ao navegador atual (dispositivo autorizado)
+- Limpar dados do navegador pode exigir novo cadastro do `uid` nas Rules
+- Segundo dispositivo futuro: inclusão controlada do `uid` nas Rules
+- Múltiplos dispositivos fora do escopo desta fase
 
 ### Evidências
 
-`docs/screenshots-etapa11/` — login, migração, dashboard autenticado, sync, logout. Captura `emulator-rules.png` requer JDK 21+ local (`npm run firebase:emulators` → UI em `:4000`).
+`docs/screenshots-etapa11/` — dashboard imediato, sync em background, offline, reconexão, envelope RTDB, rules.
+
+---
+
+## Etapa 11 — entrega anterior (substituída pela correção)
+
+### Objetivo (versão anterior)
+
+Concluir a infraestrutura na nuvem com Google Auth, `users/{uid}/finance`, auth gate e modal de migração.
+
+### Lacunas corrigidas (versão anterior)
+
+| Item | Correção |
+|------|----------|
+| Config Firebase | Hardcoded em `firebase-config.ts` (público) |
+| Security Rules | Deploy real em `cfmarc-marc35-default-rtdb` |
+| Auth | Google habilitado via `firebase deploy --only auth` |
+
+**Nota:** A correção final substitui Google Auth por sessão anônima invisível e `personal/finance`.
 
 ---
 

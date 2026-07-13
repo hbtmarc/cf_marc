@@ -5,15 +5,7 @@
   },
   "auth": {
     "providers": {
-      "googleSignIn": {
-        "oAuthBrandDisplayName": "Controle Financeiro Mensal",
-        "supportEmail": "hbmarc35@gmail.com",
-        "authorizedDomains": [
-          "localhost",
-          "hbtmarc.github.io",
-          "cfmarc-marc35.firebaseapp.com"
-        ]
-      }
+      "anonymous": true
     }
   },
   "emulators": {

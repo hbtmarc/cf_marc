@@ -1,5 +1,21 @@
-import { isFirebaseConfigured } from "./firebase-config";
-import { fetchRemoteFinance, isOfflineError, RemoteFinanceInvalidError, writeRemoteFinance } from "./cloud-sync";
+import { ensureAnonymousSession } from "./auth-service";
+import { hashAppData } from "./content-hash";
+import {
+  fetchRemoteFinance,
+  isOfflineError,
+  RemoteFinanceInvalidError,
+  RemoteWriteConflictError,
+  subscribeConnectivity,
+  subscribeFinanceListener,
+  writeRemoteFinance,
+} from "./cloud-sync";
+import type { FinanceEnvelope } from "./cloud-envelope";
+import {
+  clearPendingSync,
+  getOrCreateInstallationId,
+  loadSyncMeta,
+  patchSyncMeta,
+} from "./sync-meta";
 import {
   emptyAppData,
   isAppDataEmpty,
@@ -10,11 +26,12 @@ import {
 import type { AppData } from "./types";
 
 export type SyncStatus =
-  | "connecting"
+  | "connecting_cloud"
+  | "synced"
   | "syncing"
-  | "cloud"
   | "offline"
-  | "error";
+  | "error"
+  | "remote_newer";
 
 export interface SyncStatusState {
   status: SyncStatus;
@@ -23,26 +40,37 @@ export interface SyncStatusState {
 }
 
 type SyncListener = (state: SyncStatusState) => void;
+type DataListener = (data: AppData) => void;
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
-  connecting: "Conectando…",
+  connecting_cloud: "Conectando à nuvem…",
+  synced: "Salvo neste dispositivo e na nuvem",
   syncing: "Sincronizando…",
-  cloud: "Salvo na nuvem",
-  offline: "Offline — salvo neste dispositivo",
+  offline: "Offline — alterações salvas neste dispositivo",
   error: "Erro ao sincronizar",
+  remote_newer: "Dados mais recentes recebidos da nuvem",
 };
 
-let currentUid: string | null = null;
+const DEBOUNCE_MS = 600;
+const CONNECTING_TIMEOUT_MS = 12_000;
+
 let syncState: SyncStatusState = {
-  status: isFirebaseConfigured() ? "connecting" : "offline",
-  message: isFirebaseConfigured() ? SYNC_LABELS.connecting : SYNC_LABELS.offline,
+  status: "connecting_cloud",
+  message: SYNC_LABELS.connecting_cloud,
   canRetry: false,
 };
 let listeners = new Set<SyncListener>();
+let dataListener: DataListener | null = null;
 let pendingData: AppData | null = null;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let writeInFlight: Promise<void> | null = null;
-const DEBOUNCE_MS = 600;
+let connectingTimer: ReturnType<typeof setTimeout> | null = null;
+let isApplyingRemote = false;
+let authReady = false;
+let listenersAttached = false;
+let unsubFinance: (() => void) | null = null;
+let unsubConnected: (() => void) | null = null;
+let lastWriteRevision: number | null = null;
 
 function emit(): void {
   for (const listener of listeners) {
@@ -71,132 +99,287 @@ export function subscribeSyncStatus(listener: SyncListener): () => void {
   };
 }
 
-export function bindCloudUser(uid: string | null): void {
-  currentUid = uid;
-  if (!uid) {
-    setSyncState(isFirebaseConfigured() ? "connecting" : "offline");
+export function setDataChangeListener(listener: DataListener | null): void {
+  dataListener = listener;
+}
+
+export function hasConflictBackup(): boolean {
+  return loadSyncMeta().conflictBackup !== null;
+}
+
+export function getConflictBackup(): AppData | null {
+  return loadSyncMeta().conflictBackup;
+}
+
+export function dismissConflictBackup(): void {
+  patchSyncMeta({ conflictBackup: null });
+}
+
+function clearConnectingTimer(): void {
+  if (connectingTimer) {
+    clearTimeout(connectingTimer);
+    connectingTimer = null;
   }
 }
 
-export async function bootstrapUserData(uid: string): Promise<{
-  data: AppData;
-  needsMigration: boolean;
-  localOnly: boolean;
-}> {
-  if (!isFirebaseConfigured()) {
-    const local = loadAppData();
-    return {
-      data: local.ok ? local.data : emptyAppData(),
-      needsMigration: false,
-      localOnly: true,
-    };
+function startConnectingTimeout(): void {
+  clearConnectingTimer();
+  connectingTimer = setTimeout(() => {
+    if (syncState.status === "connecting_cloud") {
+      setSyncState("error", true);
+    }
+  }, CONNECTING_TIMEOUT_MS);
+}
+
+function notifyDataChange(data: AppData): void {
+  dataListener?.(data);
+}
+
+function applyRemoteEnvelope(envelope: FinanceEnvelope): void {
+  isApplyingRemote = true;
+  saveAppData(envelope.data);
+  const hash = hashAppData(envelope.data);
+  patchSyncMeta({
+    lastRemoteRevision: envelope.revision,
+    lastRemoteUpdatedAt: envelope.updatedAt,
+    lastAppliedContentHash: hash,
+  });
+  notifyDataChange(envelope.data);
+  isApplyingRemote = false;
+}
+
+function handleRemoteEnvelope(envelope: FinanceEnvelope | null): void {
+  if (isApplyingRemote) {
+    return;
   }
 
-  setSyncState("syncing");
-  const local = loadAppData();
-  const localData = local.ok ? local.data : emptyAppData();
-  const localHasData = !isAppDataEmpty(localData);
+  const meta = loadSyncMeta();
+
+  if (!envelope) {
+    if (!authReady) {
+      return;
+    }
+    const local = loadAppData();
+    const localData = local.ok ? local.data : emptyAppData();
+    if (!isAppDataEmpty(localData)) {
+      pendingData = localData;
+      void flushPendingCloudWrite();
+    } else if (!meta.pendingSync) {
+      setSyncState("synced");
+    }
+    return;
+  }
+
+  const hash = hashAppData(envelope.data);
+
+  if (
+    envelope.revision === meta.lastRemoteRevision &&
+    hash === meta.lastAppliedContentHash
+  ) {
+    if (meta.pendingSync) {
+      return;
+    }
+    setSyncState("synced");
+    return;
+  }
+
+  if (lastWriteRevision !== null && envelope.revision === lastWriteRevision) {
+    patchSyncMeta({
+      lastRemoteRevision: envelope.revision,
+      lastRemoteUpdatedAt: envelope.updatedAt,
+      lastAppliedContentHash: hash,
+    });
+    clearPendingSync();
+    lastWriteRevision = null;
+    setSyncState("synced");
+    return;
+  }
+
+  if (meta.pendingSync && envelope.revision > meta.pendingBaseRevision) {
+    const local = loadAppData();
+    if (local.ok) {
+      patchSyncMeta({ conflictBackup: structuredClone(local.data) });
+    }
+    clearPendingSync();
+    applyRemoteEnvelope(envelope);
+    setSyncState("remote_newer");
+    return;
+  }
+
+  if (!meta.pendingSync && envelope.revision > meta.lastRemoteRevision) {
+    applyRemoteEnvelope(envelope);
+    setSyncState("synced");
+  }
+}
+
+function attachListeners(): void {
+  if (listenersAttached) {
+    return;
+  }
+  listenersAttached = true;
+  unsubFinance = subscribeFinanceListener(handleRemoteEnvelope);
+  unsubConnected = subscribeConnectivity((connected) => {
+    if (connected && loadSyncMeta().pendingSync) {
+      void flushPendingCloudWrite();
+    }
+    if (!connected && loadSyncMeta().pendingSync) {
+      setSyncState("offline");
+    }
+  });
+}
+
+export async function startBackgroundSync(): Promise<void> {
+  getOrCreateInstallationId();
+  setSyncState("connecting_cloud");
+  startConnectingTimeout();
 
   try {
-    const remote = await fetchRemoteFinance(uid);
-    if (remote) {
-      saveAppData(remote.data);
-      setSyncState("cloud");
-      return { data: remote.data, needsMigration: false, localOnly: false };
-    }
+    await ensureAnonymousSession();
+    authReady = true;
+    attachListeners();
 
-    if (localHasData) {
-      setSyncState("offline");
-      return { data: localData, needsMigration: true, localOnly: false };
-    }
-
-    const empty = emptyAppData();
-    saveAppData(empty);
-    setSyncState("cloud");
-    return { data: empty, needsMigration: false, localOnly: false };
-  } catch (error) {
-    if (error instanceof RemoteFinanceInvalidError) {
-      setSyncState("error", true);
-      if (localHasData) {
-        return { data: localData, needsMigration: false, localOnly: false };
+    try {
+      const remote = await fetchRemoteFinance();
+      handleRemoteEnvelope(remote);
+    } catch (error) {
+      if (error instanceof RemoteFinanceInvalidError) {
+        setSyncState("error", true);
+        return;
       }
-      throw error;
+      if (!isOfflineError(error)) {
+        setSyncState("error", true);
+      }
     }
-    if (localHasData) {
-      setSyncState("offline");
-      return { data: localData, needsMigration: false, localOnly: false };
-    }
-    setSyncState("error", !isOfflineError(error));
-    throw error;
-  }
-}
 
-export async function migrateLocalDataToCloud(uid: string, data: AppData): Promise<void> {
-  setSyncState("syncing");
-  await writeRemoteFinance(uid, data);
-  saveAppData(data);
-  setSyncState("cloud");
+    clearConnectingTimer();
+    if (syncState.status === "connecting_cloud") {
+      const meta = loadSyncMeta();
+      setSyncState(meta.pendingSync ? "offline" : "synced");
+    }
+  } catch {
+    clearConnectingTimer();
+    setSyncState("error", true);
+  }
 }
 
 export function persistAppData(data: AppData): boolean {
+  if (isApplyingRemote) {
+    return saveAppData(data);
+  }
+
   const saved = saveAppData(data);
   if (!saved) {
     return false;
   }
 
-  if (!isFirebaseConfigured() || !currentUid) {
-    setSyncState("offline");
-    return true;
+  const meta = loadSyncMeta();
+  if (!meta.pendingSync) {
+    patchSyncMeta({
+      pendingSync: true,
+      pendingBaseRevision: meta.lastRemoteRevision,
+      pendingChangedAt: Date.now(),
+    });
   }
 
   pendingData = data;
   if (debounceTimer) {
     clearTimeout(debounceTimer);
   }
+
+  if (!authReady) {
+    setSyncState("offline");
+    return true;
+  }
+
   setSyncState("syncing");
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
     void flushPendingCloudWrite();
   }, DEBOUNCE_MS);
+
   return true;
 }
 
-export async function flushPendingCloudWrite(): Promise<void> {
-  if (!isFirebaseConfigured() || !currentUid || !pendingData) {
+export async function flushPendingCloudWrite(forcedData?: AppData): Promise<void> {
+  const data = forcedData ?? pendingData;
+  if (!data) {
     return;
   }
 
-  const data = pendingData;
-  pendingData = null;
+  if (!authReady) {
+    try {
+      await ensureAnonymousSession();
+      authReady = true;
+      attachListeners();
+    } catch {
+      setSyncState("offline");
+      return;
+    }
+  }
+
+  pendingData = data;
   if (debounceTimer) {
     clearTimeout(debounceTimer);
     debounceTimer = null;
   }
 
+  if (writeInFlight) {
+    await writeInFlight;
+    if (pendingData && pendingData !== data) {
+      await flushPendingCloudWrite();
+    }
+    return;
+  }
+
+  const snapshot = structuredClone(pendingData);
+  pendingData = null;
+  const meta = loadSyncMeta();
+  const writerId = meta.installationId;
+
   setSyncState("syncing");
-  const write = writeRemoteFinance(currentUid, data)
-    .then(() => {
+  const write = writeRemoteFinance(snapshot, writerId, meta.pendingBaseRevision)
+    .then((envelope) => {
+      lastWriteRevision = envelope.revision;
+      saveAppData(envelope.data);
+      patchSyncMeta({
+        lastRemoteRevision: envelope.revision,
+        lastRemoteUpdatedAt: envelope.updatedAt,
+        lastAppliedContentHash: hashAppData(envelope.data),
+        pendingSync: false,
+        pendingBaseRevision: envelope.revision,
+        pendingChangedAt: 0,
+      });
       if (!pendingData) {
-        setSyncState("cloud");
+        setSyncState("synced");
       }
     })
     .catch((error) => {
-      pendingData = data;
+      pendingData = snapshot;
+      if (error instanceof RemoteWriteConflictError) {
+        setSyncState("remote_newer", true);
+        return;
+      }
       setSyncState(isOfflineError(error) ? "offline" : "error", !isOfflineError(error));
     });
 
   writeInFlight = write;
   await write;
   writeInFlight = null;
+
+  if (pendingData) {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      void flushPendingCloudWrite();
+    }, DEBOUNCE_MS);
+  }
 }
 
 export async function retryCloudSync(data: AppData): Promise<void> {
   pendingData = data;
-  await flushPendingCloudWrite();
-}
-
-export function hasPendingCloudWrite(): boolean {
-  return pendingData !== null || debounceTimer !== null || writeInFlight !== null;
+  await flushPendingCloudWrite(data);
 }
 
 export async function waitForPendingCloudWrite(): Promise<void> {
@@ -212,22 +395,34 @@ export async function waitForPendingCloudWrite(): Promise<void> {
   }
 }
 
+export function loadLocalAppData(): StorageLoadResult {
+  return loadAppData();
+}
+
 export function resetDataStoreForTests(): void {
-  currentUid = null;
   pendingData = null;
+  authReady = false;
+  listenersAttached = false;
+  lastWriteRevision = null;
+  isApplyingRemote = false;
+  dataListener = null;
   if (debounceTimer) {
     clearTimeout(debounceTimer);
     debounceTimer = null;
   }
+  if (connectingTimer) {
+    clearTimeout(connectingTimer);
+    connectingTimer = null;
+  }
   writeInFlight = null;
+  unsubFinance?.();
+  unsubConnected?.();
+  unsubFinance = null;
+  unsubConnected = null;
   listeners = new Set();
   syncState = {
-    status: isFirebaseConfigured() ? "connecting" : "offline",
-    message: isFirebaseConfigured() ? SYNC_LABELS.connecting : SYNC_LABELS.offline,
+    status: "connecting_cloud",
+    message: SYNC_LABELS.connecting_cloud,
     canRetry: false,
   };
-}
-
-export function loadLocalAppData(): StorageLoadResult {
-  return loadAppData();
 }
