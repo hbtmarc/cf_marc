@@ -3,6 +3,7 @@ import {
   buildDashboardInvoicesSubtotalCents,
 } from "./dashboard-executive";
 import { calculateCompetenceSummary, nowIso } from "./finance";
+import type { PaymentChecklistSummary } from "./payment-checklist";
 import type { AppData, MonthlyBalance } from "./types";
 
 export interface MonthlyBalanceSnapshot {
@@ -54,7 +55,6 @@ export function listMonthlyBalances(data: AppData): MonthlyBalance[] {
 
 function snapshotToBalance(
   snapshot: MonthlyBalanceSnapshot,
-  note: string | undefined,
   existing?: MonthlyBalance,
 ): MonthlyBalance {
   const timestamp = nowIso();
@@ -67,41 +67,115 @@ function snapshotToBalance(
     projectedBalanceCents: snapshot.projectedBalanceCents,
     fixedBillsCents: snapshot.fixedBillsCents,
     invoicesCents: snapshot.invoicesCents,
-    ...(note?.trim() ? { note: note.trim() } : {}),
+    ...(existing?.note ? { note: existing.note } : {}),
+    checkedItemIds: [...new Set(existing?.checkedItemIds ?? [])],
     createdAt: existing?.createdAt ?? timestamp,
     updatedAt: timestamp,
   };
 }
 
-export function registerMonthlyBalance(
-  data: AppData,
-  competenceMonth: string,
-  note?: string,
-): MonthlyBalance {
+function upsertBalance(data: AppData, balance: MonthlyBalance): MonthlyBalance {
   const balances = data.monthlyBalances ?? [];
-  const existing = getMonthlyBalanceByCompetence(data, competenceMonth);
-  if (existing) {
-    throw new Error("Balanço já registrado para esta competência.");
-  }
-  const snapshot = buildMonthlyBalanceSnapshot(data, competenceMonth);
-  const balance = snapshotToBalance(snapshot, note);
-  data.monthlyBalances = [...balances, balance];
+  const exists = balances.some((item) => item.competenceMonth === balance.competenceMonth);
+  data.monthlyBalances = exists
+    ? balances.map((item) =>
+        item.competenceMonth === balance.competenceMonth ? balance : item,
+      )
+    : [...balances, balance];
   return balance;
 }
 
-export function updateMonthlyBalance(
+function draftBalance(data: AppData, competenceMonth: string): MonthlyBalance {
+  const existing = getMonthlyBalanceByCompetence(data, competenceMonth) ?? undefined;
+  return snapshotToBalance(buildMonthlyBalanceSnapshot(data, competenceMonth), existing);
+}
+
+export function setMonthlyBalanceChecklistItem(
   data: AppData,
   competenceMonth: string,
-  note?: string,
+  itemId: string,
+  checked: boolean,
+): MonthlyBalance {
+  const balance = draftBalance(data, competenceMonth);
+  const ids = new Set(balance.checkedItemIds ?? []);
+  if (checked) {
+    ids.add(itemId);
+  } else {
+    ids.delete(itemId);
+  }
+  balance.checkedItemIds = [...ids];
+  delete balance.settledAt;
+  delete balance.checklistTotalCount;
+  delete balance.checklistCheckedCount;
+  delete balance.checklistTargetCents;
+  delete balance.checklistCheckedCents;
+  delete balance.checklistRemainingCents;
+  delete balance.sourceOutstandingCents;
+  delete balance.estimatedBalanceAfterCommitmentsCents;
+  return upsertBalance(data, balance);
+}
+
+export function clearMonthlyBalanceChecklist(
+  data: AppData,
+  competenceMonth: string,
+): MonthlyBalance {
+  const balance = draftBalance(data, competenceMonth);
+  balance.checkedItemIds = [];
+  delete balance.settledAt;
+  delete balance.checklistTotalCount;
+  delete balance.checklistCheckedCount;
+  delete balance.checklistTargetCents;
+  delete balance.checklistCheckedCents;
+  delete balance.checklistRemainingCents;
+  delete balance.sourceOutstandingCents;
+  delete balance.estimatedBalanceAfterCommitmentsCents;
+  return upsertBalance(data, balance);
+}
+
+export function completeMonthlyBalanceChecklist(
+  data: AppData,
+  competenceMonth: string,
+  checklist: PaymentChecklistSummary,
+): MonthlyBalance {
+  if (checklist.totalCount === 0 || !checklist.allChecked) {
+    throw new Error("Conclua todos os itens do checklist antes de registrar a quitação.");
+  }
+
+  const existing = getMonthlyBalanceByCompetence(data, competenceMonth) ?? undefined;
+  const balance = snapshotToBalance(
+    buildMonthlyBalanceSnapshot(data, competenceMonth),
+    existing,
+  );
+  const timestamp = nowIso();
+  balance.settledAt = timestamp;
+  balance.updatedAt = timestamp;
+  balance.checklistTotalCount = checklist.totalCount;
+  balance.checklistCheckedCount = checklist.checkedCount;
+  balance.checklistTargetCents = checklist.checklistTargetCents;
+  balance.checklistCheckedCents = checklist.checklistCheckedCents;
+  balance.checklistRemainingCents = checklist.checklistRemainingCents;
+  balance.sourceOutstandingCents = checklist.sourceOutstandingCents;
+  balance.estimatedBalanceAfterCommitmentsCents =
+    checklist.estimatedBalanceAfterCommitmentsCents;
+  return upsertBalance(data, balance);
+}
+
+export function reopenMonthlyBalanceChecklist(
+  data: AppData,
+  competenceMonth: string,
 ): MonthlyBalance | null {
   const existing = getMonthlyBalanceByCompetence(data, competenceMonth);
   if (!existing) {
     return null;
   }
-  const snapshot = buildMonthlyBalanceSnapshot(data, competenceMonth);
-  const balance = snapshotToBalance(snapshot, note, existing);
-  data.monthlyBalances = (data.monthlyBalances ?? []).map((item) =>
-    item.competenceMonth === competenceMonth ? balance : item,
-  );
-  return balance;
+  const balance = draftBalance(data, competenceMonth);
+  delete balance.settledAt;
+  delete balance.checklistTotalCount;
+  delete balance.checklistCheckedCount;
+  delete balance.checklistTargetCents;
+  delete balance.checklistCheckedCents;
+  delete balance.checklistRemainingCents;
+  delete balance.sourceOutstandingCents;
+  delete balance.estimatedBalanceAfterCommitmentsCents;
+  return upsertBalance(data, balance);
 }

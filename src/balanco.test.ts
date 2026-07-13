@@ -1,23 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderBalancoPage } from "./balanco-presentation";
-import { openRegisterBalanceModal } from "./balanco-modals";
-import { renderBalanco } from "./pages/balanco";
-import { normalizeRoute } from "./router";
-import { closeModal, initUiRoots, renderNav } from "./ui";
-import { emptyAppData } from "./storage";
-import { registerMonthlyBalance } from "./monthly-balance";
-import type { AppData } from "./types";
 import type { AppMutations } from "./forms";
+import {
+  completeMonthlyBalanceChecklist,
+  setMonthlyBalanceChecklistItem,
+} from "./monthly-balance";
+import { renderBalanco } from "./pages/balanco";
+import { buildPaymentChecklist } from "./payment-checklist";
+import { normalizeRoute } from "./router";
+import { emptyAppData } from "./storage";
+import type { AppData } from "./types";
+import { closeModal, initUiRoots, renderNav } from "./ui";
 
 const TIMESTAMP = "2026-07-01T00:00:00.000Z";
 
-function baseData(options: Partial<AppData> = {}): AppData {
+function baseData(): AppData {
   return {
     ...emptyAppData(),
     selectedCompetenceMonth: "2026-07",
     transactions: [
       {
-        id: "tx-income",
+        id: "income",
         kind: "income",
         description: "Salário",
         amountCents: 500_000,
@@ -28,13 +31,23 @@ function baseData(options: Partial<AppData> = {}): AppData {
         createdAt: TIMESTAMP,
         updatedAt: TIMESTAMP,
       },
+      {
+        id: "pending",
+        kind: "expense",
+        description: "Boleto",
+        amountCents: 50_000,
+        date: "2026-07-10",
+        competenceMonth: "2026-07",
+        category: "Casa",
+        status: "pending",
+        createdAt: TIMESTAMP,
+        updatedAt: TIMESTAMP,
+      },
     ],
-    ...options,
   };
 }
 
-let dataRef = baseData();
-
+let dataRef: AppData;
 const mutations: AppMutations = {
   update(mutator) {
     mutator(dataRef);
@@ -50,7 +63,7 @@ function ensureDom(): void {
   initUiRoots();
 }
 
-describe("balanco page", () => {
+describe("balanco payment checklist page", () => {
   beforeEach(() => {
     dataRef = baseData();
     ensureDom();
@@ -59,115 +72,121 @@ describe("balanco page", () => {
   afterEach(() => {
     closeModal();
     document.body.innerHTML = "";
-    vi.useRealTimers();
   });
 
-  it("normalizes #/balanco route", () => {
+  it("keeps the existing route and renames navigation to balanço", () => {
     expect(normalizeRoute("#/balanco")).toBe("/balanco");
-  });
-
-  it("includes Balanço in navigation", () => {
     const html = renderNav("/balanco", dataRef);
     expect(html).toContain('href="#/balanco"');
-    expect(html).toContain("Balanço mensal");
+    expect(html).toContain("Balanço");
   });
 
-  it("renders empty state without balances", () => {
+  it("renders the four payment status labels", () => {
+    const data = {
+      ...baseData(),
+      cards: [
+        {
+          id: "card",
+          name: "Nubank",
+          closingDay: 20,
+          dueDay: 5,
+          createdAt: TIMESTAMP,
+          updatedAt: TIMESTAMP,
+        },
+      ],
+      invoices: [
+        {
+          id: "invoice-open",
+          cardId: "card",
+          competenceMonth: "2026-07",
+          amountCents: 80_000,
+          amountDueCents: 80_000,
+          amountPaidCents: 0,
+          dueDate: "2026-08-01",
+          status: "open",
+          createdAt: TIMESTAMP,
+          updatedAt: TIMESTAMP,
+        },
+        {
+          id: "invoice-overdue",
+          cardId: "card",
+          competenceMonth: "2026-07",
+          amountCents: 40_000,
+          amountDueCents: 40_000,
+          amountPaidCents: 0,
+          dueDate: "2026-07-01",
+          status: "open",
+          createdAt: TIMESTAMP,
+          updatedAt: TIMESTAMP,
+        },
+      ],
+      monthlyBalances: [
+        {
+          id: "monthly-balance:2026-07",
+          competenceMonth: "2026-07",
+          incomeCents: 0,
+          expenseCents: 0,
+          balanceCents: 0,
+          projectedBalanceCents: 0,
+          fixedBillsCents: 0,
+          invoicesCents: 0,
+          checkedItemIds: ["expense:pending"],
+          createdAt: TIMESTAMP,
+          updatedAt: TIMESTAMP,
+        },
+      ],
+    };
+    const html = renderBalancoPage(data, "2026-07");
+    expect(html).toContain("Em aberto");
+    expect(html).toContain("Vencida");
+    expect(html).toContain("PAGO");
+    expect(html).not.toContain("Paga no sistema");
+    expect(html).not.toContain("Conferida");
+  });
+
+  it("renders the operational summary and checklist instead of historical balance forms", () => {
     const html = renderBalancoPage(dataRef, "2026-07");
-    expect(html).toContain("Situação atual");
-    expect(html).toContain("Subtotais");
-    expect(html).toContain("Balanço ainda não registrado");
-    expect(html).toContain("Nenhum balanço registrado.");
-    expect(html).toContain("balanco-page");
+    expect(html).toContain("Fechamento do salário");
+    expect(html).toContain("Outros compromissos");
+    expect(html).toContain("Concluir quitação do mês");
+    expect(html).not.toContain("Histórico de balanços");
+    expect(html).not.toContain("Registrar balanço");
   });
 
-  it("renders registered balance section", () => {
-    registerMonthlyBalance(dataRef, "2026-07", "Observação teste");
-    const html = renderBalancoPage(dataRef, "2026-07");
-    expect(html).toContain("Registrado");
-    expect(html).toContain("Valores registrados");
-    expect(html).toContain("Observação teste");
-    expect(html).toContain("Atualizar balanço");
-  });
-
-  it("uses responsive layout markers", () => {
-    const html = renderBalancoPage(dataRef, "2026-07");
-    expect(html).toContain("dashboard-kpi-grid");
-    expect(html).toContain("balanco-subtotals");
-    expect(html).not.toContain("dashboard-grid");
-  });
-
-  it("selects competence from history Ver action", () => {
-    registerMonthlyBalance(dataRef, "2026-06");
-    registerMonthlyBalance(dataRef, "2026-07");
-    const host = document.createElement("div");
-    const onSelect = vi.fn();
-    renderBalanco(host, dataRef, mutations, () => {}, onSelect);
-    host.querySelector<HTMLButtonElement>('[data-competence-month="2026-06"]')?.click();
-    expect(onSelect).toHaveBeenCalledWith("2026-06");
-  });
-
-  it("opens register modal without native dialogs", () => {
+  it("checks an item only in the balance mirror", () => {
     const host = document.createElement("div");
     document.body.appendChild(host);
     renderBalanco(host, dataRef, mutations, () => {}, () => {});
-    const trigger = host.querySelector<HTMLButtonElement>('[data-action="register-balance"]')!;
-    trigger.focus();
-    trigger.click();
+    const input = host.querySelector<HTMLInputElement>('[data-item-id="expense:pending"]')!;
+    input.checked = true;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
 
-    expect(document.querySelector(".modal-panel")).not.toBeNull();
-    expect(document.querySelector("#balance-note")).not.toBeNull();
-    expect(document.body.classList.contains("modal-open")).toBe(true);
+    expect(dataRef.monthlyBalances?.[0]?.checkedItemIds).toEqual(["expense:pending"]);
+    expect(dataRef.transactions.find((item) => item.id === "pending")?.status).toBe("pending");
   });
 
-  it("closes modal on Cancelar and returns focus", () => {
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    renderBalanco(host, dataRef, mutations, () => {}, () => {});
-    const trigger = host.querySelector<HTMLButtonElement>('[data-action="register-balance"]')!;
-    trigger.focus();
-    trigger.click();
-
-    const cancel = document.querySelector<HTMLButtonElement>(".balanco-form .btn--secondary");
-    cancel?.click();
-    expect(document.querySelector(".modal-panel")).toBeNull();
-    expect(document.activeElement).toBe(trigger);
+  it("shows the frozen settlement after completion", () => {
+    setMonthlyBalanceChecklistItem(dataRef, "2026-07", "expense:pending", true);
+    completeMonthlyBalanceChecklist(
+      dataRef,
+      "2026-07",
+      buildPaymentChecklist(dataRef, "2026-07"),
+    );
+    const html = renderBalancoPage(dataRef, "2026-07");
+    expect(html).toContain("Quitação registrada");
+    expect(html).toContain("Reabrir conferência");
+    expect(html).toContain("fotografia preserva o balanço");
   });
 
-  it("keeps note field focus while typing", () => {
-    openRegisterBalanceModal({
-      data: dataRef,
-      competenceMonth: "2026-07",
-      mutations,
-      onSaved: () => {},
-      trigger: document.body,
-    });
-    const note = document.querySelector<HTMLTextAreaElement>("#balance-note")!;
-    note.focus();
-    note.value = "A";
-    note.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(document.activeElement).toBe(note);
-    note.value = "AB";
-    note.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(document.activeElement).toBe(note);
-  });
-
-  it("does not use window.prompt confirm or alert", () => {
+  it("does not use native prompt, confirm or alert", () => {
     const promptSpy = vi.spyOn(window, "prompt").mockImplementation(() => null);
     const confirmSpy = vi.spyOn(window, "confirm").mockImplementation(() => false);
     const alertSpy = vi.spyOn(window, "alert").mockImplementation(() => undefined);
-
     const host = document.createElement("div");
     document.body.appendChild(host);
     renderBalanco(host, dataRef, mutations, () => {}, () => {});
-    host.querySelector<HTMLButtonElement>('[data-action="register-balance"]')?.click();
-
     expect(promptSpy).not.toHaveBeenCalled();
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(alertSpy).not.toHaveBeenCalled();
-
-    promptSpy.mockRestore();
-    confirmSpy.mockRestore();
-    alertSpy.mockRestore();
   });
 });

@@ -1,7 +1,7 @@
 {
   "name": "cf-marc",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "verify": "npm run typecheck && npm run test && npm run build",
+    "clean": "node scripts/clean.mjs",
     "firebase:login": "firebase login",
     "firebase:projects": "firebase projects:list",
     "firebase:emulators": "firebase emulators:start --only auth,database",
@@ -20,7 +22,7 @@
     "@firebase/rules-unit-testing": "^5.0.1",
     "firebase-tools": "^15.23.0",
     "jsdom": "^29.1.1",
-    "playwright": "^1.49.0",
+    "playwright": "^1.61.1",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vitest": "^3.2.4"

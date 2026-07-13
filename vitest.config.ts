@@ -6,5 +6,7 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.ts"],
     exclude: ["src/firebase-rules.test.ts"],
+    maxWorkers: 2,
+    minWorkers: 1,
   },
 });

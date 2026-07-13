@@ -170,11 +170,21 @@ function isTransactionDescriptionAlias(value: unknown): boolean {
   );
 }
 
+function isOptionalInteger(value: unknown): boolean {
+  return value === undefined || (typeof value === "number" && Number.isInteger(value));
+}
+
 function isMonthlyBalance(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
   }
   const noteValid = value.note === undefined || typeof value.note === "string";
+  const checkedItemIdsValid =
+    value.checkedItemIds === undefined ||
+    (Array.isArray(value.checkedItemIds) &&
+      value.checkedItemIds.every((item) => typeof item === "string"));
+  const settledAtValid =
+    value.settledAt === undefined || typeof value.settledAt === "string";
   return (
     typeof value.id === "string" &&
     typeof value.competenceMonth === "string" &&
@@ -191,6 +201,15 @@ function isMonthlyBalance(value: unknown): boolean {
     typeof value.invoicesCents === "number" &&
     Number.isInteger(value.invoicesCents) &&
     noteValid &&
+    checkedItemIdsValid &&
+    settledAtValid &&
+    isOptionalInteger(value.checklistTotalCount) &&
+    isOptionalInteger(value.checklistCheckedCount) &&
+    isOptionalInteger(value.checklistTargetCents) &&
+    isOptionalInteger(value.checklistCheckedCents) &&
+    isOptionalInteger(value.checklistRemainingCents) &&
+    isOptionalInteger(value.sourceOutstandingCents) &&
+    isOptionalInteger(value.estimatedBalanceAfterCommitmentsCents) &&
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string"
   );
@@ -332,9 +351,14 @@ export function normalizeAppData(data: AppData): AppData {
       balancesByMonth.set(balance.competenceMonth, balance);
     }
   }
-  data.monthlyBalances = [...balancesByMonth.values()].sort((left, right) =>
-    right.competenceMonth.localeCompare(left.competenceMonth),
-  );
+  data.monthlyBalances = [...balancesByMonth.values()]
+    .map((balance) => ({
+      ...balance,
+      checkedItemIds: [...new Set(balance.checkedItemIds ?? [])],
+    }))
+    .sort((left, right) =>
+      right.competenceMonth.localeCompare(left.competenceMonth),
+    );
   const seenIgnored = new Set<string>();
   data.ignoredRecurringSuggestions = data.ignoredRecurringSuggestions.filter((item) => {
     if (seenIgnored.has(item.signature)) {

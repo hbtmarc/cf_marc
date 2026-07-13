@@ -1,6 +1,6 @@
 import { nowIso } from "./finance";
 import { normalizeInstallmentDescription, type ProjectedInstallment } from "./installments";
-import type { AppData, Transaction, TransactionDescriptionAlias } from "./types";
+import type { AppData, RecurringRule, Transaction, TransactionDescriptionAlias } from "./types";
 
 export function normalizeTransactionDescription(description: string): string {
   return normalizeInstallmentDescription(description);
@@ -35,6 +35,17 @@ export function transactionDisplayDescription(
   transaction: Transaction,
 ): string {
   return transactionDisplayDescriptionForSource(data, transaction.description);
+}
+
+export function recurringRuleDisplayDescription(
+  data: AppData,
+  rule: RecurringRule,
+  transaction?: Transaction,
+): string {
+  if (transaction) {
+    return transactionDisplayDescription(data, transaction);
+  }
+  return transactionDisplayDescriptionForSource(data, rule.description);
 }
 
 export function transactionDescriptionTextAccessor(

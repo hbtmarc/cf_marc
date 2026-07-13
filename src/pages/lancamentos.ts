@@ -860,7 +860,7 @@ function bindRowActions(
           onClick: () => {
             openTransactionDisplayAliasModal({
               data,
-              transaction: item,
+              sourceDescription: item.description,
               mutations,
               onSaved: rerender,
             });

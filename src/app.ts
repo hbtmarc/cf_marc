@@ -384,9 +384,13 @@ function buildShell(): void {
       <a class="skip-link" href="#main-content">Ir para o conteúdo</a>
       <aside class="sidebar" aria-label="Navegação principal">
         <div class="sidebar__brand">
-          <span class="sidebar__mark" aria-hidden="true">CFM</span>
-          <p class="sidebar__eyebrow">Controle financeiro</p>
-          <p class="sidebar__title">Mensal</p>
+          <div class="sidebar__brand-row">
+            <span class="sidebar__mark" aria-hidden="true">CFM</span>
+            <div class="sidebar__brand-copy">
+              <p class="sidebar__brand-name">Controle Financeiro</p>
+              <p class="sidebar__brand-tag">Mensal</p>
+            </div>
+          </div>
         </div>
         <nav id="sidebar-nav" class="sidebar__nav" aria-label="Seções"></nav>
         <footer class="sidebar__footer">

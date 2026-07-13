@@ -2,7 +2,7 @@ import type { AppData } from "../types";
 import type { AppMutations } from "../forms";
 import { deleteCard, openCardForm } from "../forms";
 import { renderCardSummaryBody, renderEmptyState, renderSectionHeader } from "../presentation";
-import { announce, createRowMenu, el, openConfirmModal } from "../ui";
+import { createRowMenu, el, openConfirmModal } from "../ui";
 
 function formatBackupTimestamp(ms: number): string {
   return new Intl.DateTimeFormat("pt-BR", {

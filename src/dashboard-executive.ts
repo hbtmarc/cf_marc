@@ -13,7 +13,7 @@ import {
 import { hasInvoiceForCardMonth, projectedInstallmentsForMonth } from "./installments";
 import { inferRecurrenceClassFromRule } from "./recurrence-class";
 import { recurringResolutionsForMonth } from "./recurrence-reconciliation";
-import { transactionDisplayDescriptionForSource } from "./transaction-aliases";
+import { recurringRuleDisplayDescription } from "./transaction-aliases";
 import type { AppData, RecurringOccurrenceResolution } from "./types";
 
 export type DashboardFixedBillStatus = "PAGA" | "PENDENTE" | "PREVISTA";
@@ -107,7 +107,13 @@ export function buildDashboardFixedBills(
 
     lines.push({
       id: resolution.occurrence.id,
-      name: transactionDisplayDescriptionForSource(data, resolution.occurrence.description),
+      name: recurringRuleDisplayDescription(
+        data,
+        rule,
+        resolution.transactionId
+          ? data.transactions.find((item) => item.id === resolution.transactionId)
+          : undefined,
+      ),
       dateLabel: formatDateLabel(resolution.occurrence.expectedDate),
       amountCents: fixedBillAmountForResolution(resolution),
       statusLabel,

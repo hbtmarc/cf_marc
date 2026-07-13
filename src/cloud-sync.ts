@@ -11,7 +11,6 @@ import {
   coerceRemoteFinance,
   createFinanceEnvelope,
   FINANCE_RTD_PATH,
-  parseFinanceEnvelope,
   type FinanceEnvelope,
 } from "./cloud-envelope";
 import { getFirebaseDatabase } from "./firebase";
@@ -83,19 +82,14 @@ export async function writeRemoteFinance(
   pendingBaseRevision: number,
 ): Promise<FinanceEnvelope> {
   const result = await runTransaction(financeRef(), (current) => {
-    const hasData =
-      current !== null &&
-      typeof current.exists === "function" &&
-      current.exists();
-
-    if (!hasData) {
+    if (current === null) {
       if (pendingBaseRevision > 0) {
         return;
       }
       return createFinanceEnvelope(data, writerId, 1);
     }
 
-    const parsed = coerceRemoteFinance(current.val());
+    const parsed = coerceRemoteFinance(current);
     if (!parsed) {
       return createFinanceEnvelope(data, writerId, 1);
     }

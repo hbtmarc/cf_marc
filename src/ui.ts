@@ -567,16 +567,16 @@ export function bindCompetenceShortcuts(
 const NAV_SHORT_LABELS: Record<RoutePath, string> = {
   "/dashboard": "Início",
   "/balanco": "Balanço",
-  "/lancamentos": "Lanç.",
+  "/lancamentos": "Lançam.",
   "/faturas": "Faturas",
-  "/planejamento": "Plan.",
+  "/planejamento": "Planej.",
   "/importar": "Import.",
   "/ajustes": "Ajustes",
 };
 
 const NAV_LABELS: Record<RoutePath, string> = {
   "/dashboard": "Visão geral",
-  "/balanco": "Balanço mensal",
+  "/balanco": "Balanço",
   "/lancamentos": "Lançamentos",
   "/faturas": "Cartões e faturas",
   "/planejamento": "Planejamento",
@@ -593,7 +593,7 @@ const NAV_GROUPS: Array<{ label: string; routes: RoutePath[] }> = [
 
 const PAGE_DESC_EXTENDED: Record<RoutePath, string> = {
   "/dashboard": "Situação atual, compromissos e fechamento projetado da competência.",
-  "/balanco": "Fotografia financeira da competência com registro e histórico de balanços.",
+  "/balanco": "Checklist de contas, faturas e balanço no momento da quitação.",
   "/lancamentos": "Ledger operacional com busca, filtros e ações sobre receitas e despesas.",
   "/faturas": "Cartões, faturas da competência e compromissos de crédito.",
   "/planejamento": "Receitas previstas, fixas, assinaturas e conciliação com lançamentos.",

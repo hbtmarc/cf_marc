@@ -63,9 +63,11 @@ import {
 import { renderEmptyState, renderSectionHeader } from "../presentation";
 import { formatCentsToBRL, formatCompetenceLabel, formatDateLabel } from "../finance";
 import {
+  recurringRuleDisplayDescription,
   transactionDisplayDescription,
   transactionDisplayDescriptionForSource,
 } from "../transaction-aliases";
+import { openTransactionDisplayAliasModal } from "../transaction-alias-modal";
 import type { AppData, RecurrenceClass, RecurringRule } from "../types";
 import {
   announce,
@@ -396,8 +398,24 @@ function renderCandidatesPanel(
   return `<div class="planejamento-candidates" id="${escapeHtml(panelId)}" role="region" aria-label="Candidatos compatíveis">${rows}</div>`;
 }
 
+function matchedTransactionForRule(
+  data: AppData,
+  rule: RecurringRule,
+  month: string,
+) {
+  const resolution = recurringResolutionsForMonth(data, month).find(
+    (item) => item.occurrence.ruleId === rule.id && item.transactionId,
+  );
+  if (!resolution?.transactionId) {
+    return undefined;
+  }
+  return data.transactions.find((item) => item.id === resolution.transactionId);
+}
+
 function renderRuleRow(data: AppData, rule: RecurringRule, month: string): string {
   const status = ruleDisplayStatus(rule, month);
+  const matchedTransaction = matchedTransactionForRule(data, rule, month);
+  const displayName = recurringRuleDisplayDescription(data, rule, matchedTransaction);
   const nextMonth = nextValidOccurrenceMonth(rule, month);
   const billing = rule.kind === "income" ? "Direta" : billingModeLabel(rule.billingMode);
   const card =
@@ -415,7 +433,7 @@ function renderRuleRow(data: AppData, rule: RecurringRule, month: string): strin
   return `
     <article class="planejamento-rule" data-rule-id="${escapeHtml(rule.id)}">
       <div class="planejamento-rule__main">
-        <h3 class="planejamento-rule__title">${escapeHtml(rule.description)}</h3>
+        <h3 class="planejamento-rule__title">${escapeHtml(displayName)}</h3>
         <p class="planejamento-rule__meta">${escapeHtml(ruleRecurrenceClassLabel(rule))} · série ${escapeHtml(rule.seriesId ?? rule.id)} · ${escapeHtml(formatRulePeriod(rule))}</p>
         <p class="planejamento-rule__meta">${escapeHtml(rule.category)} · dia ${rule.dayOfMonth} · ${escapeHtml(billing)}${rule.billingMode === "card" ? ` · ${escapeHtml(card)}` : ""}${renewal ? ` · ${escapeHtml(renewal)}` : ""}</p>
         <p class="planejamento-rule__meta">Próxima: ${nextMonth ? escapeHtml(formatCompetenceLabel(nextMonth)) : "—"}</p>
@@ -426,6 +444,7 @@ function renderRuleRow(data: AppData, rule: RecurringRule, month: string): strin
       </div>
       <div class="planejamento-rule__actions">
         <button type="button" class="btn btn--ghost btn--small" data-action="edit-rule" data-rule-id="${escapeHtml(rule.id)}">${escapeHtml(ruleEditActionLabel(rule))}</button>
+        ${rule.kind === "expense" ? `<button type="button" class="btn btn--ghost btn--small" data-action="rename-rule-display" data-rule-id="${escapeHtml(rule.id)}">Renomear exibição</button>` : ""}
         ${status === "renewal_pending" ? `<button type="button" class="btn btn--primary btn--small" data-action="renew-rule" data-rule-id="${escapeHtml(rule.id)}">Renovar por 12 meses</button>` : ""}
         ${rule.recurrenceClass === "fixed_bill" || rule.recurrenceClass === "other" ? `<button type="button" class="btn btn--ghost btn--small" data-action="update-rule-value" data-rule-id="${escapeHtml(rule.id)}">Atualizar valor</button>` : ""}
         ${status === "active" || status === "renewal_pending" ? `<button type="button" class="btn btn--ghost btn--small" data-action="pause-rule" data-rule-id="${escapeHtml(rule.id)}">Pausar</button>` : ""}
@@ -704,6 +723,22 @@ function bindPlanejamentoActions(
           announce("Lançamento vinculado com valor diferente do previsto.");
         });
         rerender();
+        return;
+      }
+
+      if (action === "rename-rule-display") {
+        const ruleId = actionNode.dataset.ruleId;
+        const rule = (data.recurringRules ?? []).find((item) => item.id === ruleId);
+        if (!rule) {
+          return;
+        }
+        const matchedTransaction = matchedTransactionForRule(data, rule, month);
+        openTransactionDisplayAliasModal({
+          data,
+          sourceDescription: matchedTransaction?.description ?? rule.description,
+          mutations,
+          onSaved: rerender,
+        });
         return;
       }
 

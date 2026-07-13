@@ -4,17 +4,17 @@ import {
   removeTransactionDescriptionAlias,
   upsertTransactionDescriptionAlias,
 } from "./transaction-aliases";
-import type { AppData, Transaction } from "./types";
+import type { AppData } from "./types";
 import { announce, closeModal, el, openModal } from "./ui";
 
 export function openTransactionDisplayAliasModal(options: {
   data: AppData;
-  transaction: Transaction;
+  sourceDescription: string;
   mutations: AppMutations;
   onSaved: () => void;
 }): void {
-  const { transaction, mutations, onSaved } = options;
-  const existing = findTransactionDescriptionAlias(options.data, transaction.description);
+  const { sourceDescription, mutations, onSaved } = options;
+  const existing = findTransactionDescriptionAlias(options.data, sourceDescription);
 
   const content = el("div", "alias-modal");
   const intro = el(
@@ -26,7 +26,7 @@ export function openTransactionDisplayAliasModal(options: {
   const originalGroup = el("div", "field");
   const originalLabel = el("label", "field__label", "Descrição original");
   originalLabel.htmlFor = "alias-original";
-  const originalValue = el("p", "alias-modal__original", transaction.description);
+  const originalValue = el("p", "alias-modal__original", sourceDescription);
   originalValue.id = "alias-original";
   originalGroup.append(originalLabel, originalValue);
 
@@ -37,7 +37,7 @@ export function openTransactionDisplayAliasModal(options: {
   displayInput.type = "text";
   displayInput.id = "alias-display-name";
   displayInput.name = "alias-display-name";
-  displayInput.value = existing?.displayName ?? transaction.description;
+  displayInput.value = existing?.displayName ?? sourceDescription;
   displayInput.autocomplete = "off";
   const displayError = el("p", "field__error");
   displayError.hidden = true;
@@ -58,7 +58,7 @@ export function openTransactionDisplayAliasModal(options: {
     restoreButton.type = "button";
     restoreButton.addEventListener("click", () => {
       mutations.update((data) => {
-        removeTransactionDescriptionAlias(data, transaction.description);
+        removeTransactionDescriptionAlias(data, sourceDescription);
       });
       closeModal();
       announce("Nome original restaurado.");
@@ -92,7 +92,7 @@ export function openTransactionDisplayAliasModal(options: {
     mutations.update((data) => {
       const result = upsertTransactionDescriptionAlias(
         data,
-        transaction.description,
+        sourceDescription,
         displayInput.value,
       );
       if (result.errors.displayName) {

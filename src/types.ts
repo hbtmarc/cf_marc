@@ -172,6 +172,17 @@ export interface MonthlyBalance {
   fixedBillsCents: number;
   invoicesCents: number;
   note?: string;
+  /** Marcações manuais do checklist. Não alteram lançamentos nem faturas. */
+  checkedItemIds?: string[];
+  /** Momento em que a conferência mensal foi concluída. */
+  settledAt?: string;
+  checklistTotalCount?: number;
+  checklistCheckedCount?: number;
+  checklistTargetCents?: number;
+  checklistCheckedCents?: number;
+  checklistRemainingCents?: number;
+  sourceOutstandingCents?: number;
+  estimatedBalanceAfterCommitmentsCents?: number;
   createdAt: string;
   updatedAt: string;
 }
