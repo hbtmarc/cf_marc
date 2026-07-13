@@ -1,0 +1,25 @@
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+(node:72046) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+=== Deploying to 'cfmarc-marc35'...
+
+i  deploying database
+i  database: checking rules syntax...
+(node:72046) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+    at urlParse (node:url:137:13)
+    at Object.urlResolve [as resolve] (node:url:721:10)
+    at Object.getDatabaseUrl (/Users/marcelino/Documents/Cursor/cf_marc/node_modules/firebase-tools/lib/utils.js:130:26)
+    at Object.updateRules (/Users/marcelino/Documents/Cursor/cf_marc/node_modules/firebase-tools/lib/rtdb.js:16:26)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Promise.all (index 0)
+    at async chain (/Users/marcelino/Documents/Cursor/cf_marc/node_modules/firebase-tools/lib/deploy/index.js:45:9)
+    at async deploy (/Users/marcelino/Documents/Cursor/cf_marc/node_modules/firebase-tools/lib/deploy/index.js:124:9)
+✔  database: rules syntax for database cfmarc-marc35-default-rtdb is valid
+i  database: releasing rules...
+✔  database: rules for database cfmarc-marc35-default-rtdb released successfully
+
+✔  Deploy complete!
+
+Project Console: https://console.firebase.google.com/project/cfmarc-marc35/overview

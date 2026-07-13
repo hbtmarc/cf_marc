@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CLOUD_ENVELOPE_VERSION, createFinanceEnvelope, parseFinanceEnvelope } from "./cloud-envelope";
+import { hashAppData } from "./content-hash";
 import { emptyAppData } from "./storage";
 
 const mockEnsureAnonymous = vi.fn();
@@ -107,6 +108,61 @@ describe("data store local-first", () => {
     expect(mockWriteRemote).toHaveBeenCalledTimes(1);
     expect(getSyncStatusState().status).toBe("synced");
     vi.useRealTimers();
+  });
+
+  it("flushes pending local changes when remote revision matches base", async () => {
+    vi.useFakeTimers();
+    const data = emptyAppData();
+    data.selectedCompetenceMonth = "2026-08";
+    const envelope = createFinanceEnvelope(emptyAppData(), "writer-1", 1);
+    mockFetchRemote.mockResolvedValue(envelope);
+    mockWriteRemote.mockResolvedValue(createFinanceEnvelope(data, "writer-1", 2));
+
+    const { startBackgroundSync, persistAppData } = await import("./data-store");
+    const { patchSyncMeta, loadSyncMeta } = await import("./sync-meta");
+
+    await startBackgroundSync();
+    patchSyncMeta({
+      pendingSync: true,
+      pendingBaseRevision: 1,
+      lastRemoteRevision: 1,
+      lastAppliedContentHash: hashAppData(emptyAppData()),
+    });
+    mockSubscribeFinance.mock.calls[0]?.[0]?.(envelope);
+
+    persistAppData(data);
+    await vi.advanceTimersByTimeAsync(700);
+    await vi.runAllTimersAsync();
+
+    expect(mockWriteRemote).toHaveBeenCalled();
+    expect(loadSyncMeta().pendingSync).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("preserves local pending data when remote revision advances", async () => {
+    const localData = emptyAppData();
+    localData.selectedCompetenceMonth = "2026-08";
+    const remoteData = emptyAppData();
+    remoteData.selectedCompetenceMonth = "2026-09";
+    const remoteEnvelope = createFinanceEnvelope(remoteData, "writer-2", 3);
+
+    const { patchSyncMeta, loadSyncMeta } = await import("./sync-meta");
+    const { startBackgroundSync, getSyncStatusState, hasConflictBackup } = await import("./data-store");
+    const { saveAppData } = await import("./storage");
+
+    patchSyncMeta({
+      pendingSync: true,
+      pendingBaseRevision: 2,
+      lastRemoteRevision: 2,
+    });
+    saveAppData(localData);
+    await startBackgroundSync();
+
+    mockSubscribeFinance.mock.calls[0]?.[0]?.(remoteEnvelope);
+
+    expect(hasConflictBackup()).toBe(true);
+    expect(getSyncStatusState().status).toBe("remote_newer");
+    expect(loadSyncMeta().pendingSync).toBe(false);
   });
 
   it("persists pending sync metadata across reload", async () => {

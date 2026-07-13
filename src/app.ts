@@ -23,8 +23,10 @@ import {
   startBackgroundSync,
   subscribeSyncStatus,
   waitForPendingCloudWrite,
+  type SyncStatus,
   type SyncStatusState,
 } from "./data-store";
+import { syncCloudIcon, syncDeviceIcon, type SyncIconTone } from "./icons";
 import { initFirebase } from "./firebase";
 import { emptyAppData, loadAppData, type LoadError } from "./storage";
 import type { AppData, RoutePath } from "./types";
@@ -101,13 +103,30 @@ function setCompetenceMonth(month: string): void {
   render();
 }
 
+function syncIconTones(status: SyncStatus): { local: SyncIconTone; cloud: SyncIconTone } {
+  switch (status) {
+    case "synced":
+    case "remote_newer":
+      return { local: "synced", cloud: "synced" };
+    case "syncing":
+    case "connecting_cloud":
+    case "offline":
+    case "error":
+      return { local: "synced", cloud: "syncing" };
+  }
+}
+
 function renderSyncStatus(stateSync: SyncStatusState): void {
   if (!syncStatusHost) {
     return;
   }
+  const tones = syncIconTones(stateSync.status);
   syncStatusHost.innerHTML = `
-    <span class="sidebar__status" aria-hidden="true"></span>
-    <span role="status" aria-live="polite">${stateSync.message}</span>
+    <span class="sidebar__sync" role="group" aria-label="${stateSync.message}">
+      ${syncDeviceIcon(tones.local)}
+      ${syncCloudIcon(tones.cloud)}
+    </span>
+    <span class="sr-only" role="status" aria-live="polite">${stateSync.message}</span>
     ${
       stateSync.canRetry
         ? `<button type="button" class="sidebar__retry btn btn--ghost btn--compact" data-action="retry-sync">Tentar novamente</button>`

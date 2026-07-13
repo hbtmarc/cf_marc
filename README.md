@@ -84,7 +84,7 @@ O `uid` anônimo autorizado nas Security Rules **não** faz parte do caminho dos
 | `firebase-config.ts` | Config pública do projeto |
 | `firebase.ts` | Init SDK (`getApps`/`getApp`) |
 | `auth-service.ts` | Sessão anônima invisível, `browserLocalPersistence` |
-| `firebase-owner.ts` | UID anônimo autorizado nas Rules |
+| `firebase-owner.ts` | Reservado para futura autorização por UID |
 | `cloud-sync.ts` | `onValue`, `runTransaction`, conectividade |
 | `sync-meta.ts` | Metadados de sync no `localStorage` |
 | `data-store.ts` | Bootstrap local-first, debounce 600 ms, conflitos |
@@ -106,35 +106,12 @@ Toda alteração legítima:
 
 Indicador discreto na sidebar (`role="status"`, `aria-live="polite"`). Não bloqueia a interface.
 
-### Security Rules
+### Security Rules (temporário)
 
-Negam tudo por padrão. Acesso somente em `personal/finance` quando `auth.uid` corresponde ao UID anônimo do dispositivo proprietário. Envelope validado (`schemaVersion`, `revision`, `updatedAt`, `writerId`, `data`). Deleção integral rejeitada.
+Negam tudo na raiz. **`personal/finance` está aberto** (`read`/`write: true`) até a implementação de auth real. Restringir por UID volta quando o login estiver pronto.
 
 Testar: `npm run firebase:test-rules`  
 Publicar: `npm run firebase:deploy-database`
-
-### Sessão anônima — limitações
-
-- A sessão está vinculada ao armazenamento do navegador
-- Apagar dados do navegador pode gerar novo `uid` e perder autorização nas Rules
-- Um segundo dispositivo futuro exigirá inclusão controlada do respectivo `uid` nas Rules
-- Autenticação permanente entre dispositivos permanece fora do escopo do MVP
-
-Habilitar provedor: Firebase Console → Authentication → Sign-in method → **Anonymous** → Enable
-
-### Registrar dispositivo proprietário
-
-O `uid` anônimo autorizado nas Rules corresponde ao navegador em que a sessão foi criada:
-
-1. Abra `http://localhost:5173/#/dashboard`
-2. No console do navegador:  
-   `(await import('/src/auth-service.ts')).ensureAnonymousSession().then(u => console.log(u.uid))`
-3. Atualize `src/firebase-owner.ts` e `database.rules.json` com esse uid
-4. Execute `npm run firebase:test-rules` e `npm run firebase:deploy-database`
-
-Ou use `node scripts/obtain-owner-uid.mjs` (perfil Playwright em `.playwright-owner-profile/`).
-
-**Não apague todo o `localStorage`** — isso remove também a sessão Firebase e gera um novo `uid`.
 
 ### Política de conflito
 

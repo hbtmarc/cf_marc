@@ -1,8 +1,9 @@
-import { ensureAnonymousSession } from "./auth-service";
+import { ensureAnonymousSession, getCurrentUser } from "./auth-service";
 import { hashAppData } from "./content-hash";
 import {
   fetchRemoteFinance,
   isOfflineError,
+  isPermissionDeniedError,
   RemoteFinanceInvalidError,
   RemoteWriteConflictError,
   subscribeConnectivity,
@@ -115,6 +116,33 @@ export function dismissConflictBackup(): void {
   patchSyncMeta({ conflictBackup: null });
 }
 
+function logUnauthorizedSessionInDev(): void {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  const user = getCurrentUser();
+  if (!user) {
+    return;
+  }
+  const mask = (v: string) => (v.length > 12 ? `${v.slice(0, 6)}…${v.slice(-6)}` : "****");
+  console.warn(
+    `[CFM] PERMISSION_DENIED — sessão não autorizada nas Rules (uid ${mask(user.uid)}). ` +
+      "Copie o UID completo executando no console:\n" +
+      '(await import("/src/auth-service.ts")).ensureAnonymousSession().then(u => console.log(u.uid))',
+  );
+}
+
+function handleSyncError(error: unknown): void {
+  if (isPermissionDeniedError(error)) {
+    logUnauthorizedSessionInDev();
+    setSyncState("error", true);
+    return;
+  }
+  if (!isOfflineError(error)) {
+    setSyncState("error", true);
+  }
+}
+
 function clearConnectingTimer(): void {
   if (connectingTimer) {
     clearTimeout(connectingTimer);
@@ -177,8 +205,29 @@ function handleRemoteEnvelope(envelope: FinanceEnvelope | null): void {
     hash === meta.lastAppliedContentHash
   ) {
     if (meta.pendingSync) {
+      const local = loadAppData();
+      if (local.ok) {
+        const localHash = hashAppData(local.data);
+        if (localHash !== hash) {
+          pendingData = local.data;
+          void flushPendingCloudWrite();
+          return;
+        }
+        clearPendingSync();
+      }
+      setSyncState("synced");
       return;
     }
+    setSyncState("synced");
+    return;
+  }
+
+  if (
+    !meta.pendingSync &&
+    envelope.revision === meta.lastRemoteRevision &&
+    hash !== meta.lastAppliedContentHash
+  ) {
+    applyRemoteEnvelope(envelope);
     setSyncState("synced");
     return;
   }
@@ -217,7 +266,10 @@ function attachListeners(): void {
     return;
   }
   listenersAttached = true;
-  unsubFinance = subscribeFinanceListener(handleRemoteEnvelope);
+  unsubFinance = subscribeFinanceListener(handleRemoteEnvelope, (error) => {
+    clearConnectingTimer();
+    handleSyncError(error);
+  });
   unsubConnected = subscribeConnectivity((connected) => {
     if (connected && loadSyncMeta().pendingSync) {
       void flushPendingCloudWrite();
@@ -246,9 +298,7 @@ export async function startBackgroundSync(): Promise<void> {
         setSyncState("error", true);
         return;
       }
-      if (!isOfflineError(error)) {
-        setSyncState("error", true);
-      }
+      handleSyncError(error);
     }
 
     clearConnectingTimer();

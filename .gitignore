@@ -113,3 +113,8 @@ src/**/*-real*.test.ts
 
 # Perfil Playwright para validação localhost (sessão anônima)
 .playwright-owner-profile/
+.playwright-localhost-profile/
+.playwright-github-profile/
+
+# Evidências locais com UIDs completos
+docs/evidencias-etapa11/owner-uids.local.json

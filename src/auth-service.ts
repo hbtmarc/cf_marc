@@ -3,6 +3,7 @@ import {
   onAuthStateChanged,
   setPersistence,
   signInAnonymously,
+  type Unsubscribe,
   type User,
 } from "firebase/auth";
 import { getFirebaseAuth, initFirebase } from "./firebase";
@@ -19,18 +20,31 @@ async function ensurePersistence(): Promise<void> {
   await persistenceReady;
 }
 
+function waitForInitialAuthState(): Promise<User | null> {
+  const auth = getFirebaseAuth();
+  return new Promise((resolve) => {
+    let unsub: Unsubscribe = () => undefined;
+    unsub = onAuthStateChanged(auth, (user) => {
+      unsub();
+      resolve(user);
+    });
+  });
+}
+
 export async function ensureAnonymousSession(): Promise<User> {
   await ensurePersistence();
-  const auth = getFirebaseAuth();
-  if (auth.currentUser) {
-    return auth.currentUser;
-  }
   if (!anonymousReady) {
-    anonymousReady = signInAnonymously(auth)
-      .then((credential) => credential.user)
-      .finally(() => {
-        anonymousReady = null;
-      });
+    anonymousReady = (async () => {
+      const restored = await waitForInitialAuthState();
+      if (restored) {
+        return restored;
+      }
+      const auth = getFirebaseAuth();
+      const credential = await signInAnonymously(auth);
+      return credential.user;
+    })().finally(() => {
+      anonymousReady = null;
+    });
   }
   return anonymousReady;
 }

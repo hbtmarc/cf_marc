@@ -50,3 +50,26 @@ export function overflowIcon(): string {
 export function recurringCycleIcon(className = "recurring-icon"): string {
   return `<svg class="${className}" ${SVG_ATTRS}><path d="M200,48H163.74a8,8,0,0,0-5.66,2.34l-80,80a8,8,0,0,1-11.32,0L54.34,87.78A8,8,0,0,0,48.69,86H24a8,8,0,0,0,0,16H47.31l22.63,22.63a24,24,0,0,0,33.94,0L152,88.69V128a8,8,0,0,0,16,0V56A8,8,0,0,0,200,48ZM232,136H208.69l-22.63-22.62a24,24,0,0,0-33.94,0L104,167.31V128a8,8,0,0,0-16,0v72a8,8,0,0,0,8,8h36.26a8,8,0,0,0,5.66-2.34l80-80a8,8,0,0,1,11.32,0l11.32,11.32A8,8,0,0,0,207.31,170H232a8,8,0,0,0,0-16Z"/></svg>`;
 }
+
+export type SyncIconTone = "synced" | "syncing";
+
+const SYNC_SVG_ATTRS =
+  'xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true"';
+
+const SYNC_DEVICE_PATH =
+  '<path d="M176,18H80A22,22,0,0,0,58,40V216a22,22,0,0,0,22,22h96a22,22,0,0,0,22-22V40A22,22,0,0,0,176,18ZM70,62H186V194H70ZM80,30h96a10,10,0,0,1,10,10V50H70V40A10,10,0,0,1,80,30Zm96,196H80a10,10,0,0,1-10-10V206H186v10A10,10,0,0,1,176,226Z"/>';
+
+const SYNC_CLOUD_PATH =
+  '<path d="M160,40A88.09,88.09,0,0,0,81.29,88.67,64,64,0,1,0,72,216h88a88,88,0,0,0,0-176Zm0,160H72a48,48,0,0,1,0-96c1.1,0,2.2,0,3.29.11A88,88,0,0,0,72,128a8,8,0,0,0,16,0,72,72,0,1,1,72,72Z"/>';
+
+function syncIcon(className: string, path: string): string {
+  return `<svg class="${className}" ${SYNC_SVG_ATTRS}>${path}</svg>`;
+}
+
+export function syncDeviceIcon(tone: SyncIconTone): string {
+  return syncIcon(`sidebar__sync-icon sidebar__sync-icon--${tone}`, SYNC_DEVICE_PATH);
+}
+
+export function syncCloudIcon(tone: SyncIconTone): string {
+  return syncIcon(`sidebar__sync-icon sidebar__sync-icon--${tone}`, SYNC_CLOUD_PATH);
+}

@@ -4,9 +4,8 @@
     ".write": false,
     "personal": {
       "finance": {
-        ".read": "auth != null && auth.uid === 'OUfla9cplmMwne0GGVwF8fMOxw93'",
-        ".write": "auth != null && auth.uid === 'OUfla9cplmMwne0GGVwF8fMOxw93' && newData.exists()",
-        ".validate": "newData.exists() && newData.hasChildren(['schemaVersion', 'revision', 'updatedAt', 'writerId', 'data']) && newData.child('schemaVersion').val() === 'cfm.cloud.v1' && newData.child('revision').isNumber() && newData.child('revision').val() >= 0 && newData.child('updatedAt').isNumber() && newData.child('writerId').isString() && newData.child('writerId').val().length > 0 && newData.child('writerId').val().length <= 100 && newData.child('data').exists()"
+        ".read": true,
+        ".write": true
       }
     }
   }

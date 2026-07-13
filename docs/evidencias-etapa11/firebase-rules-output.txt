@@ -1,0 +1,67 @@
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+
+> cf-marc@0.2.0 firebase:test-rules
+> firebase emulators:exec --only database "vitest run --config vitest.rules.config.ts"
+
+(node:71927) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+i  emulators: Starting emulators: database
+i  database: Database Emulator logging to database-debug.log
+i  Running script: vitest run --config vitest.rules.config.ts
+
+ RUN  v3.2.7 /Users/marcelino/Documents/Cursor/cf_marc
+
+stderr | src/firebase-rules.test.ts > database security rules > denies unauthenticated write
+[2026-07-13T09:05:35.960Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > denies unauthorized anonymous uid write
+[2026-07-13T09:05:36.022Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects envelope without schemaVersion
+[2026-07-13T09:05:36.110Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects incorrect schemaVersion
+[2026-07-13T09:05:36.124Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects envelope without revision
+[2026-07-13T09:05:36.137Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects negative revision
+[2026-07-13T09:05:36.152Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects envelope without updatedAt
+[2026-07-13T09:05:36.165Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects non-numeric updatedAt
+[2026-07-13T09:05:36.179Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects envelope without writerId
+[2026-07-13T09:05:36.192Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects empty writerId
+[2026-07-13T09:05:36.206Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects envelope without data
+[2026-07-13T09:05:36.218Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects write at database root
+[2026-07-13T09:05:36.244Z]  @firebase/database: FIREBASE WARNING: set at / failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects write outside personal/finance
+[2026-07-13T09:05:36.257Z]  @firebase/database: FIREBASE WARNING: set at /other/path failed: permission_denied 
+
+stderr | src/firebase-rules.test.ts > database security rules > rejects deleting finance envelope
+[2026-07-13T09:05:36.274Z]  @firebase/database: FIREBASE WARNING: set at /personal/finance failed: permission_denied 
+
+ ✓ src/firebase-rules.test.ts (21 tests) 541ms
+
+ Test Files  1 passed (1)
+      Tests  21 passed (21)
+   Start at  06:05:35
+   Duration  891ms (transform 39ms, setup 0ms, collect 108ms, tests 541ms, environment 0ms, prepare 35ms)
+
+✔  Script exited successfully (code 0)
+i  emulators: Shutting down emulators.
+i  database: Stopping Database Emulator
+i  hub: Stopping emulator hub
+i  logging: Stopping Logging Emulator

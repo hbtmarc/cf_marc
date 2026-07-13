@@ -47,19 +47,26 @@ export async function fetchRemoteFinance(): Promise<FinanceEnvelope | null> {
 
 export function subscribeFinanceListener(
   listener: (envelope: FinanceEnvelope | null) => void,
+  onError?: (error: Error) => void,
 ): Unsubscribe {
-  return onValue(financeRef(), (snapshot) => {
-    if (!snapshot.exists()) {
-      listener(null);
-      return;
-    }
-    const parsed = parseFinanceEnvelope(snapshot.val());
-    if (!parsed) {
-      listener(null);
-      return;
-    }
-    listener(parsed);
-  });
+  return onValue(
+    financeRef(),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        listener(null);
+        return;
+      }
+      const parsed = parseFinanceEnvelope(snapshot.val());
+      if (!parsed) {
+        listener(null);
+        return;
+      }
+      listener(parsed);
+    },
+    (error) => {
+      onError?.(error);
+    },
+  );
 }
 
 export function subscribeConnectivity(listener: (connected: boolean) => void): Unsubscribe {
@@ -109,6 +116,15 @@ export async function writeRemoteFinance(
   return envelope;
 }
 
+export function isPermissionDeniedError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const code = (error as { code?: string }).code ?? "";
+  const message = (error as { message?: string }).message ?? "";
+  return code === "PERMISSION_DENIED" || /permission.denied/i.test(message);
+}
+
 export function isOfflineError(error: unknown): boolean {
   if (!error || typeof error !== "object") {
     return false;
@@ -119,4 +135,17 @@ export function isOfflineError(error: unknown): boolean {
     code === "network-request-failed" ||
     code === "failed-precondition"
   );
+}
+
+export function sanitizeSyncError(error: unknown): string {
+  if (isPermissionDeniedError(error)) {
+    return "PERMISSION_DENIED";
+  }
+  if (isOfflineError(error)) {
+    return "OFFLINE";
+  }
+  if (error instanceof Error) {
+    return error.name || "Error";
+  }
+  return "UNKNOWN";
 }

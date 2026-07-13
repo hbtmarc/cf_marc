@@ -1,0 +1,26 @@
+validatedAt: 2026-07-13T09:06:04.392Z
+syncStatus: Salvo neste dispositivo e na nuvem
+revision: 1
+selectedCompetenceMonth: 2026-07
+localHash: 0d02945ed5fc51b1db6faa87369eaecff5ae9739efaf15d4435a2eba34a6aaa1
+remoteHash: 0d02945ed5fc51b1db6faa87369eaecff5ae9739efaf15d4435a2eba34a6aaa1
+hashesMatch: true
+topLevelFields: cards, ignoredRecurringSuggestions, importMeta, invoices, monthlyBalances, recurringMatches, recurringRules, schemaVersion, selectedCompetenceMonth, transactionDescriptionAliases, transactions
+collectionCounts:
+  transactions: 6
+  cards: 2
+  invoices: 1
+  recurringRules: 4
+  recurringMatches: 1
+  ignoredRecurringSuggestions: 0
+  transactionDescriptionAliases: 0
+  monthlyBalances: 0
+remoteCollectionCounts:
+  transactions: 6
+  cards: 2
+  invoices: 1
+  recurringRules: 4
+  recurringMatches: 1
+  ignoredRecurringSuggestions: 0
+  transactionDescriptionAliases: 0
+  monthlyBalances: 0

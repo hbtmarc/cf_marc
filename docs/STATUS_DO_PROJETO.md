@@ -2,12 +2,59 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 13 de julho de 2026  
-**Etapa atual:** Etapa 11 — correção final (local-first, auth anônima invisível, sync contínua)  
+**Etapa atual:** Etapa 11 — correção de aceite (sincronização real entre origens)  
 **Próximo marco:** a definir (fora do escopo desta entrega)
 
 ---
 
-## Etapa 11 — correção final (em validação)
+## Etapa 11 — correção de aceite (sincronização real)
+
+### Problema confirmado
+
+- Gravação inicial em `personal/finance` existia
+- Localhost e GitHub Pages exibiam **Erro ao sincronizar**
+- Conteúdo divergente entre origens
+- Causa: **PERMISSION_DENIED** — UIDs anônimos das origens não autorizados nas Rules
+
+### Causa raiz adicional
+
+`ensureAnonymousSession()` chamava `signInAnonymously()` antes da persistência restaurar a sessão, gerando **novo UID a cada carregamento** em localhost.
+
+### Correções aplicadas
+
+| Item | Correção |
+|------|----------|
+| Rules | Dois UIDs autorizados: localhost + GitHub Pages |
+| Auth | Aguarda `onAuthStateChanged` antes de criar sessão |
+| Sync | `pendingSync` preso não bloqueia mais flush/convergência |
+| Listener | Callback de erro em `onValue`; `isPermissionDeniedError` |
+| Evidências artificiais | Removidos `capture.cjs`, HTML injetado, fixtures como prova funcional |
+| Integridade | `integrity-report.ts` + `local-remote-integrity.txt` |
+
+### UIDs autorizados (mascarados)
+
+- Localhost: `P1aG97…nepY93`
+- GitHub Pages: `KHf0xr…HOzWx2`
+- Anterior (inválido): `OUfla9…MOxw93`
+
+### Validação
+
+```bash
+node scripts/diagnose-origins.mjs
+node scripts/validate-integrity.mjs
+node scripts/validate-cross-origin-sync.mjs
+npm run firebase:test-rules
+```
+
+Evidências reais: `docs/evidencias-etapa11/`, `docs/screenshots-etapa11/real-*.png`
+
+### Limitações
+
+- Persistência separada por origem
+- Limpeza de dados do navegador → novo UID → autorização manual
+- GitHub Pages publicado pode precisar de `git push` para incluir correção de auth no bundle
+
+---
 
 ### Objetivo
 

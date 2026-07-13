@@ -23,10 +23,25 @@ describe("auth service", () => {
     setPersistence.mockReset();
     onAuthStateChanged.mockReset();
     setPersistence.mockResolvedValue(undefined);
-    signInAnonymously.mockResolvedValue({ user: { uid: "anon-test-uid" } });
+    signInAnonymously.mockResolvedValue({ user: { uid: "anon-test-uid", isAnonymous: true } });
+    onAuthStateChanged.mockImplementation((_auth, listener) => {
+      listener(null);
+      return () => undefined;
+    });
   });
 
-  it("creates anonymous session invisibly", async () => {
+  it("reuses restored anonymous session when persistence returns a user", async () => {
+    onAuthStateChanged.mockImplementation((_auth, listener) => {
+      listener({ uid: "restored-uid", isAnonymous: true });
+      return () => undefined;
+    });
+    const { ensureAnonymousSession } = await import("./auth-service");
+    const user = await ensureAnonymousSession();
+    expect(user.uid).toBe("restored-uid");
+    expect(signInAnonymously).not.toHaveBeenCalled();
+  });
+
+  it("creates anonymous session invisibly when none is restored", async () => {
     const { ensureAnonymousSession } = await import("./auth-service");
     const user = await ensureAnonymousSession();
     expect(user.uid).toBe("anon-test-uid");

@@ -1,5 +1,4 @@
 /**
- * UID da sessão anônima autorizada nas Security Rules (dispositivo proprietário).
- * Mascarado em documentação: OUfl…xw93
+ * Placeholder para futura autorização por UID nas Security Rules.
+ * Enquanto isso, `database.rules.json` mantém `personal/finance` aberto temporariamente.
  */
-export const OWNER_ANONYMOUS_UID = "OUfla9cplmMwne0GGVwF8fMOxw93";
