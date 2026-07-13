@@ -2,8 +2,46 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 10 concluída — Firebase, autenticação e publicação  
+**Etapa atual:** Etapa 11 concluída — Firebase real, autenticação e sincronização  
 **Próximo marco:** a definir (fora do escopo desta entrega)
+
+---
+
+## Etapa 11 — concluída
+
+### Objetivo
+
+Concluir a infraestrutura na nuvem com o projeto Firebase real `cfmarc-marc35`: configuração versionada no cliente, Security Rules publicadas (substituindo regras públicas), Authentication Google via CLI, envelope com `updatedAt` numérico, testes ampliados e deploy de `database` + `auth`.
+
+### Preservado da Etapa 10
+
+Arquitetura de sync (`data-store`, `cloud-sync`, `cloud-envelope`), auth gate, modal de migração, estados de sincronização, tela de login, logout em Ajustes, GitHub Pages, debounce 600 ms e cache local — ajustados, não recriados.
+
+### Lacunas corrigidas
+
+| Item | Correção |
+|------|----------|
+| Config Firebase | Hardcoded em `firebase-config.ts` (público); removidos secrets do workflow |
+| Security Rules | `.read`/`.write` somente em `finance`; `updatedAt` numérico; **deploy real** |
+| Regras públicas | Substituídas em `cfmarc-marc35-default-rtdb` |
+| Auth | Google habilitado via `firebase deploy --only auth`; domínios `localhost`, `hbtmarc.github.io` |
+| Login | Popup + redirect fallback; `browserLocalPersistence`; `getRedirectResult` no bootstrap |
+| Envelope | `updatedAt: number` (epoch ms) |
+| Remoto inválido | `RemoteFinanceInvalidError`; cache local preservado |
+| Testes | 354 unitários + 14 rules (`src/firebase-rules.test.ts`) + 6 auth |
+
+### Deploy Firebase (autorizado)
+
+- `firebase deploy --only database --project cfmarc-marc35` — **sucesso**
+- `firebase deploy --only auth --project cfmarc-marc35` — **sucesso** (Google Sign-In habilitado)
+
+### Comandos NPM
+
+`firebase:login`, `firebase:projects`, `firebase:emulators`, `firebase:test-rules`, `firebase:deploy-database`, `firebase:deploy-auth`
+
+### Evidências
+
+`docs/screenshots-etapa11/` — login, migração, dashboard autenticado, sync, logout. Captura `emulator-rules.png` requer JDK 21+ local (`npm run firebase:emulators` → UI em `:4000`).
 
 ---
 

@@ -8,12 +8,23 @@ import {
 import { getFirebaseDatabase } from "./firebase";
 import type { AppData } from "./types";
 
+export class RemoteFinanceInvalidError extends Error {
+  constructor() {
+    super("Envelope remoto inválido.");
+    this.name = "RemoteFinanceInvalidError";
+  }
+}
+
 export async function fetchRemoteFinance(uid: string): Promise<FinanceEnvelope | null> {
   const snapshot = await get(ref(getFirebaseDatabase(), financePathForUser(uid)));
   if (!snapshot.exists()) {
     return null;
   }
-  return parseFinanceEnvelope(snapshot.val());
+  const parsed = parseFinanceEnvelope(snapshot.val());
+  if (!parsed) {
+    throw new RemoteFinanceInvalidError();
+  }
+  return parsed;
 }
 
 export async function writeRemoteFinance(uid: string, data: AppData): Promise<void> {

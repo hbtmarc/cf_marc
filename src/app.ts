@@ -1,6 +1,6 @@
 import type { User } from "firebase/auth";
 import { renderAuthLoading, renderAuthScreen } from "./auth-screen";
-import { signInWithGoogle, signOutUser, subscribeAuthState } from "./auth-service";
+import { signInWithGoogle, signOutUser, subscribeAuthState, completeRedirectSignIn, AuthRedirectStartedError } from "./auth-service";
 import { renderAjustes } from "./pages/ajustes";
 import { renderBalanco } from "./pages/balanco";
 import { renderDashboard } from "./pages/dashboard";
@@ -491,6 +491,15 @@ export function startApp(): void {
 
   initFirebase();
   showAuthView(renderAuthLoading());
+  void bootstrapAuth();
+}
+
+async function bootstrapAuth(): Promise<void> {
+  try {
+    await completeRedirectSignIn();
+  } catch {
+    // Falha no retorno do redirect não impede nova tentativa de login.
+  }
 
   subscribeAuthState((user) => {
     if (user) {
@@ -525,6 +534,9 @@ function bindGoogleSignIn(): void {
     button.disabled = true;
     button.textContent = "Entrando…";
     void signInWithGoogle().catch((error: unknown) => {
+      if (error instanceof AuthRedirectStartedError) {
+        return;
+      }
       const message =
         error instanceof Error ? error.message : "Não foi possível entrar com Google.";
       showAuthView(renderAuthScreen({ error: message }));

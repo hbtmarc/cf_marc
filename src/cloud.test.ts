@@ -25,6 +25,9 @@ vi.mock("./cloud-sync", () => ({
   writeRemoteFinance: (...args: unknown[]) => mockWriteRemote(...args),
   isOfflineError: (error: unknown) =>
     error instanceof Error && error.message.toLowerCase().includes("offline"),
+  RemoteFinanceInvalidError: class RemoteFinanceInvalidError extends Error {
+    name = "RemoteFinanceInvalidError";
+  },
 }));
 
 describe("cloud envelope", () => {
@@ -37,7 +40,19 @@ describe("cloud envelope", () => {
 
   it("rejects invalid envelopes", () => {
     expect(parseFinanceEnvelope(null)).toBeNull();
-    expect(parseFinanceEnvelope({ schemaVersion: "x", updatedAt: "t", data: {} })).toBeNull();
+    expect(parseFinanceEnvelope({ schemaVersion: "x", updatedAt: 1, data: {} })).toBeNull();
+    expect(
+      parseFinanceEnvelope({
+        schemaVersion: CLOUD_ENVELOPE_VERSION,
+        updatedAt: "2026-07-01T00:00:00.000Z",
+        data: emptyAppData(),
+      }),
+    ).toBeNull();
+  });
+
+  it("uses numeric updatedAt", () => {
+    const envelope = createFinanceEnvelope(emptyAppData());
+    expect(typeof envelope.updatedAt).toBe("number");
   });
 });
 
@@ -181,6 +196,33 @@ describe("data store", () => {
     expect(getSyncStatusState().status).toBe("offline");
   });
 
+  it("keeps local cache when remote envelope is invalid", async () => {
+    mockIsFirebaseConfigured.mockReturnValue(true);
+    const { RemoteFinanceInvalidError } = await import("./cloud-sync");
+    mockFetchRemote.mockRejectedValue(new RemoteFinanceInvalidError());
+    const { saveAppData } = await import("./storage");
+    const local = emptyAppData();
+    local.transactions.push({
+      id: "tx-local",
+      kind: "income",
+      description: "Local",
+      amountCents: 1000,
+      date: "2026-07-01",
+      competenceMonth: "2026-07",
+      category: "Outros",
+      status: "pending",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+    });
+    saveAppData(local);
+
+    const { bootstrapUserData, getSyncStatusState } = await import("./data-store");
+    const boot = await bootstrapUserData("user-1");
+    expect(boot.data.transactions).toHaveLength(1);
+    expect(getSyncStatusState().status).toBe("error");
+    expect(getSyncStatusState().canRetry).toBe(true);
+  });
+
   it("debounces cloud writes", async () => {
     vi.useFakeTimers();
     mockIsFirebaseConfigured.mockReturnValue(true);
@@ -193,6 +235,7 @@ describe("data store", () => {
     await vi.advanceTimersByTimeAsync(700);
     await flushPendingCloudWrite();
     expect(mockWriteRemote).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it("recovers from sync error with retry", async () => {

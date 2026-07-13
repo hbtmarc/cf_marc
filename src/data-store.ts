@@ -1,5 +1,5 @@
 import { isFirebaseConfigured } from "./firebase-config";
-import { fetchRemoteFinance, isOfflineError, writeRemoteFinance } from "./cloud-sync";
+import { fetchRemoteFinance, isOfflineError, RemoteFinanceInvalidError, writeRemoteFinance } from "./cloud-sync";
 import {
   emptyAppData,
   isAppDataEmpty,
@@ -115,6 +115,13 @@ export async function bootstrapUserData(uid: string): Promise<{
     setSyncState("cloud");
     return { data: empty, needsMigration: false, localOnly: false };
   } catch (error) {
+    if (error instanceof RemoteFinanceInvalidError) {
+      setSyncState("error", true);
+      if (localHasData) {
+        return { data: localData, needsMigration: false, localOnly: false };
+      }
+      throw error;
+    }
     if (localHasData) {
       setSyncState("offline");
       return { data: localData, needsMigration: false, localOnly: false };

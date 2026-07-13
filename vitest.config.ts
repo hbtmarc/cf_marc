@@ -5,6 +5,6 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts"],
-    exclude: ["tests/**"],
+    exclude: ["src/firebase-rules.test.ts"],
   },
 });

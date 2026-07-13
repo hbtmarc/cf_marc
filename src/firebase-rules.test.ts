@@ -6,8 +6,8 @@ import {
   assertSucceeds,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { CLOUD_ENVELOPE_VERSION } from "../src/cloud-envelope.ts";
-import { emptyAppData } from "../src/storage.ts";
+import { CLOUD_ENVELOPE_VERSION } from "./cloud-envelope";
+import { emptyAppData } from "./storage";
 
 const PROJECT_ID = "cfmarc-rules-test";
 const RULES = readFileSync("database.rules.json", "utf8");
@@ -17,7 +17,7 @@ let env: RulesTestEnvironment;
 function validEnvelope() {
   return {
     schemaVersion: CLOUD_ENVELOPE_VERSION,
-    updatedAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: Date.now(),
     data: emptyAppData(),
   };
 }
@@ -75,13 +75,54 @@ describe("database security rules", () => {
     await assertFails(writer.ref("users/user-b/finance").set(validEnvelope()));
   });
 
-  it("rejects invalid envelope", async () => {
+  it("rejects envelope without schemaVersion", async () => {
+    const db = env.authenticatedContext("user-a").database();
+    await assertFails(
+      db.ref("users/user-a/finance").set({
+        updatedAt: Date.now(),
+        data: emptyAppData(),
+      }),
+    );
+  });
+
+  it("rejects incorrect schemaVersion", async () => {
     const db = env.authenticatedContext("user-a").database();
     await assertFails(
       db.ref("users/user-a/finance").set({
         schemaVersion: "invalid",
+        updatedAt: Date.now(),
+        data: emptyAppData(),
+      }),
+    );
+  });
+
+  it("rejects envelope without updatedAt", async () => {
+    const db = env.authenticatedContext("user-a").database();
+    await assertFails(
+      db.ref("users/user-a/finance").set({
+        schemaVersion: CLOUD_ENVELOPE_VERSION,
+        data: emptyAppData(),
+      }),
+    );
+  });
+
+  it("rejects non-numeric updatedAt", async () => {
+    const db = env.authenticatedContext("user-a").database();
+    await assertFails(
+      db.ref("users/user-a/finance").set({
+        schemaVersion: CLOUD_ENVELOPE_VERSION,
         updatedAt: "2026-07-01T00:00:00.000Z",
         data: emptyAppData(),
+      }),
+    );
+  });
+
+  it("rejects envelope without data", async () => {
+    const db = env.authenticatedContext("user-a").database();
+    await assertFails(
+      db.ref("users/user-a/finance").set({
+        schemaVersion: CLOUD_ENVELOPE_VERSION,
+        updatedAt: Date.now(),
       }),
     );
   });
@@ -89,5 +130,15 @@ describe("database security rules", () => {
   it("accepts valid envelope", async () => {
     const db = env.authenticatedContext("user-a").database();
     await assertSucceeds(db.ref("users/user-a/finance").set(validEnvelope()));
+  });
+
+  it("rejects write at database root", async () => {
+    const db = env.authenticatedContext("user-a").database();
+    await assertFails(db.ref("/").set({ public: true }));
+  });
+
+  it("rejects write at arbitrary path", async () => {
+    const db = env.authenticatedContext("user-a").database();
+    await assertFails(db.ref("public-data/any").set({ value: 1 }));
   });
 });

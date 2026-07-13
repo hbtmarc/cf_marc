@@ -9,8 +9,12 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:rules": "firebase emulators:exec --only database \"vitest run tests/database.rules.test.ts\"",
-    "emulators": "firebase emulators:start --only auth,database"
+    "firebase:login": "firebase login",
+    "firebase:projects": "firebase projects:list",
+    "firebase:emulators": "firebase emulators:start --only auth,database",
+    "firebase:test-rules": "firebase emulators:exec --only database \"vitest run src/firebase-rules.test.ts\"",
+    "firebase:deploy-database": "firebase deploy --only database --project cfmarc-marc35",
+    "firebase:deploy-auth": "firebase deploy --only auth --project cfmarc-marc35"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",

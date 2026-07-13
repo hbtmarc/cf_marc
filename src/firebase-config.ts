@@ -1,49 +1,29 @@
-export interface FirebaseWebConfig {
-  apiKey: string;
-  authDomain: string;
-  databaseURL: string;
-  projectId: string;
-  storageBucket: string;
-  messagingSenderId: string;
-  appId: string;
-}
+/**
+ * Configuração web pública do Firebase (cliente).
+ * Não incluir credenciais administrativas neste arquivo.
+ */
+export const FIREBASE_WEB_CONFIG = {
+  apiKey: "AIzaSyAUayHhNhXgL4KlkQCG1ZXbY0wtKPnz5Go",
+  authDomain: "cfmarc-marc35.firebaseapp.com",
+  databaseURL: "https://cfmarc-marc35-default-rtdb.firebaseio.com",
+  projectId: "cfmarc-marc35",
+  storageBucket: "cfmarc-marc35.firebasestorage.app",
+  messagingSenderId: "113370477136",
+  appId: "1:113370477136:web:6747c0aaca59b45e32d755",
+} as const;
 
-export function readFirebaseConfig(): FirebaseWebConfig | null {
-  const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
-  const authDomain = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN;
-  const databaseURL = import.meta.env.VITE_FIREBASE_DATABASE_URL;
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-  const storageBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET;
-  const messagingSenderId = import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID;
-  const appId = import.meta.env.VITE_FIREBASE_APP_ID;
+export type FirebaseWebConfig = typeof FIREBASE_WEB_CONFIG;
 
-  if (
-    !apiKey ||
-    !authDomain ||
-    !databaseURL ||
-    !projectId ||
-    !storageBucket ||
-    !messagingSenderId ||
-    !appId
-  ) {
-    return null;
-  }
-
-  return {
-    apiKey,
-    authDomain,
-    databaseURL,
-    projectId,
-    storageBucket,
-    messagingSenderId,
-    appId,
-  };
+export function readFirebaseConfig(): FirebaseWebConfig {
+  return FIREBASE_WEB_CONFIG;
 }
 
 export function isFirebaseConfigured(): boolean {
-  return readFirebaseConfig() !== null;
+  return true;
 }
 
 export function useFirebaseEmulators(): boolean {
   return import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true";
 }
+
+export const GITHUB_PAGES_ORIGIN = "https://hbtmarc.github.io";

@@ -2,23 +2,12 @@
 
 Aplicação web para controle financeiro pessoal mensal — receitas, despesas e faturas de cartão por competência, com sincronização na nuvem via Firebase.
 
-## Objetivo
-
-Responder rapidamente, para cada mês:
-
-- quanto pretendo receber e quanto já recebi;
-- quanto pretendo pagar e quanto já paguei;
-- qual é o saldo planejado e o saldo realizado.
-
-O cartão de crédito é controlado pela **fatura mensal**, sem compras individuais nesta etapa.
-
 ## Stack
 
 - Vite + TypeScript (modo estrito)
-- HTML semântico e CSS próprio
-- Hash routing compatível com GitHub Pages (`#/rota`)
+- Hash routing (`#/rota`) compatível com GitHub Pages
 - Firebase Authentication (Google)
-- Firebase Realtime Database
+- Firebase Realtime Database (`cfmarc-marc35`)
 - `localStorage` como cache e contingência offline
 
 ## Comandos
@@ -28,157 +17,102 @@ npm install
 npm run dev
 npm run typecheck
 npm run test
-npm run test:rules   # requer Java (Emulator Suite)
 npm run build
 npm run preview
-npm run emulators    # Auth + RTDB locais
+
+# Firebase CLI local (npx firebase)
+npm run firebase:login
+npm run firebase:projects
+npm run firebase:emulators
+npm run firebase:test-rules      # JDK 21+ e Emulator Suite
+npm run firebase:deploy-database
+npm run firebase:deploy-auth
 ```
 
-## Configuração do Firebase
+## Firebase
 
-1. Copie `.env.example` para `.env` e preencha com os valores do Firebase Console (configuração web do app).
-2. **Não** inclua service account, chave privada ou token administrativo no repositório.
-3. Para desenvolvimento local com emuladores, defina `VITE_USE_FIREBASE_EMULATORS=true`.
-4. Sem variáveis configuradas, o app opera em modo somente local (útil para testes e CI).
+**Projeto:** `cfmarc-marc35`  
+**RTDB:** `https://cfmarc-marc35-default-rtdb.firebaseio.com`  
+**GitHub Pages:** `https://hbtmarc.github.io/cf_marc/`
 
-Variáveis Vite:
+A configuração web pública está versionada em `src/firebase-config.ts`. Não há secrets do Firebase no GitHub Actions — o bundle já contém os valores públicos do cliente.
+
+Única variável de ambiente opcional (`.env.example`):
 
 | Variável | Uso |
 |----------|-----|
-| `VITE_FIREBASE_API_KEY` | API key pública |
-| `VITE_FIREBASE_AUTH_DOMAIN` | Domínio Auth |
-| `VITE_FIREBASE_DATABASE_URL` | URL do RTDB |
-| `VITE_FIREBASE_PROJECT_ID` | ID do projeto |
-| `VITE_FIREBASE_STORAGE_BUCKET` | Bucket (config web) |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Sender ID |
-| `VITE_FIREBASE_APP_ID` | App ID |
-| `VITE_USE_FIREBASE_EMULATORS` | `true` para emuladores locais |
+| `VITE_USE_FIREBASE_EMULATORS` | `true` → Auth `127.0.0.1:9099`, RTDB `127.0.0.1:9000` |
 
-### Passos manuais no Firebase Console
+**Nunca** versionar service account, chave privada ou token administrativo.
 
-- Habilitar **Google** como provedor de login em Authentication.
-- Adicionar domínios autorizados: `localhost`, URL do GitHub Pages (`*.github.io`).
-- Publicar as regras: `firebase deploy --only database`.
+**App Check** — hardening futuro; não implementado.
 
-**App Check** pode ser adicionado futuramente como hardening; não está implementado neste MVP.
+## Arquitetura
 
-## Arquitetura de dados
-
-### Caminho no Realtime Database
+### Caminho RTDB
 
 ```text
 users/{uid}/finance
 ```
 
-### Envelope na nuvem
+### Envelope
 
 ```json
 {
   "schemaVersion": "cfm.cloud.v1",
-  "updatedAt": "2026-07-01T00:00:00.000Z",
-  "data": { /* AppData completo — schema cfm.local.v2 */ }
+  "updatedAt": 1719792000000,
+  "data": { /* AppData — schema interno cfm.local.v2 */ }
 }
 ```
 
-- Um snapshot financeiro por usuário (MVP).
-- Validação e normalização reutilizam `storage.ts`.
-- Edições simultâneas em dois dispositivos: prevalece a gravação mais recente (sem merge campo a campo).
+### Camadas
 
-### Fonte de verdade e cache
+| Arquivo | Função |
+|---------|--------|
+| `firebase-config.ts` | Config pública do projeto |
+| `firebase.ts` | Init SDK (`getApps`/`getApp`) |
+| `auth-service.ts` | Google popup/redirect, persistência local, logout |
+| `cloud-sync.ts` | Leitura/escrita RTDB |
+| `data-store.ts` | Bootstrap, migração, debounce 600 ms, estados de sync |
+| `storage.ts` | Cache `cfm:v2:appData` |
 
-| Situação | Comportamento |
-|----------|---------------|
-| Autenticado + online | Firebase é a fonte principal; cada leitura válida atualiza `localStorage` |
-| Offline / falha temporária | Cache local continua legível e gravável |
-| Sem Firebase configurado | Somente `localStorage` (testes, CI) |
+### Fonte de verdade
 
-Chave local: `cfm:v2:appData` — schema `cfm.local.v2`.
+Após login: **Firebase** é principal; `localStorage` é cache. Offline continua legível/gravável localmente. Política do MVP: **última gravação válida vence**.
 
-### Migração inicial
+### Migração
 
-| Cenário | Ação |
-|---------|------|
-| Remoto com dados | Carrega remoto; atualiza cache; **não** sobrescreve com local |
-| Remoto vazio + local com dados | Modal de confirmação antes de enviar |
-| Ambos vazios | Estado vazio normal |
+| Cenário | Comportamento |
+|---------|---------------|
+| Remoto válido | Carrega remoto; atualiza cache; não sobrescreve com local |
+| Remoto vazio + local com dados | Modal confirmável |
+| Ambos vazios | `emptyAppData()` |
+| Remoto inválido | Mantém cache local; erro recuperável |
 
-Os dados locais **não** são apagados após a migração.
+### Security Rules
 
-### Sincronização
+Negam tudo por padrão. Acesso somente em `users/{uid}/finance` quando `auth.uid === $uid`. Envelope validado (`schemaVersion`, `updatedAt` numérico, `data`).
 
-Estados na sidebar (`role="status"`, `aria-live="polite"`):
+Publicar: `npm run firebase:deploy-database`
 
-- Conectando…
-- Sincronizando…
-- Salvo na nuvem
-- Offline — salvo neste dispositivo
-- Erro ao sincronizar (+ **Tentar novamente** quando aplicável)
+## GitHub Pages
 
-Gravações remotas usam debounce de 600 ms; ações concluídas são persistidas. O app tenta aguardar gravações pendentes ao sair.
+- Base do build: `/cf_marc/`
+- Workflow: `.github/workflows/deploy.yml` (typecheck → test → build → deploy)
+- Domínios autorizados no Auth: `localhost`, `hbtmarc.github.io`, `cfmarc-marc35.firebaseapp.com`
 
-## Security Rules
-
-Arquivo: `database.rules.json`
-
-- Negar leitura/escrita por padrão.
-- Permitir somente `auth.uid === $uid` em `users/$uid/finance`.
-- Validar envelope (`schemaVersion`, `updatedAt`, `data`).
-
-Testes: `npm run test:rules` (Firebase Emulator Suite + Vitest). Requer **Java** instalado.
-
-## Deploy — GitHub Pages
-
-- Base do Vite: `/cf_marc/` (build e preview).
-- Workflow: `.github/workflows/deploy.yml` — typecheck, testes, build e deploy.
-- Configure os secrets `VITE_FIREBASE_*` no repositório GitHub para o build de produção.
-- Host permanece no GitHub Pages (não Firebase Hosting).
-
-Pré-visualizar o build como no Pages:
+Pré-visualizar build como no Pages:
 
 ```bash
 npm run build
 mkdir -p .preview/cf_marc && cp -R dist/* .preview/cf_marc/
 npx serve .preview -l 4177
-# abrir http://localhost:4177/cf_marc/
+# http://localhost:4177/cf_marc/
 ```
 
-## Estrutura principal
+## Recuperação offline
 
-```text
-src/
-  app.ts              # bootstrap, auth gate, migração
-  data-store.ts       # sync, debounce, estados
-  firebase.ts         # init SDK modular
-  cloud-sync.ts       # leitura/escrita RTDB
-  cloud-envelope.ts   # envelope cfm.cloud.v1
-  auth-service.ts     # Google sign-in/out
-  auth-screen.ts      # tela de acesso
-  storage.ts          # localStorage + validação AppData
-  pages/              # telas do MVP
-```
-
-## Recuperação com cache local
-
-Se a sincronização falhar de forma persistente:
-
-1. Os dados continuam disponíveis no navegador (`cfm:v2:appData`).
-2. Corrija conectividade ou credenciais Firebase.
-3. Use **Tentar novamente** na sidebar ou recarregue após autenticar.
-4. Se o remoto estiver vazio e o local tiver dados, o fluxo de migração oferece envio manual.
-
-## Limites atuais
-
-- Login somente com Google
-- Sem colaboração em tempo real nem resolução avançada de conflitos
-- Sem Cloud Functions, Firestore, Storage, PWA ou service worker
-- Sem novas funcionalidades financeiras nesta etapa
-
-## Legado preservado
-
-| Item | Referência |
-|------|------------|
-| Commit funcional anterior | `bebde71` |
-| Tag | `legacy-v0.6.0` |
+Dados permanecem em `cfm:v2:appData`. Após reconectar, use **Tentar novamente** na sidebar ou recarregue autenticado.
 
 ## Licença
 

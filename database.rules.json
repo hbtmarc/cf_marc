@@ -4,10 +4,10 @@
     ".write": false,
     "users": {
       "$uid": {
-        ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid",
         "finance": {
-          ".validate": "newData.hasChildren(['schemaVersion', 'updatedAt', 'data']) && newData.child('schemaVersion').isString() && newData.child('schemaVersion').val() == 'cfm.cloud.v1' && newData.child('updatedAt').isString() && newData.child('data').exists()"
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['schemaVersion', 'updatedAt', 'data']) && newData.child('schemaVersion').val() === 'cfm.cloud.v1' && newData.child('updatedAt').isNumber() && newData.child('data').exists()"
         }
       }
     }
