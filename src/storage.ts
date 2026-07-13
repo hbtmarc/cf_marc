@@ -170,6 +170,32 @@ function isTransactionDescriptionAlias(value: unknown): boolean {
   );
 }
 
+function isMonthlyBalance(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const noteValid = value.note === undefined || typeof value.note === "string";
+  return (
+    typeof value.id === "string" &&
+    typeof value.competenceMonth === "string" &&
+    typeof value.incomeCents === "number" &&
+    Number.isInteger(value.incomeCents) &&
+    typeof value.expenseCents === "number" &&
+    Number.isInteger(value.expenseCents) &&
+    typeof value.balanceCents === "number" &&
+    Number.isInteger(value.balanceCents) &&
+    typeof value.projectedBalanceCents === "number" &&
+    Number.isInteger(value.projectedBalanceCents) &&
+    typeof value.fixedBillsCents === "number" &&
+    Number.isInteger(value.fixedBillsCents) &&
+    typeof value.invoicesCents === "number" &&
+    Number.isInteger(value.invoicesCents) &&
+    noteValid &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
 export function emptyAppData(): AppData {
   return {
     schemaVersion: "cfm.local.v2",
@@ -181,6 +207,7 @@ export function emptyAppData(): AppData {
     recurringMatches: [],
     ignoredRecurringSuggestions: [],
     transactionDescriptionAliases: [],
+    monthlyBalances: [],
   };
 }
 
@@ -254,6 +281,15 @@ export function validateAppData(value: unknown): value is AppData {
     }
   }
 
+  if (value.monthlyBalances !== undefined) {
+    if (
+      !Array.isArray(value.monthlyBalances) ||
+      !value.monthlyBalances.every(isMonthlyBalance)
+    ) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -273,6 +309,19 @@ function normalizeAppData(data: AppData): AppData {
   if (!data.transactionDescriptionAliases) {
     data.transactionDescriptionAliases = [];
   }
+  if (!data.monthlyBalances) {
+    data.monthlyBalances = [];
+  }
+  const balancesByMonth = new Map<string, (typeof data.monthlyBalances)[number]>();
+  for (const balance of data.monthlyBalances) {
+    const existing = balancesByMonth.get(balance.competenceMonth);
+    if (!existing || balance.updatedAt > existing.updatedAt) {
+      balancesByMonth.set(balance.competenceMonth, balance);
+    }
+  }
+  data.monthlyBalances = [...balancesByMonth.values()].sort((left, right) =>
+    right.competenceMonth.localeCompare(left.competenceMonth),
+  );
   const seenIgnored = new Set<string>();
   data.ignoredRecurringSuggestions = data.ignoredRecurringSuggestions.filter((item) => {
     if (seenIgnored.has(item.signature)) {

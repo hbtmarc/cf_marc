@@ -1,4 +1,5 @@
 import { renderAjustes } from "./pages/ajustes";
+import { renderBalanco } from "./pages/balanco";
 import { renderDashboard } from "./pages/dashboard";
 import { renderFaturas, renderFaturasHeaderActions } from "./pages/faturas";
 import { renderImportar, resetImportarPage } from "./pages/importar";
@@ -46,6 +47,7 @@ let pageOverline: HTMLElement | null = null;
 
 const COMPETENCE_ROUTES: RoutePath[] = [
   "/dashboard",
+  "/balanco",
   "/lancamentos",
   "/faturas",
   "/planejamento",
@@ -53,6 +55,7 @@ const COMPETENCE_ROUTES: RoutePath[] = [
 
 const PAGE_OVERLINE: Record<RoutePath, string> = {
   "/dashboard": "Competência",
+  "/balanco": "Competência",
   "/lancamentos": "Competência",
   "/faturas": "Competência",
   "/planejamento": "Competência",
@@ -167,6 +170,9 @@ function renderMain(): void {
     case "/dashboard":
       renderDashboard(mainHost, state.data, mutations, rerender);
       break;
+    case "/balanco":
+      renderBalanco(mainHost, state.data, mutations, rerender, setCompetenceMonth);
+      break;
     case "/lancamentos":
       renderLancamentos(mainHost, state.data, mutations, rerender);
       break;
@@ -210,6 +216,7 @@ function render(): void {
 function registerRoutes(): void {
   const routes: RoutePath[] = [
     "/dashboard",
+    "/balanco",
     "/lancamentos",
     "/faturas",
     "/planejamento",

@@ -281,3 +281,14 @@ export function buildDashboardCardSummary(
     lines: sortDashboardInvoiceLines(lines, today),
   };
 }
+
+export function buildDashboardInvoicesSubtotalCents(
+  data: AppData,
+  competenceMonth: string,
+): number {
+  const summary = buildDashboardCardSummary(data, competenceMonth);
+  if (!summary) {
+    return 0;
+  }
+  return sumCents(summary.lines.map((item) => item.totalCents));
+}

@@ -162,6 +162,20 @@ export interface RecurringOccurrenceResolution {
   differenceCents?: number;
 }
 
+export interface MonthlyBalance {
+  id: string;
+  competenceMonth: string;
+  incomeCents: number;
+  expenseCents: number;
+  balanceCents: number;
+  projectedBalanceCents: number;
+  fixedBillsCents: number;
+  invoicesCents: number;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AppData {
   schemaVersion: "cfm.local.v2";
   selectedCompetenceMonth: string;
@@ -173,10 +187,12 @@ export interface AppData {
   recurringMatches?: RecurringMatch[];
   ignoredRecurringSuggestions?: IgnoredRecurringSuggestion[];
   transactionDescriptionAliases?: TransactionDescriptionAlias[];
+  monthlyBalances?: MonthlyBalance[];
 }
 
 export type RoutePath =
   | "/dashboard"
+  | "/balanco"
   | "/lancamentos"
   | "/faturas"
   | "/planejamento"

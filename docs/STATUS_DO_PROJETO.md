@@ -2,8 +2,65 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 8 concluída — Dashboard executivo definitivo  
-**Próximo marco:** Etapa 9 — Balanço Mensal, Firebase, autenticação e sincronização
+**Etapa atual:** Etapa 9 concluída — Balanço mensal mínimo  
+**Próximo marco:** Etapa 10 — Firebase e sincronização
+
+---
+
+## Etapa 9 — concluída
+
+### Objetivo
+
+Página `#/balanco` para visualizar a situação atual da competência, registrar uma fotografia financeira persistida e consultar histórico de balanços. O usuário não digita valores — apenas confere, opcionalmente observa e registra ou atualiza.
+
+### Modelo persistido
+
+Coleção retrocompatível `monthlyBalances?: MonthlyBalance[]` em `AppData`:
+
+| Campo | Função |
+|-------|--------|
+| `id` | Determinístico: `monthly-balance:<competenceMonth>` |
+| `competenceMonth` | Competência única por registro |
+| `incomeCents` / `expenseCents` / `balanceCents` / `projectedBalanceCents` | Fotografia dos quatro KPIs |
+| `fixedBillsCents` / `invoicesCents` | Subtotais registrados |
+| `note?` | Observação opcional |
+| `createdAt` / `updatedAt` | Registro e última atualização |
+
+Um único balanço por competência. Projetos antigos carregam com `monthlyBalances: []`.
+
+### Origem dos cálculos
+
+Valores atuais e da fotografia calculados por `buildMonthlyBalanceSnapshot()`:
+
+- **Quatro KPIs:** exclusivamente `calculateCompetenceSummary()` (`incomeSettledCents`, `expensePaidCents`, `balanceRealizedCents`, `balancePlannedCents`).
+- **Fixas:** `buildDashboardFixedBills().subtotalCents` (mesma regra do Dashboard).
+- **Faturas:** `buildDashboardInvoicesSubtotalCents()` (soma de `totalCents` por cartão, fatura real prevalece sobre projeção).
+
+Sem recálculo em apresentação, página ou storage.
+
+### Semântica de fotografia financeira
+
+Ao registrar, os valores são copiados para `MonthlyBalance` — não há referência mutável ao resumo. Alterações posteriores em transações, faturas ou recorrências não mudam o balanço registrado; a seção **Situação atual** continua refletindo os valores vivos.
+
+### Comportamento de atualização
+
+**Atualizar balanço** substitui os valores da mesma competência, preserva `id` e `createdAt`, atualiza `updatedAt` e não cria duplicata. Sem versionamento nem histórico de revisões no mesmo mês.
+
+### Estrutura visual
+
+Coluna única: Situação atual (4 KPIs), Subtotais (Fixas e Faturas), Balanço da competência (não registrado ou registrado), Histórico de balanços. Modais via `openModal` para registrar e atualizar.
+
+### Limitações intencionais
+
+Sem orçamento, metas, gráficos, comparação entre meses, fechamento contábil, bloqueio de competência, exclusão de balanço, exportação/PDF, Firebase, autenticação ou sincronização.
+
+### Testes
+
+336 testes passando (`monthly-balance.test.ts`, `balanco.test.ts` e suíte existente intacta).
+
+### Evidências visuais
+
+`docs/screenshots-etapa9/` — `balanco-empty-1440.png`, `balanco-registered-1440.png`, `balanco-modal-1440.png`, `balanco-history-1440.png`, `balanco-registered-390.png`, `balanco-modal-390.png`.
 
 ---
 

@@ -4,6 +4,7 @@ const SVG_ATTRS = 'xmlns="http://www.w3.org/2000/svg" width="20" height="20" fil
 
 export type NavIconName =
   | "dashboard"
+  | "balanco"
   | "lancamentos"
   | "faturas"
   | "planejamento"
@@ -13,6 +14,8 @@ export type NavIconName =
 const NAV_ICON_PATHS: Record<NavIconName, string> = {
   dashboard:
     '<path d="M224,115.55V208a16,16,0,0,1-16,16H168a16,16,0,0,1-16-16V168a8,8,0,0,0-8-8H112a8,8,0,0,0-8,8v40a16,16,0,0,1-16,16H48a16,16,0,0,1-16-16V115.55a16,16,0,0,1,5.17-11.78l80-75.48.11-.11a16,16,0,0,1,21.53,0l80,75.48A16,16,0,0,1,224,115.55Z"/>',
+  balanco:
+    '<path d="M128,32a96,96,0,1,0,96,96A96.11,96.11,0,0,0,128,32Zm0,176a80,80,0,1,1,80-80A80.09,80.09,0,0,1,128,208Zm40-92a8,8,0,0,1-8,8H96a8,8,0,0,1,0-16h64A8,8,0,0,1,168,116Zm-16,32a8,8,0,0,1-8,8H112a8,8,0,0,1,0-16h32A8,8,0,0,1,152,148Z"/>',
   lancamentos:
     '<path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z"/>',
   faturas:
@@ -27,6 +30,7 @@ const NAV_ICON_PATHS: Record<NavIconName, string> = {
 
 const ROUTE_ICON: Record<string, NavIconName> = {
   "/dashboard": "dashboard",
+  "/balanco": "balanco",
   "/lancamentos": "lancamentos",
   "/faturas": "faturas",
   "/planejamento": "planejamento",

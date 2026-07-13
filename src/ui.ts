@@ -562,6 +562,7 @@ export function bindCompetenceShortcuts(
 
 const NAV_SHORT_LABELS: Record<RoutePath, string> = {
   "/dashboard": "Início",
+  "/balanco": "Balanço",
   "/lancamentos": "Lanç.",
   "/faturas": "Faturas",
   "/planejamento": "Plan.",
@@ -571,6 +572,7 @@ const NAV_SHORT_LABELS: Record<RoutePath, string> = {
 
 const NAV_LABELS: Record<RoutePath, string> = {
   "/dashboard": "Visão geral",
+  "/balanco": "Balanço mensal",
   "/lancamentos": "Lançamentos",
   "/faturas": "Cartões e faturas",
   "/planejamento": "Planejamento",
@@ -579,7 +581,7 @@ const NAV_LABELS: Record<RoutePath, string> = {
 };
 
 const NAV_GROUPS: Array<{ label: string; routes: RoutePath[] }> = [
-  { label: "Principal", routes: ["/dashboard"] },
+  { label: "Principal", routes: ["/dashboard", "/balanco"] },
   { label: "Operação", routes: ["/lancamentos", "/planejamento", "/importar"] },
   { label: "Crédito", routes: ["/faturas"] },
   { label: "Sistema", routes: ["/ajustes"] },
@@ -587,6 +589,7 @@ const NAV_GROUPS: Array<{ label: string; routes: RoutePath[] }> = [
 
 const PAGE_DESC_EXTENDED: Record<RoutePath, string> = {
   "/dashboard": "Situação atual, compromissos e fechamento projetado da competência.",
+  "/balanco": "Fotografia financeira da competência com registro e histórico de balanços.",
   "/lancamentos": "Ledger operacional com busca, filtros e ações sobre receitas e despesas.",
   "/faturas": "Cartões, faturas da competência e compromissos de crédito.",
   "/planejamento": "Receitas previstas, fixas, assinaturas e conciliação com lançamentos.",
