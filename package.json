@@ -8,12 +8,20 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:rules": "firebase emulators:exec --only database \"vitest run tests/database.rules.test.ts\"",
+    "emulators": "firebase emulators:start --only auth,database"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.1",
+    "firebase-tools": "^15.23.0",
     "jsdom": "^29.1.1",
+    "playwright": "^1.49.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "firebase": "^12.16.0"
   }
 }

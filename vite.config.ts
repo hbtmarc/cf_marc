@@ -1,5 +1,5 @@
 import { defineConfig } from "vite";
 
 export default defineConfig(({ command }) => ({
-  base: command === "build" ? "/cf_marc/" : "/",
+  base: command === "serve" ? "/" : "/cf_marc/",
 }));

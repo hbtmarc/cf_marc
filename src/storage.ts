@@ -293,7 +293,20 @@ export function validateAppData(value: unknown): value is AppData {
   return true;
 }
 
-function normalizeAppData(data: AppData): AppData {
+export function isAppDataEmpty(data: AppData): boolean {
+  return (
+    data.transactions.length === 0 &&
+    data.cards.length === 0 &&
+    data.invoices.length === 0 &&
+    (data.recurringRules ?? []).length === 0 &&
+    (data.recurringMatches ?? []).length === 0 &&
+    (data.monthlyBalances ?? []).length === 0 &&
+    (data.transactionDescriptionAliases ?? []).length === 0 &&
+    (data.ignoredRecurringSuggestions ?? []).length === 0
+  );
+}
+
+export function normalizeAppData(data: AppData): AppData {
   if (!data.importMeta) {
     data.importMeta = { fingerprints: [] };
   }

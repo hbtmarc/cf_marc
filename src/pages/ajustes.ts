@@ -11,9 +11,23 @@ export function renderAjustes(
   mutations: AppMutations,
   rerender: () => void,
   onClearData: () => void,
+  showSignOut = false,
+  onSignOut?: () => void | Promise<void>,
 ): void {
   host.innerHTML = "";
   const flow = el("div", "settings-layout");
+
+  if (showSignOut) {
+    const accountSection = el("section", "settings-section");
+    accountSection.innerHTML = renderSectionHeader("Conta");
+    const signOutButton = el("button", "btn btn--secondary", "Sair");
+    signOutButton.type = "button";
+    signOutButton.addEventListener("click", () => {
+      void onSignOut?.();
+    });
+    accountSection.appendChild(signOutButton);
+    flow.appendChild(accountSection);
+  }
 
   const cardsSection = el("section", "settings-section");
   const cardsHeaderWrap = el("div", "section-header section-header--split");
@@ -80,7 +94,11 @@ export function renderAjustes(
   storageSection.innerHTML = `
     ${renderSectionHeader("Armazenamento local")}
     <p class="text-body">
-      Seus dados ficam armazenados neste navegador e não são sincronizados automaticamente com outros dispositivos.
+      ${
+        showSignOut
+          ? "Os dados são sincronizados na nuvem e mantidos em cache neste navegador."
+          : "Seus dados ficam armazenados neste navegador e não são sincronizados automaticamente com outros dispositivos."
+      }
     </p>
     <details class="settings-details">
       <summary>Detalhes técnicos</summary>

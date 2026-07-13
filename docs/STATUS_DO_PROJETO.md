@@ -2,8 +2,64 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 9 concluída — Balanço mensal mínimo  
-**Próximo marco:** Etapa 10 — Firebase e sincronização
+**Etapa atual:** Etapa 10 concluída — Firebase, autenticação e publicação  
+**Próximo marco:** a definir (fora do escopo desta entrega)
+
+---
+
+## Etapa 10 — concluída
+
+### Objetivo
+
+Publicar o MVP na nuvem com autenticação Google, persistência no Firebase Realtime Database, Security Rules, cache local como contingência, migração segura dos dados do dispositivo e deploy estático no GitHub Pages — sem novas funcionalidades financeiras nem redesenho de telas.
+
+### Arquitetura
+
+| Camada | Responsabilidade |
+|--------|------------------|
+| `auth-service.ts` / `auth-screen.ts` | Login Google, logout, tela de acesso |
+| `firebase.ts` / `firebase-config.ts` | Init SDK modular; emuladores quando `VITE_USE_FIREBASE_EMULATORS=true` |
+| `cloud-envelope.ts` | Envelope `cfm.cloud.v1` em `users/{uid}/finance` |
+| `cloud-sync.ts` | Leitura/escrita RTDB |
+| `data-store.ts` | Bootstrap, migração, debounce 600 ms, estados de sync |
+| `storage.ts` | Cache `cfm:v2:appData`; `isAppDataEmpty`, `normalizeAppData` exportados |
+| `app.ts` | Auth gate; app inacessível até auth + bootstrap; modal de migração |
+
+### RTDB
+
+```text
+users/{uid}/finance → { schemaVersion, updatedAt, data: AppData }
+```
+
+### Migração
+
+- **Remoto com dados:** carrega remoto; não sobrescreve com local.
+- **Remoto vazio + local com dados:** modal “Levar dados deste dispositivo para a nuvem”; cancelável.
+- **Ambos vazios:** estado vazio; grava após primeira alteração útil.
+
+### Estados de sincronização
+
+`Conectando…` · `Sincronizando…` · `Salvo na nuvem` · `Offline — salvo neste dispositivo` · `Erro ao sincronizar` (+ retry). `role="status"`, `aria-live="polite"`.
+
+### Security Rules
+
+`database.rules.json` — deny por padrão; acesso somente ao próprio `uid`; validação do envelope. Testes: `npm run test:rules` (8 cenários; requer Java + Emulator Suite).
+
+### GitHub Pages
+
+Workflow `.github/workflows/deploy.yml` — typecheck, testes, build com secrets `VITE_FIREBASE_*`, deploy Pages. Base `/cf_marc/`, hash routing preservado.
+
+### Limitações mantidas
+
+Sem colaboração em tempo real, merge campo a campo, App Check, Firebase Hosting, novas fórmulas financeiras ou reskin. Edições simultâneas em dois dispositivos: gravação mais recente prevalece.
+
+### Testes
+
+346 testes unitários (`npm test`) + 8 testes de rules (`npm run test:rules`, quando Java/emulador disponíveis). `npm run typecheck` e `npm run build` validados.
+
+### Evidências visuais
+
+`docs/screenshots-etapa10/` — login desktop/mobile, modal de migração, app sincronizado, offline, erro com retry, logout, dashboard 1440/390, refresh em rota interna no build de produção.
 
 ---
 

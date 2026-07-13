@@ -240,11 +240,17 @@ body.modal-open {
 
 .sidebar__footnote {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-2);
   margin: 0;
   font-size: var(--text-micro);
   color: var(--color-text-secondary);
+}
+
+.sidebar__retry {
+  align-self: flex-start;
+  padding-inline: 0;
 }
 
 .sidebar__status {
@@ -3757,4 +3763,50 @@ body.modal-open {
   .planejamento-summary__grid {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+/* ── Etapa 10: autenticação ──────────────────────────────── */
+
+.auth-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: var(--space-6) var(--space-4);
+  background: var(--color-bg);
+}
+
+.auth-screen__card {
+  width: min(100%, 28rem);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.auth-screen__mark {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-overline);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  color: var(--color-action);
+}
+
+.auth-screen__title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-title);
+  font-weight: var(--weight-heavy);
+}
+
+.auth-screen__text {
+  margin: 0 0 var(--space-5);
+  color: var(--color-text-secondary);
+}
+
+.auth-screen__error {
+  margin: 0 0 var(--space-4);
+  color: var(--color-expense);
+}
+
+.auth-screen__button {
+  width: 100%;
 }

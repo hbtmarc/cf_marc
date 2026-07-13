@@ -1,3 +1,6 @@
+import type { User } from "firebase/auth";
+import { renderAuthLoading, renderAuthScreen } from "./auth-screen";
+import { signInWithGoogle, signOutUser, subscribeAuthState } from "./auth-service";
 import { renderAjustes } from "./pages/ajustes";
 import { renderBalanco } from "./pages/balanco";
 import { renderDashboard } from "./pages/dashboard";
@@ -14,9 +17,20 @@ import {
   startRouter,
 } from "./router";
 import {
+  bootstrapUserData,
+  bindCloudUser,
+  migrateLocalDataToCloud,
+  persistAppData,
+  retryCloudSync,
+  subscribeSyncStatus,
+  waitForPendingCloudWrite,
+  type SyncStatusState,
+} from "./data-store";
+import { isFirebaseConfigured } from "./firebase-config";
+import { initFirebase } from "./firebase";
+import {
   emptyAppData,
   loadAppData,
-  saveAppData,
   type LoadError,
 } from "./storage";
 import type { AppData, RoutePath } from "./types";
@@ -26,6 +40,7 @@ import {
   bindCompetenceShortcuts,
   clearChildren,
   initUiRoots,
+  openConfirmModal,
   renderCompetenceBar,
   renderNav,
   renderStorageError,
@@ -37,6 +52,7 @@ interface AppState {
   data: AppData;
   storageError: LoadError | null;
   route: RoutePath;
+  ready: boolean;
 }
 
 let state: AppState;
@@ -44,6 +60,11 @@ let mainHost: HTMLElement | null = null;
 let competenceHost: HTMLElement | null = null;
 let pageActionsHost: HTMLElement | null = null;
 let pageOverline: HTMLElement | null = null;
+let appShell: HTMLElement | null = null;
+let authHost: HTMLElement | null = null;
+let syncStatusHost: HTMLElement | null = null;
+let currentUser: User | null = null;
+let authResolved = false;
 
 const COMPETENCE_ROUTES: RoutePath[] = [
   "/dashboard",
@@ -65,11 +86,11 @@ const PAGE_OVERLINE: Record<RoutePath, string> = {
 
 const mutations: AppMutations = {
   update(mutator) {
-    if (state.storageError) {
+    if (!state.ready || state.storageError) {
       return;
     }
     mutator(state.data);
-    const saved = saveAppData(state.data);
+    const saved = persistAppData(state.data);
     if (!saved) {
       announce("Não foi possível salvar os dados locais.");
       return;
@@ -79,8 +100,11 @@ const mutations: AppMutations = {
 };
 
 function setCompetenceMonth(month: string): void {
+  if (!state.ready) {
+    return;
+  }
   state.data.selectedCompetenceMonth = month;
-  const saved = saveAppData(state.data);
+  const saved = persistAppData(state.data);
   if (!saved) {
     announce("Não foi possível salvar a competência selecionada.");
     return;
@@ -88,7 +112,52 @@ function setCompetenceMonth(month: string): void {
   render();
 }
 
+function renderSyncStatus(stateSync: SyncStatusState): void {
+  if (!syncStatusHost) {
+    return;
+  }
+  syncStatusHost.innerHTML = `
+    <span class="sidebar__status" aria-hidden="true"></span>
+    <span role="status" aria-live="polite">${stateSync.message}</span>
+    ${
+      stateSync.canRetry
+        ? `<button type="button" class="sidebar__retry btn btn--ghost btn--compact" data-action="retry-sync">Tentar novamente</button>`
+        : ""
+    }
+  `;
+  syncStatusHost
+    .querySelector<HTMLButtonElement>('[data-action="retry-sync"]')
+    ?.addEventListener("click", () => {
+      void retryCloudSync(state.data);
+    });
+}
+
+function showAuthView(node: HTMLElement): void {
+  if (appShell) {
+    appShell.hidden = true;
+  }
+  if (!authHost) {
+    return;
+  }
+  clearChildren(authHost);
+  authHost.hidden = false;
+  authHost.appendChild(node);
+}
+
+function showAppShell(): void {
+  if (authHost) {
+    authHost.hidden = true;
+    clearChildren(authHost);
+  }
+  if (appShell) {
+    appShell.hidden = false;
+  }
+}
+
 function renderCompetence(): void {
+  if (!state.ready) {
+    return;
+  }
   if (pageOverline) {
     pageOverline.textContent = PAGE_OVERLINE[state.route];
   }
@@ -117,7 +186,7 @@ function renderCompetence(): void {
 }
 
 function renderPageHeaderActions(rerender: () => void): void {
-  if (!pageActionsHost) {
+  if (!state.ready || !pageActionsHost) {
     return;
   }
   clearChildren(pageActionsHost);
@@ -139,6 +208,9 @@ function renderPageHeaderActions(rerender: () => void): void {
 }
 
 function renderNavigation(route: RoutePath): void {
+  if (!state.ready) {
+    return;
+  }
   const sidebar = document.getElementById("sidebar-nav");
   const bottomNav = document.getElementById("bottom-nav");
   if (sidebar) {
@@ -150,7 +222,7 @@ function renderNavigation(route: RoutePath): void {
 }
 
 function renderMain(): void {
-  if (!mainHost) {
+  if (!mainHost || !state.ready) {
     return;
   }
 
@@ -183,19 +255,26 @@ function renderMain(): void {
       renderPlanejamento(mainHost, state.data, mutations, rerender);
       break;
     case "/importar":
-      renderImportar(
-        mainHost,
-        () => state.data,
-        mutations,
-        rerender,
-      );
+      renderImportar(mainHost, () => state.data, mutations, rerender);
       break;
     case "/ajustes":
-      renderAjustes(mainHost, state.data, mutations, rerender, () => {
-        state.data = emptyAppData();
-        state.storageError = null;
-        render();
-      });
+      renderAjustes(
+        mainHost,
+        state.data,
+        mutations,
+        rerender,
+        () => {
+          state.data = emptyAppData();
+          state.storageError = null;
+          persistAppData(state.data);
+          render();
+        },
+        isFirebaseConfigured() && currentUser !== null,
+        async () => {
+          await waitForPendingCloudWrite();
+          await signOutUser();
+        },
+      );
       break;
     default:
       navigate("/dashboard");
@@ -204,6 +283,9 @@ function renderMain(): void {
 }
 
 function render(): void {
+  if (!state.ready) {
+    return;
+  }
   const rerender = (): void => {
     render();
   };
@@ -213,7 +295,14 @@ function render(): void {
   renderMain();
 }
 
+let routesRegistered = false;
+let routerStarted = false;
+
 function registerRoutes(): void {
+  if (routesRegistered) {
+    return;
+  }
+  routesRegistered = true;
   const routes: RoutePath[] = [
     "/dashboard",
     "/balanco",
@@ -226,6 +315,9 @@ function registerRoutes(): void {
 
   for (const route of routes) {
     registerRoute(route, () => {
+      if (!state.ready) {
+        return;
+      }
       if (state.route === "/importar" && route !== "/importar") {
         resetImportarPage();
       }
@@ -246,7 +338,8 @@ function buildShell(): void {
   }
 
   app.innerHTML = `
-    <div class="app-shell">
+    <div id="auth-host" hidden></div>
+    <div class="app-shell" hidden>
       <a class="skip-link" href="#main-content">Ir para o conteúdo</a>
       <aside class="sidebar" aria-label="Navegação principal">
         <div class="sidebar__brand">
@@ -256,10 +349,7 @@ function buildShell(): void {
         </div>
         <nav id="sidebar-nav" class="sidebar__nav" aria-label="Seções"></nav>
         <footer class="sidebar__footer">
-          <p class="sidebar__footnote">
-            <span class="sidebar__status" aria-hidden="true"></span>
-            Salvo neste dispositivo
-          </p>
+          <p class="sidebar__footnote" id="sync-status-host"></p>
           <a class="sidebar__footnote-link" href="#/ajustes">Ajustes</a>
         </footer>
       </aside>
@@ -285,35 +375,165 @@ function buildShell(): void {
     </div>
   `;
 
+  authHost = document.getElementById("auth-host");
+  appShell = app.querySelector<HTMLElement>(".app-shell");
   mainHost = document.getElementById("main-content");
   competenceHost = document.getElementById("competence-host");
   pageActionsHost = document.getElementById("page-actions-host");
   pageOverline = document.querySelector(".page-header__overline");
+  syncStatusHost = document.getElementById("sync-status-host");
+}
+
+function promptMigration(data: AppData, uid: string): Promise<void> {
+  return new Promise((resolve) => {
+    openConfirmModal({
+      title: "Levar dados deste dispositivo para a nuvem",
+      message:
+        "Foram encontrados dados financeiros salvos neste dispositivo. Eles serão copiados para a sua conta autenticada. Os dados locais permanecem como cache.",
+      confirmLabel: "Levar para a nuvem",
+      cancelLabel: "Agora não",
+      onConfirm: () => {
+        void migrateLocalDataToCloud(uid, data).finally(resolve);
+      },
+      onCancel: () => {
+        resolve();
+      },
+    });
+  });
+}
+
+async function activateUser(user: User): Promise<void> {
+  currentUser = user;
+  bindCloudUser(user.uid);
+  showAuthView(renderAuthLoading());
+
+  try {
+    const boot = await bootstrapUserData(user.uid);
+    if (boot.needsMigration) {
+      await promptMigration(boot.data, user.uid);
+    }
+
+    state = {
+      data: boot.data,
+      storageError: null,
+      route: resolveRoute(),
+      ready: true,
+    };
+    showAppShell();
+    registerRoutes();
+    if (!routerStarted) {
+      startRouter((route) => {
+        state.route = route;
+      });
+      routerStarted = true;
+    }
+    render();
+    announce("Aplicação carregada.");
+  } catch {
+    const local = loadAppData();
+    state = {
+      data: local.ok ? local.data : emptyAppData(),
+      storageError: local.ok
+        ? null
+        : {
+            ok: false,
+            message: "Não foi possível carregar os dados remotos.",
+            raw: null,
+          },
+      route: resolveRoute(),
+      ready: true,
+    };
+    showAppShell();
+    registerRoutes();
+    if (!routerStarted) {
+      startRouter((route) => {
+        state.route = route;
+      });
+      routerStarted = true;
+    }
+    render();
+  }
+}
+
+function startLocalOnlyApp(): void {
+  const loaded = loadAppData();
+  state = {
+    data: loaded.ok ? loaded.data : emptyAppData(),
+    storageError: loaded.ok ? null : loaded,
+    route: resolveRoute(),
+    ready: true,
+  };
+  showAppShell();
+  registerRoutes();
+  if (!routerStarted) {
+    startRouter((route) => {
+      state.route = route;
+    });
+    routerStarted = true;
+  }
+  render();
+  announce("Aplicação carregada.");
 }
 
 export function startApp(): void {
   initUiRoots();
   buildShell();
+  subscribeSyncStatus(renderSyncStatus);
 
-  const loaded = loadAppData();
-  if (loaded.ok) {
-    state = {
-      data: loaded.data,
-      storageError: null,
-      route: resolveRoute(),
-    };
-  } else {
-    state = {
-      data: emptyAppData(),
-      storageError: loaded,
-      route: resolveRoute(),
-    };
+  window.addEventListener("beforeunload", () => {
+    void waitForPendingCloudWrite();
+  });
+
+  if (!isFirebaseConfigured()) {
+    startLocalOnlyApp();
+    return;
   }
 
-  registerRoutes();
-  startRouter((route) => {
-    state.route = route;
+  initFirebase();
+  showAuthView(renderAuthLoading());
+
+  subscribeAuthState((user) => {
+    if (user) {
+      authResolved = true;
+      void activateUser(user);
+      return;
+    }
+
+    if (!authResolved) {
+      authResolved = true;
+    }
+
+    currentUser = null;
+    bindCloudUser(null);
+    state = {
+      data: emptyAppData(),
+      storageError: null,
+      route: "/dashboard",
+      ready: false,
+    };
+    showLoginScreen();
   });
-  render();
-  announce("Aplicação carregada.");
+}
+
+function bindGoogleSignIn(): void {
+  const button = authHost?.querySelector<HTMLButtonElement>("#auth-google-button");
+  if (!button || button.dataset.bound === "true") {
+    return;
+  }
+  button.dataset.bound = "true";
+  button.addEventListener("click", () => {
+    button.disabled = true;
+    button.textContent = "Entrando…";
+    void signInWithGoogle().catch((error: unknown) => {
+      const message =
+        error instanceof Error ? error.message : "Não foi possível entrar com Google.";
+      showAuthView(renderAuthScreen({ error: message }));
+      bindGoogleSignIn();
+    });
+  });
+}
+
+function showLoginScreen(): void {
+  showAuthView(renderAuthScreen({}));
+  bindGoogleSignIn();
 }

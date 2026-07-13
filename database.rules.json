@@ -6,32 +6,8 @@
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
         ".write": "auth != null && auth.uid == $uid",
-        "profile": {
-          ".validate": "newData.hasChildren(['displayName', 'updatedAt'])"
-        },
-        "months": {
-          "$monthKey": {
-            ".read": "auth != null && auth.uid == $uid",
-            ".write": "auth != null && auth.uid == $uid"
-          }
-        },
-        "accounts": {
-          "$accountId": {
-            ".read": "auth != null && auth.uid == $uid",
-            ".write": "auth != null && auth.uid == $uid"
-          }
-        },
-        "cards": {
-          "$cardId": {
-            ".read": "auth != null && auth.uid == $uid",
-            ".write": "auth != null && auth.uid == $uid"
-          }
-        },
-        "imports": {
-          "$importId": {
-            ".read": "auth != null && auth.uid == $uid",
-            ".write": "auth != null && auth.uid == $uid"
-          }
+        "finance": {
+          ".validate": "newData.hasChildren(['schemaVersion', 'updatedAt', 'data']) && newData.child('schemaVersion').isString() && newData.child('schemaVersion').val() == 'cfm.cloud.v1' && newData.child('updatedAt').isString() && newData.child('data').exists()"
         }
       }
     }

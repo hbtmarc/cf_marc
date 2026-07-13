@@ -230,6 +230,7 @@ export function openConfirmModal(options: {
   cancelLabel?: string;
   danger?: boolean;
   onConfirm: () => void;
+  onCancel?: () => void;
 }): void {
   const content = el("div", "confirm-modal");
   const message = el("p", "confirm-modal__message", options.message);
@@ -249,9 +250,12 @@ export function openConfirmModal(options: {
   );
   confirmButton.type = "button";
 
-  cancelButton.addEventListener("click", () => {
+  const close = (): void => {
     closeModal();
-  });
+    options.onCancel?.();
+  };
+
+  cancelButton.addEventListener("click", close);
 
   confirmButton.addEventListener("click", () => {
     closeModal();
