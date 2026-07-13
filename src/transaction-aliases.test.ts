@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyImportPlan, buildImportPlan, cloneAppData } from "./import";
 import { parseImportJson, validateImportDocument } from "./import-validate";
-import { renderDashboardRecentRow } from "./presentation";
-import { getDashboardRecentSortAccessors } from "./pages/dashboard";
+import { renderTransactionTableRow } from "./presentation";
 import { getExpenseSortAccessors } from "./pages/lancamentos";
 import { filterDirectExpenseTransactions, buildDirectExpenseTransactions } from "./lancamentos-sections";
 import { confirmRecurringSuggestion } from "./recurring-suggestions";
@@ -243,18 +242,18 @@ describe("transaction description aliases", () => {
     expect(sorted[0]?.id).toBe("tx-2");
   });
 
-  it("dashboard recent row uses alias", () => {
+  it("transaction table row uses alias", () => {
     const data = baseData({ transactions: [tx({ id: "tx-1" })] });
     upsertTransactionDescriptionAlias(data, SOURCE, "Internet");
-    const html = renderDashboardRecentRow(data, data.transactions[0]!);
+    const html = renderTransactionTableRow(data, data.transactions[0]!);
     expect(html).toContain("Internet");
     expect(html).toContain('data-table__primary" title="BMI Serviços Digitais">Internet');
   });
 
-  it("dashboard sort accessor uses alias", () => {
+  it("expense sort accessor uses alias", () => {
     const data = baseData({ transactions: [tx({ id: "tx-1" })] });
     upsertTransactionDescriptionAlias(data, SOURCE, "Internet");
-    const accessor = getDashboardRecentSortAccessors(data).description;
+    const accessor = getExpenseSortAccessors(data).description;
     expect(accessor.getValue(data.transactions[0]!)).toBe("Internet");
   });
 

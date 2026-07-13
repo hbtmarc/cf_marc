@@ -2,8 +2,57 @@
 
 **Projeto:** Controle Financeiro Mensal (CFM)  
 **Última atualização:** 12 de julho de 2026  
-**Etapa atual:** Etapa 8.4.3.1 concluída — Modais, aliases em projeções e nomenclatura Fixas  
+**Etapa atual:** Etapa 8 concluída — Dashboard executivo definitivo  
 **Próximo marco:** Etapa 9 — Balanço Mensal, Firebase, autenticação e sincronização
+
+---
+
+## Etapa 8 — concluída
+
+### Estrutura final do Dashboard
+
+A página `#/dashboard` contém somente:
+
+1. Cabeçalho da página e seletor de competência (shell global).
+2. **Situação financeira** — quatro KPIs em uma única superfície (`dashboard-kpi-grid`).
+3. **Despesas fixas** — lista compacta com subtotal e link para Planejamento.
+4. **Faturas** — lista compacta por cartão com ação **Ver fatura**.
+
+Removidos da composição (não apenas ocultos): Ritmo do mês, Recorrências do mês, Cartões e faturas antigo, Parcelas projetadas, Transações recentes, Fechamento projetado lateral, Compromissos e atenção, coluna lateral, Novo lançamento, Revisar faturas e Ver lançamentos.
+
+### Origem oficial dos quatro KPIs
+
+Todos os valores vêm exclusivamente de `calculateCompetenceSummary()` em `finance.ts`, renderizados por `renderDashboardSituationPanel()` sem recálculo em `presentation.ts`, `dashboard.ts` ou CSS:
+
+| KPI | Campo |
+|-----|-------|
+| Receitas | `summary.incomeSettledCents` |
+| Despesas | `summary.expensePaidCents` |
+| Saldo | `summary.balanceRealizedCents` |
+| Saldo projetado | `summary.balancePlannedCents` |
+
+### Regra de subtotal das fixas
+
+`buildDashboardFixedBills()` em `dashboard-executive.ts` lista somente ocorrências com `recurrenceClass === "fixed_bill"` na competência selecionada. Cada fixa entra uma vez: conciliada usa o valor real da transação; prevista usa o valor esperado da regra. O subtotal é a soma das linhas exibidas, sem somar projeção e transação conciliada simultaneamente.
+
+### Regra e ordenação das faturas
+
+`buildDashboardCardSummary()` reutiliza os motores existentes de fatura, parcelas e recorrência em cartão. Fatura real prevalece sobre projeção para o mesmo cartão. Ordenação (`sortDashboardInvoiceLines`): vencidas → abertas/parciais → projetadas → pagas → credoras/sem débito; dentro do grupo, vencimento crescente (ausentes por último). Ação **Ver fatura** define `expandedInvoiceId` e navega para `#/faturas`.
+
+### Confirmação de ausência de dupla contagem
+
+Fixas conciliadas substituem a projeção na lista e no subtotal. Faturas reais substituem projeções de cartão. `calculateCompetenceSummary` permanece como única fonte dos KPIs; `presentation.ts` não soma valores financeiros.
+
+### Limitações reais para a Etapa 9
+
+- Sem persistência remota, autenticação ou sincronização Firebase.
+- Sem página de Balanço Mensal dedicada.
+- Projeção de fatura sem invoice persistida exibe status PROJETADA, sem criar entidade `Invoice`.
+- Dashboard não lista transações individuais nem gráficos analíticos.
+
+### Evidências visuais
+
+Capturas em `docs/screenshots-etapa8-final/` (`dashboard-final-1440.png`, `dashboard-final-390.png`, `dashboard-final-empty-1440.png`).
 
 ---
 

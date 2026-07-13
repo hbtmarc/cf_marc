@@ -94,6 +94,10 @@ export function resetFaturasUiState(): void {
   expandedInvoiceId = null;
 }
 
+export function openInvoiceDetailView(invoiceId: string): void {
+  expandedInvoiceId = invoiceId;
+}
+
 export function getExpandedInvoiceId(): string | null {
   return expandedInvoiceId;
 }

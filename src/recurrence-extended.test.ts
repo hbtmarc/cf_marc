@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyImportPlan, buildImportPlan } from "./import";
 import { parseImportJson, validateImportDocument } from "./import-validate";
 import fixtureDocument from "./fixtures/cfm-import-v1-valid.json";
-import { buildDashboardContext } from "./presentation";
 import { calculateCompetenceSummary } from "./finance";
 import { renderIncomeTransactionTableRow, renderTransactionTableRow } from "./presentation";
 import {
@@ -503,8 +502,8 @@ describe("recurrence extended etapa 8.4.2", () => {
       transactions: [tx({ id: "tx-1" })],
     });
     runAutoReconciliation(data, "2026-07");
-    const ctx = buildDashboardContext(data, "2026-07");
-    expect(ctx.summary.expensePaidCents).toBe(12_990);
+    const summary = calculateCompetenceSummary(data, "2026-07");
+    expect(summary.expensePaidCents).toBe(12_990);
     expect(recurringResolutionsForMonth(data, "2026-07")[0]?.state).toBe("matched");
   });
 

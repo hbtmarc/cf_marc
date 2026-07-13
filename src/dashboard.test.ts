@@ -8,7 +8,7 @@ const noopMutations: AppMutations = {
 };
 
 describe("renderDashboard layout", () => {
-  it("keeps recent transactions inside the primary column stack", () => {
+  it("renders only the executive dashboard sections in a single column", () => {
     const host = document.createElement("div");
     const data = {
       ...emptyAppData(),
@@ -17,7 +17,7 @@ describe("renderDashboard layout", () => {
           id: "tx-1",
           kind: "income" as const,
           description: "Salário",
-          amountCents: 500000,
+          amountCents: 500_000,
           date: "2026-07-05",
           competenceMonth: "2026-07",
           category: "Trabalho",
@@ -30,11 +30,13 @@ describe("renderDashboard layout", () => {
 
     renderDashboard(host, data, noopMutations, () => {});
 
-    const primary = host.querySelector(".dashboard-grid__primary");
-    const recent = host.querySelector(".dashboard-recent");
-    expect(primary).not.toBeNull();
-    expect(recent).not.toBeNull();
-    expect(primary?.contains(recent!)).toBe(true);
-    expect(host.querySelector(".dashboard-secondary")).toBeNull();
+    const page = host.querySelector(".dashboard-page");
+    expect(page).not.toBeNull();
+    expect(host.querySelector(".dashboard-grid")).toBeNull();
+    expect(host.querySelector(".dashboard-grid__side")).toBeNull();
+    expect(host.querySelector(".dashboard-recent")).toBeNull();
+    expect(host.querySelector(".dashboard-situation")).not.toBeNull();
+    expect(host.querySelector(".dashboard-fixed-bills")).not.toBeNull();
+    expect(host.querySelector(".dashboard-invoices")).not.toBeNull();
   });
 });

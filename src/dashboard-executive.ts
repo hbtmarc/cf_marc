@@ -1,8 +1,8 @@
 import {
   filterInvoicesByCompetence,
   filterTransactionsByCompetence,
+  formatCompetenceLabel,
   formatDateLabel,
-  invoiceNeedsFinancialAction,
   invoiceOpenCents,
   invoicePaidCents,
   invoiceStatusLabel,
@@ -11,135 +11,115 @@ import {
   sumCents,
 } from "./finance";
 import { hasInvoiceForCardMonth, projectedInstallmentsForMonth } from "./installments";
-import {
-  buildPlanejamentoSummary,
-  cardNameById,
-  resolutionStateLabel,
-} from "./planejamento-presentation";
+import { inferRecurrenceClassFromRule } from "./recurrence-class";
 import { recurringResolutionsForMonth } from "./recurrence-reconciliation";
-import type {
-  AppData,
-  RecurringOccurrenceResolution,
-  RecurringOccurrenceResolutionState,
-} from "./types";
+import { transactionDisplayDescriptionForSource } from "./transaction-aliases";
+import type { AppData, RecurringOccurrenceResolution } from "./types";
 
-export interface DashboardRecurringLine {
+export type DashboardFixedBillStatus = "PAGA" | "PENDENTE" | "PREVISTA";
+
+export interface DashboardFixedBillLine {
   id: string;
-  description: string;
-  expectedDate: string;
+  name: string;
+  dateLabel: string;
   amountCents: number;
-  kind: "income" | "expense";
-  state: RecurringOccurrenceResolutionState;
-  stateLabel: string;
-  cardName?: string;
+  statusLabel: DashboardFixedBillStatus;
 }
 
-export interface DashboardRecurringSummary {
-  incomeProjectedCents: number;
-  expenseProjectedCents: number;
-  projectedCount: number;
-  matchedCount: number;
-  coveredCount: number;
-  lines: DashboardRecurringLine[];
+export interface DashboardFixedBillsSummary {
+  lines: DashboardFixedBillLine[];
+  subtotalCents: number;
 }
 
-export interface DashboardCardLine {
+export interface DashboardInvoiceLine {
   cardId: string;
   cardName: string;
+  invoiceId?: string;
+  invoiceLabel: string;
+  competenceMonth: string;
   mode: "real" | "projected";
   statusLabel: string;
   totalCents: number;
   paidCents: number;
   openCents: number;
   dueDate: string;
-  needsAttention: boolean;
+  dueDateIso: string;
+  sortGroup: number;
 }
 
-export interface DashboardCardSummary {
-  cards: DashboardCardLine[];
-  footerTotalCents: number;
-  footerOpenCents: number;
-  attentionCount: number;
+export interface DashboardInvoicesSummary {
+  lines: DashboardInvoiceLine[];
 }
 
-function recurringLinePriority(state: RecurringOccurrenceResolutionState): number {
-  if (state === "projected") {
-    return 0;
-  }
-  if (state === "matched") {
-    return 1;
-  }
-  return 2;
-}
-
-function sortRecurringResolutions(
-  resolutions: RecurringOccurrenceResolution[],
-): RecurringOccurrenceResolution[] {
-  return [...resolutions].sort((left, right) => {
-    const priorityDelta =
-      recurringLinePriority(left.state) - recurringLinePriority(right.state);
-    if (priorityDelta !== 0) {
-      return priorityDelta;
-    }
-    if (left.state === "projected" && right.state === "projected") {
-      const dateDelta = left.occurrence.expectedDate.localeCompare(
-        right.occurrence.expectedDate,
-      );
-      if (dateDelta !== 0) {
-        return dateDelta;
-      }
-    }
-    return right.occurrence.amountCents - left.occurrence.amountCents;
-  });
-}
-
-export function buildDashboardRecurringSummary(
-  data: AppData,
-  competenceMonth: string,
-): DashboardRecurringSummary | null {
-  const resolutions = recurringResolutionsForMonth(data, competenceMonth);
-  if (resolutions.length === 0) {
-    return null;
-  }
-
-  const summary = buildPlanejamentoSummary(data, competenceMonth);
-  const lines = sortRecurringResolutions(resolutions).slice(0, 5).map((resolution) => {
-    const occurrence = resolution.occurrence;
-    const line: DashboardRecurringLine = {
-      id: occurrence.id,
-      description: occurrence.description,
-      expectedDate: occurrence.expectedDate,
-      amountCents: occurrence.amountCents,
-      kind: occurrence.kind,
-      state: resolution.state,
-      stateLabel: resolutionStateLabel(resolution.state),
-    };
-    if (occurrence.billingMode === "card" && occurrence.cardId) {
-      line.cardName = cardNameById(data, occurrence.cardId);
-    }
-    return line;
-  });
-
-  return {
-    incomeProjectedCents: summary.incomeProjectedCents,
-    expenseProjectedCents: summary.expenseProjectedCents,
-    projectedCount: summary.projectedCount,
-    matchedCount: summary.matchedCount,
-    coveredCount: summary.coveredCount,
-    lines,
-  };
-}
-
-function projectedDueDate(cardDueDay: number | null, competenceMonth: string): string {
+function projectedDueDateIso(cardDueDay: number | null, competenceMonth: string): string {
   if (cardDueDay === null) {
-    return "—";
+    return "";
   }
   const [yearStr, monthStr] = competenceMonth.split("-");
   const year = Number(yearStr);
   const month = Number(monthStr);
   const lastDay = new Date(year, month, 0).getDate();
   const day = String(Math.min(cardDueDay, lastDay)).padStart(2, "0");
-  return formatDateLabel(`${competenceMonth}-${day}`);
+  return `${competenceMonth}-${day}`;
+}
+
+function fixedBillStatusForResolution(
+  data: AppData,
+  resolution: RecurringOccurrenceResolution,
+): DashboardFixedBillStatus | null {
+  if (resolution.state === "projected") {
+    return "PREVISTA";
+  }
+  if (resolution.state !== "matched") {
+    return null;
+  }
+  const transaction = data.transactions.find((item) => item.id === resolution.transactionId);
+  return transaction?.status === "settled" ? "PAGA" : "PENDENTE";
+}
+
+function fixedBillAmountForResolution(
+  resolution: RecurringOccurrenceResolution,
+): number {
+  if (resolution.state === "matched") {
+    return resolution.actualAmountCents ?? resolution.expectedAmountCents;
+  }
+  return resolution.expectedAmountCents;
+}
+
+export function buildDashboardFixedBills(
+  data: AppData,
+  competenceMonth: string,
+): DashboardFixedBillsSummary {
+  const lines: DashboardFixedBillLine[] = [];
+
+  for (const resolution of recurringResolutionsForMonth(data, competenceMonth)) {
+    const rule = (data.recurringRules ?? []).find(
+      (item) => item.id === resolution.occurrence.ruleId,
+    );
+    if (!rule || inferRecurrenceClassFromRule(rule) !== "fixed_bill") {
+      continue;
+    }
+
+    const statusLabel = fixedBillStatusForResolution(data, resolution);
+    if (!statusLabel) {
+      continue;
+    }
+
+    lines.push({
+      id: resolution.occurrence.id,
+      name: transactionDisplayDescriptionForSource(data, resolution.occurrence.description),
+      dateLabel: formatDateLabel(resolution.occurrence.expectedDate),
+      amountCents: fixedBillAmountForResolution(resolution),
+      statusLabel,
+    });
+  }
+
+  lines.sort((left, right) => left.dateLabel.localeCompare(right.dateLabel));
+
+  return {
+    lines,
+    subtotalCents: sumCents(lines.map((item) => item.amountCents)),
+  };
 }
 
 function cardHasMovement(
@@ -163,15 +143,68 @@ function cardHasMovement(
   return hasInvoice || hasCardTransactions || hasProjectedInstallments || hasRecurring;
 }
 
+export function invoiceDashboardSortGroup(
+  line: Pick<DashboardInvoiceLine, "mode" | "statusLabel" | "openCents" | "dueDateIso">,
+  today: string,
+): number {
+  if (line.mode === "projected") {
+    return 2;
+  }
+  if (line.statusLabel === "Credora" || (line.openCents <= 0 && line.statusLabel === "Paga")) {
+    return 4;
+  }
+  if (line.dueDateIso && line.dueDateIso < today && line.openCents > 0) {
+    return 0;
+  }
+  if (line.statusLabel === "Aberta" || line.statusLabel === "Parcial") {
+    return 1;
+  }
+  if (line.statusLabel === "Paga") {
+    return 3;
+  }
+  return 1;
+}
+
+function compareInvoiceLines(left: DashboardInvoiceLine, right: DashboardInvoiceLine): number {
+  if (left.sortGroup !== right.sortGroup) {
+    return left.sortGroup - right.sortGroup;
+  }
+  if (!left.dueDateIso && right.dueDateIso) {
+    return 1;
+  }
+  if (left.dueDateIso && !right.dueDateIso) {
+    return -1;
+  }
+  if (left.dueDateIso && right.dueDateIso) {
+    const dateDelta = left.dueDateIso.localeCompare(right.dueDateIso);
+    if (dateDelta !== 0) {
+      return dateDelta;
+    }
+  }
+  return left.cardName.localeCompare(right.cardName);
+}
+
+export function sortDashboardInvoiceLines(
+  lines: DashboardInvoiceLine[],
+  today = new Date().toISOString().slice(0, 10),
+): DashboardInvoiceLine[] {
+  return [...lines]
+    .map((line) => ({
+      ...line,
+      sortGroup: invoiceDashboardSortGroup(line, today),
+    }))
+    .sort(compareInvoiceLines);
+}
+
 export function buildDashboardCardSummary(
   data: AppData,
   competenceMonth: string,
-): DashboardCardSummary | null {
+): DashboardInvoicesSummary | null {
   const invoices = filterInvoicesByCompetence(data.invoices, competenceMonth);
   const projectedInstallments = projectedInstallmentsForMonth(data, competenceMonth);
   const recurringResolutions = recurringResolutionsForMonth(data, competenceMonth);
   const today = new Date().toISOString().slice(0, 10);
-  const cards: DashboardCardLine[] = [];
+  const lines: DashboardInvoiceLine[] = [];
 
   for (const card of data.cards) {
     if (!cardHasMovement(data, card.id, competenceMonth)) {
@@ -180,18 +213,25 @@ export function buildDashboardCardSummary(
 
     const invoice = invoices.find((item) => item.cardId === card.id);
     if (invoice) {
+      const statusLabel = invoiceStatusLabel(invoice);
       const open = invoiceOpenCents(invoice);
-      cards.push({
+      const line: DashboardInvoiceLine = {
         cardId: card.id,
         cardName: card.name,
+        invoiceId: invoice.id,
+        invoiceLabel: `Fatura ${formatCompetenceLabel(invoice.competenceMonth)}`,
+        competenceMonth: invoice.competenceMonth,
         mode: "real",
-        statusLabel: invoiceStatusLabel(invoice),
+        statusLabel,
         totalCents: invoiceTotalCentsValue(invoice),
         paidCents: invoicePaidCents(invoice),
         openCents: open,
         dueDate: formatDateLabel(invoice.dueDate),
-        needsAttention: invoiceNeedsFinancialAction(invoice, today),
-      });
+        dueDateIso: invoice.dueDate,
+        sortGroup: 0,
+      };
+      line.sortGroup = invoiceDashboardSortGroup(line, today);
+      lines.push(line);
       continue;
     }
 
@@ -215,27 +255,29 @@ export function buildDashboardCardSummary(
       continue;
     }
 
-    cards.push({
+    const dueDateIso = projectedDueDateIso(card.dueDay, competenceMonth);
+    const projectedLine: DashboardInvoiceLine = {
       cardId: card.id,
       cardName: card.name,
+      invoiceLabel: "Fatura projetada",
+      competenceMonth,
       mode: "projected",
-      statusLabel: "Fatura projetada",
+      statusLabel: "PROJETADA",
       totalCents: projectedTotal,
       paidCents: 0,
       openCents: projectedTotal,
-      dueDate: projectedDueDate(card.dueDay, competenceMonth),
-      needsAttention: true,
-    });
+      dueDate: dueDateIso ? formatDateLabel(dueDateIso) : "—",
+      dueDateIso,
+      sortGroup: 2,
+    };
+    lines.push(projectedLine);
   }
 
-  if (cards.length === 0) {
+  if (lines.length === 0) {
     return null;
   }
 
   return {
-    cards: cards.sort((left, right) => right.openCents - left.openCents),
-    footerTotalCents: sumCents(cards.map((item) => item.totalCents)),
-    footerOpenCents: sumCents(cards.map((item) => item.openCents)),
-    attentionCount: cards.filter((item) => item.needsAttention).length,
+    lines: sortDashboardInvoiceLines(lines, today),
   };
 }

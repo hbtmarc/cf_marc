@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { applyImportPlan, buildImportPlan } from "./import";
 import { parseImportJson, validateImportDocument } from "./import-validate";
 import fixtureDocument from "./fixtures/cfm-import-v1-valid.json";
-import { buildDashboardContext } from "./presentation";
 import { calculateCompetenceSummary } from "./finance";
 import { buildPlanejamentoSummary } from "./planejamento-presentation";
 import {
@@ -369,9 +368,9 @@ describe("recurring suggestions engine", () => {
       tx({ id: "tx-1", competenceMonth: "2026-06", date: "2026-06-10" }),
       tx({ id: "tx-2", competenceMonth: "2026-07", date: "2026-07-10" }),
     ];
-    const before = buildDashboardContext(data, "2026-07");
+    const before = calculateCompetenceSummary(data, "2026-07");
     buildRecurringSuggestions(data);
-    const after = buildDashboardContext(data, "2026-07");
+    const after = calculateCompetenceSummary(data, "2026-07");
     expect(after).toEqual(before);
   });
 

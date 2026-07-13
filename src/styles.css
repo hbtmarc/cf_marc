@@ -1566,6 +1566,156 @@ body.modal-open {
 
 /* ── Etapa 3B: operational layout ─────────────────────────── */
 
+/* ── Etapa 8: dashboard executivo ─────────────────────────── */
+
+.dashboard-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 100%;
+}
+
+.dashboard-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.dashboard-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4);
+  min-width: 0;
+}
+
+.dashboard-kpi + .dashboard-kpi {
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+.dashboard-kpi__label {
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+}
+
+.dashboard-kpi__value {
+  font-size: var(--text-title);
+  font-weight: var(--weight-heavy);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
+  word-break: break-word;
+}
+
+.dashboard-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.dashboard-list__item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.dashboard-list__item:last-child {
+  border-bottom: none;
+}
+
+.dashboard-list__item--invoice {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) auto;
+}
+
+.dashboard-list__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.dashboard-list__title {
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.dashboard-list__meta {
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+}
+
+.dashboard-list__tail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.dashboard-list__subtotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+  font-weight: var(--weight-medium);
+}
+
+.dashboard-list__empty {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-body);
+}
+
+.dashboard-invoice-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+}
+
+.dashboard-invoice-metrics div {
+  min-width: 0;
+}
+
+.dashboard-invoice-metrics dt {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--color-text-secondary);
+}
+
+.dashboard-invoice-metrics dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-list__action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.panel__header--compact .panel__title {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: var(--weight-heavy);
+}
+
+.panel__title {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: var(--weight-heavy);
+}
+
+/* legacy dashboard layout (unused) */
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.62fr) minmax(17rem, 1fr);
@@ -2588,6 +2738,31 @@ body.modal-open {
 }
 
 @media (max-width: 64rem) {
+  .dashboard-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-kpi:nth-child(odd) {
+    border-left: none;
+  }
+
+  .dashboard-kpi:nth-child(n + 2) {
+    border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .dashboard-kpi:nth-child(2),
+  .dashboard-kpi:nth-child(4) {
+    border-left: 1px solid var(--color-border-subtle);
+  }
+
+  .dashboard-list__item--invoice {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-invoice-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .dashboard-grid {
     grid-template-columns: 1fr;
   }

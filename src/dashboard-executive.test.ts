@@ -1,23 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildDashboardCardSummary,
-  buildDashboardRecurringSummary,
+  buildDashboardFixedBills,
+  invoiceDashboardSortGroup,
+  sortDashboardInvoiceLines,
+  type DashboardInvoiceLine,
 } from "./dashboard-executive";
 import { calculateCompetenceSummary } from "./finance";
 import {
-  buildDashboardContext,
-  renderCardSummaryPanel,
-  renderProjectionPanel,
-  renderRecurringSummaryPanel,
+  renderDashboardFixedBillsPanel,
+  renderDashboardInvoicesPanel,
+  renderDashboardSituationPanel,
 } from "./presentation";
 import { renderDashboard } from "./pages/dashboard";
-import {
-  pauseRecurringRule,
-  resumeRecurringRule,
-} from "./recurring-operations";
-import { hasInvoiceForCardMonth, projectedInstallmentCentsForMonth } from "./installments";
-import { recurringMatchId, recurringResolutionsForMonth } from "./recurrence-reconciliation";
-import { serializeAppData } from "./storage";
+import * as router from "./router";
+import { pauseRecurringRule } from "./recurring-operations";
+import { recurringMatchId } from "./recurrence-reconciliation";
 import type { AppData, RecurringRule, Transaction } from "./types";
 
 const TIMESTAMP = "2026-07-01T00:00:00.000Z";
@@ -83,91 +81,141 @@ function baseData(options: Partial<AppData> = {}): AppData {
   };
 }
 
-describe("dashboard executive integration", () => {
-  it("adds projected recurring income only to planned totals", () => {
+describe("dashboard executivo", () => {
+  it("renders four KPIs from calculateCompetenceSummary fields only", () => {
     const data = baseData({
-      recurringRules: [
-        rule({ id: "income-rule", kind: "income", description: "Salário", amountCents: 500_000 }),
+      transactions: [
+        tx({ id: "tx-income", kind: "income", amountCents: 500_000, status: "settled" }),
+        tx({ id: "tx-expense", amountCents: 150_000, status: "settled" }),
       ],
     });
     const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.recurringIncomeProjectedCents).toBe(500_000);
-    expect(summary.incomePlannedCents).toBe(500_000);
-    expect(summary.incomeSettledCents).toBe(0);
-    expect(summary.incomePendingCents).toBe(500_000);
+    const html = renderDashboardSituationPanel(summary);
+
+    expect(html).toContain("Situação financeira");
+    expect(html).toContain("Receitas");
+    expect(html).toContain("Despesas");
+    expect(html).toContain("Saldo projetado");
+    expect(html).toContain("dashboard-kpi-grid");
+    expect(html).toContain(formatCents(summary.incomeSettledCents));
+    expect(html).toContain(formatCents(summary.expensePaidCents));
+    expect(html).toContain(formatCents(summary.balanceRealizedCents));
+    expect(html).toContain(formatCents(summary.balancePlannedCents));
+    expect(html).not.toContain("Saldo positivo, porém comprometido");
+    expect(html).not.toContain("metric-dominant");
   });
 
-  it("adds projected recurring expense only to committed totals", () => {
+  it("does not recalculate metrics in presentation", () => {
+    const summary = calculateCompetenceSummary(baseData(), "2026-07");
+    const html = renderDashboardSituationPanel(summary);
+    expect(html.match(/dashboard-kpi__value/g)?.length).toBe(4);
+    expect(html).not.toContain("incomePendingCents");
+    expect(html).not.toContain("recurringExpenseProjectedCents");
+  });
+
+  it("includes projected fixed bill once in subtotal", () => {
     const data = baseData({
-      recurringRules: [rule({ id: "expense-rule", amountCents: 80_000 })],
+      recurringRules: [rule({ id: "rule-fixed", recurrenceClass: "fixed_bill" })],
     });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.recurringExpenseProjectedCents).toBe(80_000);
-    expect(summary.expensePaidCents).toBe(0);
-    expect(summary.expensePendingCents).toBe(80_000);
-    expect(summary.expensePlannedCents).toBe(80_000);
+    const fixed = buildDashboardFixedBills(data, "2026-07");
+    expect(fixed.lines).toHaveLength(1);
+    expect(fixed.lines[0]?.statusLabel).toBe("PREVISTA");
+    expect(fixed.subtotalCents).toBe(12_990);
   });
 
-  it("does not duplicate matched recurring transactions", () => {
+  it("replaces projected fixed bill with matched transaction value", () => {
     const data = baseData({
-      recurringRules: [rule({ id: "matched-rule", amountCents: 50_000 })],
-      transactions: [tx({ id: "tx-match", amountCents: 50_000 })],
+      recurringRules: [rule({ id: "rule-fixed", recurrenceClass: "fixed_bill", amountCents: 12_990 })],
+      transactions: [tx({ id: "tx-fixed", amountCents: 11_500 })],
       recurringMatches: [
         {
-          id: recurringMatchId("matched-rule", "2026-07"),
-          ruleId: "matched-rule",
+          id: recurringMatchId("rule-fixed", "2026-07"),
+          ruleId: "rule-fixed",
           competenceMonth: "2026-07",
-          transactionId: "tx-match",
+          transactionId: "tx-fixed",
           createdAt: TIMESTAMP,
           updatedAt: TIMESTAMP,
         },
       ],
     });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.recurringProjectedCount).toBe(0);
-    expect(summary.recurringExpenseProjectedCents).toBe(0);
-    expect(summary.expensePaidCents).toBe(50_000);
-    expect(summary.expensePlannedCents).toBe(50_000);
+    const fixed = buildDashboardFixedBills(data, "2026-07");
+    expect(fixed.lines).toHaveLength(1);
+    expect(fixed.lines[0]?.amountCents).toBe(11_500);
+    expect(fixed.lines[0]?.statusLabel).toBe("PAGA");
+    expect(fixed.subtotalCents).toBe(11_500);
   });
 
-  it("does not duplicate covered_by_invoice recurring obligations", () => {
+  it("excludes recurring income from fixed bills", () => {
     const data = baseData({
       recurringRules: [
-        rule({ id: "card-rule", billingMode: "card", cardId: "card-1", amountCents: 30_000 }),
+        rule({ id: "rule-income", kind: "income", recurrenceClass: "income", description: "Salário" }),
       ],
-      invoices: [
-        {
-          id: "inv-1",
+    });
+    expect(buildDashboardFixedBills(data, "2026-07").lines).toHaveLength(0);
+  });
+
+  it("excludes card subscription from fixed bills", () => {
+    const data = baseData({
+      recurringRules: [
+        rule({
+          id: "rule-sub",
+          recurrenceClass: "card_subscription",
+          billingMode: "card",
           cardId: "card-1",
-          competenceMonth: "2026-07",
-          amountCents: 30_000,
-          amountDueCents: 30_000,
-          dueDate: "2026-07-20",
-          status: "open",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
+        }),
       ],
     });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.recurringExpenseProjectedCents).toBe(0);
-    expect(summary.expensePendingCents).toBe(30_000);
+    expect(buildDashboardFixedBills(data, "2026-07").lines).toHaveLength(0);
   });
 
-  it("includes card recurring without invoice in projected expense", () => {
+  it("excludes paused or out-of-period fixed bills", () => {
     const data = baseData({
       recurringRules: [
-        rule({ id: "card-rec", billingMode: "card", cardId: "card-1", amountCents: 25_000 }),
+        rule({ id: "rule-paused", recurrenceClass: "fixed_bill", status: "paused" }),
+        rule({ id: "rule-future", recurrenceClass: "fixed_bill", startMonth: "2026-09" }),
       ],
     });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.recurringExpenseProjectedCents).toBe(25_000);
-    const cardSummary = buildDashboardCardSummary(data, "2026-07");
-    expect(cardSummary?.cards[0]?.mode).toBe("projected");
-    expect(cardSummary?.cards[0]?.totalCents).toBe(25_000);
+    pauseRecurringRule(data, "rule-paused", "2026-07");
+    expect(buildDashboardFixedBills(data, "2026-07").lines).toHaveLength(0);
   });
 
-  it("uses real invoice totals instead of card recurring projection", () => {
+  it("avoids double counting in fixed bills subtotal", () => {
+    const data = baseData({
+      recurringRules: [
+        rule({ id: "rule-a", recurrenceClass: "fixed_bill", amountCents: 10_000 }),
+        rule({ id: "rule-b", recurrenceClass: "fixed_bill", amountCents: 20_000, dayOfMonth: 15 }),
+      ],
+    });
+    const fixed = buildDashboardFixedBills(data, "2026-07");
+    expect(fixed.subtotalCents).toBe(30_000);
+    expect(fixed.subtotalCents).toBe(
+      fixed.lines.reduce((sum, line) => sum + line.amountCents, 0),
+    );
+  });
+
+  it("orders invoices overdue before open before projected before paid", () => {
+    const today = "2026-07-12";
+    const lines: DashboardInvoiceLine[] = [
+      line("paid", "Paga", "2026-07-01", 0, "real"),
+      line("projected", "PROJETADA", "2026-07-25", 10_000, "projected"),
+      line("open", "Aberta", "2026-07-20", 50_000, "real"),
+      line("overdue", "Aberta", "2026-07-05", 30_000, "real"),
+    ];
+    const sorted = sortDashboardInvoiceLines(lines, today).map((item) => item.cardId);
+    expect(sorted).toEqual(["overdue", "open", "projected", "paid"]);
+  });
+
+  it("orders invoices by due date within the same group", () => {
+    const today = "2026-07-12";
+    const lines: DashboardInvoiceLine[] = [
+      line("open-b", "Aberta", "2026-07-25", 20_000, "real"),
+      line("open-a", "Aberta", "2026-07-18", 10_000, "real"),
+    ];
+    const sorted = sortDashboardInvoiceLines(lines, today).map((item) => item.cardId);
+    expect(sorted).toEqual(["open-a", "open-b"]);
+  });
+
+  it("prefers real invoice over projection for the same card", () => {
     const data = baseData({
       recurringRules: [
         rule({ id: "card-rec", billingMode: "card", cardId: "card-1", amountCents: 25_000 }),
@@ -186,65 +234,21 @@ describe("dashboard executive integration", () => {
         },
       ],
     });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.recurringExpenseProjectedCents).toBe(0);
-    expect(summary.expensePendingCents).toBe(90_000);
-    const cardSummary = buildDashboardCardSummary(data, "2026-07");
-    expect(cardSummary?.cards[0]?.mode).toBe("real");
-    expect(cardSummary?.cards[0]?.totalCents).toBe(90_000);
+    const summary = buildDashboardCardSummary(data, "2026-07");
+    expect(summary?.lines).toHaveLength(1);
+    expect(summary?.lines[0]?.mode).toBe("real");
+    expect(summary?.lines[0]?.totalCents).toBe(90_000);
+    expect(summary?.lines[0]?.invoiceId).toBe("inv-real");
   });
 
-  it("sums distinct installment and recurring projections without duplicity", () => {
+  it("renders individual view-invoice action with invoice id", () => {
     const data = baseData({
-      transactions: [
-        tx({
-          id: "installment-src",
-          ledgerStatus: "in_invoice",
-          cardId: "card-1",
-          installment: { current: 2, total: 4 },
-          competenceMonth: "2026-06",
-          date: "2026-06-15",
-        }),
-      ],
-      recurringRules: [
-        rule({ id: "card-rec", billingMode: "card", cardId: "card-1", amountCents: 15_000 }),
-      ],
-    });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.recurringExpenseProjectedCents).toBe(15_000);
-    expect(summary.expensePendingCents).toBe(25_000);
-    const cardSummary = buildDashboardCardSummary(data, "2026-07");
-    expect(cardSummary?.cards[0]?.totalCents).toBe(25_000);
-  });
-
-  it("reconciles projected breakdown lines with balancePlannedCents", () => {
-    const data = baseData({
-      transactions: [
-        {
-          id: "income-pending",
-          kind: "income",
-          description: "Freela",
-          amountCents: 100_000,
-          date: "2026-07-05",
-          competenceMonth: "2026-07",
-          category: "Trabalho",
-          status: "pending",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-        tx({ id: "expense-pending", status: "pending", amountCents: 40_000 }),
-      ],
-      recurringRules: [
-        rule({ id: "income-rec", kind: "income", description: "Salário", amountCents: 200_000 }),
-        rule({ id: "expense-rec", amountCents: 30_000 }),
-      ],
       invoices: [
         {
-          id: "inv-open",
+          id: "inv-1",
           cardId: "card-1",
           competenceMonth: "2026-07",
-          amountCents: 50_000,
-          amountDueCents: 50_000,
+          amountCents: 40_000,
           dueDate: "2026-07-20",
           status: "open",
           createdAt: TIMESTAMP,
@@ -252,154 +256,54 @@ describe("dashboard executive integration", () => {
         },
       ],
     });
-    const ctx = buildDashboardContext(data, "2026-07");
-    const breakdownTotal =
-      ctx.projection.realizedCents +
-      ctx.projection.pendingIncomeCents +
-      ctx.projection.recurringIncomeProjectedCents -
-      ctx.projection.pendingExpenseTxCents -
-      ctx.projection.openInvoicesCents -
-      ctx.projection.projectedInstallmentsCents -
-      ctx.projection.recurringExpenseProjectedCents;
-    expect(breakdownTotal).toBe(ctx.projection.projectedCents);
-    expect(renderProjectionPanel(ctx)).toContain("Recorrências projetadas");
+    const html = renderDashboardInvoicesPanel(buildDashboardCardSummary(data, "2026-07"));
+    expect(html).toContain('data-action="view-invoice"');
+    expect(html).toContain('data-invoice-id="inv-1"');
+    expect(html).toContain("Ver fatura");
   });
 
-  it("shows projected, matched and covered states in recurring panel", () => {
-    const data = baseData({
-      recurringRules: [
-        rule({ id: "rule-projected" }),
-        rule({ id: "rule-matched", description: "Luz" }),
-        rule({ id: "rule-covered", billingMode: "card", cardId: "card-1", description: "Streaming" }),
-      ],
-      transactions: [tx({ id: "tx-matched", description: "Luz paga" })],
-      recurringMatches: [
-        {
-          id: recurringMatchId("rule-matched", "2026-07"),
-          ruleId: "rule-matched",
-          competenceMonth: "2026-07",
-          transactionId: "tx-matched",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-      invoices: [
-        {
-          id: "inv-covered",
-          cardId: "card-1",
-          competenceMonth: "2026-07",
-          amountCents: 12_990,
-          dueDate: "2026-07-20",
-          status: "open",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-    });
-    const recurring = buildDashboardRecurringSummary(data, "2026-07");
-    expect(recurring?.projectedCount).toBe(1);
-    expect(recurring?.matchedCount).toBe(1);
-    expect(recurring?.coveredCount).toBe(1);
-    const html = renderRecurringSummaryPanel(recurring);
-    expect(html).toContain("PREVISTA");
-    expect(html).toContain("CONCILIADA");
-    expect(html).toContain("COBERTA PELA FATURA");
+  it("renders empty states for fixed bills and invoices", () => {
+    expect(renderDashboardFixedBillsPanel(buildDashboardFixedBills(baseData(), "2026-07"))).toContain(
+      "Nenhuma despesa fixa nesta competência.",
+    );
+    expect(renderDashboardInvoicesPanel(buildDashboardCardSummary(baseData(), "2026-07"))).toContain(
+      "Nenhuma fatura ou projeção de cartão nesta competência.",
+    );
   });
 
-  it("uses official invoice totals when a real invoice exists", () => {
+  it("renders executive layout without legacy blocks or side column", () => {
+    const host = document.createElement("div");
+    renderDashboard(host, baseData(), { update: () => {} }, () => {});
+
+    expect(host.querySelector(".dashboard-page")).not.toBeNull();
+    expect(host.querySelector(".dashboard-situation")).not.toBeNull();
+    expect(host.querySelector(".dashboard-fixed-bills")).not.toBeNull();
+    expect(host.querySelector(".dashboard-invoices")).not.toBeNull();
+    expect(host.querySelector(".dashboard-grid")).toBeNull();
+    expect(host.querySelector(".dashboard-grid__side")).toBeNull();
+    expect(host.querySelector(".dashboard-recent")).toBeNull();
+    expect(host.innerHTML).not.toContain("Ritmo do mês");
+    expect(host.innerHTML).not.toContain("Recorrências do mês");
+    expect(host.innerHTML).not.toContain("Novo lançamento");
+    expect(host.innerHTML).not.toContain("Revisar faturas");
+    expect(host.innerHTML).not.toContain("Ver lançamentos");
+  });
+
+  it("uses responsive KPI and list structure for mobile layout", () => {
+    const html = renderDashboardSituationPanel(calculateCompetenceSummary(baseData(), "2026-07"));
+    expect(html).toContain("dashboard-kpi-grid");
+    expect(html).toContain("dashboard-kpi");
+    expect(renderDashboardFixedBillsPanel(buildDashboardFixedBills(baseData(), "2026-07"))).toContain(
+      "dashboard-list",
+    );
+  });
+
+  it("navigates to faturas when view-invoice is clicked", () => {
+    const host = document.createElement("div");
     const data = baseData({
       invoices: [
         {
-          id: "inv-official",
-          cardId: "card-1",
-          competenceMonth: "2026-07",
-          amountCents: 120_000,
-          amountPaidCents: 20_000,
-          amountDueCents: 100_000,
-          dueDate: "2026-07-20",
-          status: "partial",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-    });
-    const html = renderCardSummaryPanel(buildDashboardCardSummary(data, "2026-07"));
-    expect(html).toContain("Cartão Demo");
-    expect(html.replace(/\u00a0/g, " ")).toContain("R$ 1.200,00");
-    expect(html).not.toContain("PROJETADA");
-  });
-
-  it("uses projected totals when no real invoice exists", () => {
-    const data = baseData({
-      recurringRules: [
-        rule({ id: "card-rec", billingMode: "card", cardId: "card-1", amountCents: 45_000 }),
-      ],
-    });
-    const html = renderCardSummaryPanel(buildDashboardCardSummary(data, "2026-07"));
-    expect(html).toContain("PROJETADA");
-    expect(html).toContain("Fatura projetada");
-    expect(html.replace(/\u00a0/g, " ")).toContain("R$ 450,00");
-  });
-
-  it("omits cards without movement in the competence", () => {
-    const data = baseData({
-      recurringRules: [rule({ id: "card-rec", billingMode: "card", cardId: "card-1" })],
-    });
-    const cardSummary = buildDashboardCardSummary(data, "2026-07");
-    expect(cardSummary?.cards.some((item) => item.cardId === "card-idle")).toBe(false);
-  });
-
-  it("does not recreate paused months after reactivation in june", () => {
-    const data = baseData({
-      recurringRules: [
-        rule({
-          id: "pause-gap",
-          startMonth: "2026-01",
-          status: "paused",
-          pausedFromMonth: "2026-03",
-        }),
-      ],
-    });
-    pauseRecurringRule(data, "pause-gap", "2026-03");
-    resumeRecurringRule(data, "pause-gap", "2026-06");
-    expect(recurringResolutionsForMonth(data, "2026-01")).toHaveLength(1);
-    expect(recurringResolutionsForMonth(data, "2026-02")).toHaveLength(1);
-    expect(recurringResolutionsForMonth(data, "2026-03")).toHaveLength(0);
-    expect(recurringResolutionsForMonth(data, "2026-05")).toHaveLength(0);
-    expect(recurringResolutionsForMonth(data, "2026-06")).toHaveLength(1);
-  });
-
-  it("updates dashboard panels when competence changes", () => {
-    const data = baseData({
-      selectedCompetenceMonth: "2026-07",
-      recurringRules: [rule({ id: "month-rule", startMonth: "2026-06" })],
-    });
-    const july = buildDashboardRecurringSummary(data, "2026-07");
-    const june = buildDashboardRecurringSummary(data, "2026-06");
-    expect(july?.projectedCount).toBe(1);
-    expect(june?.projectedCount).toBe(1);
-    data.selectedCompetenceMonth = "2026-08";
-    expect(buildDashboardRecurringSummary(data, "2026-08")?.projectedCount).toBe(1);
-  });
-
-  it("does not persist derived recurring summaries", () => {
-    const data = baseData({
-      recurringRules: [rule({ id: "persist-rule" })],
-    });
-    buildDashboardRecurringSummary(data, "2026-07");
-    calculateCompetenceSummary(data, "2026-07");
-    const raw = serializeAppData(data);
-    expect(raw).not.toContain("recurringIncomeProjectedCents");
-    expect(raw).not.toContain("recurringProjectedCount");
-    expect(raw).not.toContain("dashboardSummary");
-  });
-
-  it("links recurring and card panels to Planejamento and Faturas", () => {
-    const data = baseData({
-      recurringRules: [rule({ id: "link-rule" })],
-      invoices: [
-        {
-          id: "inv-link",
+          id: "inv-nav",
           cardId: "card-1",
           competenceMonth: "2026-07",
           amountCents: 10_000,
@@ -410,545 +314,45 @@ describe("dashboard executive integration", () => {
         },
       ],
     });
-    const host = document.createElement("div");
-    renderDashboard(host, data, { update() {} }, () => {});
-    expect(host.innerHTML).toContain('href="#/planejamento"');
-    expect(host.innerHTML).toContain('href="#/faturas"');
-  });
+    const navigateSpy = vi.spyOn(router, "navigate");
 
-  it("keeps mobile layout hooks and bottom spacing", () => {
-    const data = baseData({
-      recurringRules: [
-        rule({ id: "mobile-rule" }),
-        rule({ id: "mobile-card", billingMode: "card", cardId: "card-1" }),
-      ],
-    });
-    const host = document.createElement("div");
-    renderDashboard(host, data, { update() {} }, () => {});
-    expect(host.querySelector(".panel--dashboard-recurring")).not.toBeNull();
-    expect(host.querySelector(".panel--dashboard-cards")).not.toBeNull();
-    expect(host.querySelector(".dashboard-grid")).not.toBeNull();
-  });
+    renderDashboard(host, data, { update: () => {} }, () => {});
+    host.querySelector<HTMLButtonElement>('[data-invoice-id="inv-nav"]')?.click();
 
-  it("preserves baseline finance calculations without recurring rules", () => {
-    const data = baseData({
-      transactions: [
-        {
-          id: "income-1",
-          kind: "income",
-          description: "Salário",
-          amountCents: 300_000,
-          date: "2026-07-05",
-          competenceMonth: "2026-07",
-          category: "Trabalho",
-          status: "settled",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-        tx({ id: "expense-1", amountCents: 100_000 }),
-      ],
-    });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.incomePlannedCents).toBe(300_000);
-    expect(summary.expensePaidCents).toBe(100_000);
-    expect(summary.balanceRealizedCents).toBe(200_000);
-    expect(summary.recurringIncomeProjectedCents).toBe(0);
-    expect(summary.recurringExpenseProjectedCents).toBe(0);
+    expect(navigateSpy).toHaveBeenCalledWith("/faturas");
+    navigateSpy.mockRestore();
   });
 });
 
-function integratedAuditData(): AppData {
-  return baseData({
-    cards: [
-      {
-        id: "card-invoice",
-        name: "Cartão Fatura",
-        closingDay: 10,
-        dueDay: 20,
-        createdAt: TIMESTAMP,
-        updatedAt: TIMESTAMP,
-      },
-      {
-        id: "card-install",
-        name: "Cartão Parcela",
-        closingDay: 5,
-        dueDay: 15,
-        createdAt: TIMESTAMP,
-        updatedAt: TIMESTAMP,
-      },
-    ],
-    transactions: [
-      {
-        id: "income-received",
-        kind: "income",
-        description: "Receita recebida",
-        amountCents: 500_000,
-        date: "2026-07-05",
-        competenceMonth: "2026-07",
-        category: "Trabalho",
-        status: "settled",
-        createdAt: TIMESTAMP,
-        updatedAt: TIMESTAMP,
-      },
-      tx({
-        id: "expense-paid",
-        description: "Despesa direta paga",
-        amountCents: 50_000,
-      }),
-      tx({
-        id: "expense-matched",
-        description: "Despesa conciliada",
-        amountCents: 15_000,
-      }),
-      tx({
-        id: "installment-src",
-        ledgerStatus: "in_invoice",
-        cardId: "card-install",
-        amountCents: 30_000,
-        competenceMonth: "2026-06",
-        date: "2026-06-12",
-        installment: { current: 2, total: 4 },
-      }),
-    ],
-    invoices: [
-      {
-        id: "inv-open",
-        cardId: "card-invoice",
-        competenceMonth: "2026-07",
-        amountCents: 80_000,
-        amountDueCents: 80_000,
-        dueDate: "2026-07-20",
-        status: "open",
-        createdAt: TIMESTAMP,
-        updatedAt: TIMESTAMP,
-      },
-    ],
-    recurringRules: [
-      rule({
-        id: "income-recurring",
-        kind: "income",
-        description: "Receita recorrente",
-        amountCents: 100_000,
-        startMonth: "2026-07",
-      }),
-      rule({
-        id: "expense-direct-recurring",
-        description: "Despesa recorrente direta",
-        amountCents: 20_000,
-        startMonth: "2026-07",
-      }),
-      rule({
-        id: "expense-card-covered",
-        description: "Streaming coberto",
-        amountCents: 10_000,
-        billingMode: "card",
-        cardId: "card-invoice",
-        startMonth: "2026-07",
-      }),
-      rule({
-        id: "expense-matched-recurring",
-        description: "Internet conciliada",
-        amountCents: 15_000,
-        startMonth: "2026-07",
-      }),
-    ],
-    recurringMatches: [
-      {
-        id: recurringMatchId("expense-matched-recurring", "2026-07"),
-        ruleId: "expense-matched-recurring",
-        competenceMonth: "2026-07",
-        transactionId: "expense-matched",
-        createdAt: TIMESTAMP,
-        updatedAt: TIMESTAMP,
-      },
-    ],
-  });
+function formatCents(cents: number): string {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(cents / 100);
 }
 
-describe("etapa 8.4.1 integrated closing audit", () => {
-  it("counts each integrated value exactly once in the mandatory scenario", () => {
-    const data = integratedAuditData();
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    const ctx = buildDashboardContext(data, "2026-07");
-
-    expect(summary.incomeSettledCents).toBe(500_000);
-    expect(summary.expensePaidCents).toBe(65_000);
-    expect(summary.balanceRealizedCents).toBe(435_000);
-
-    expect(summary.recurringIncomeProjectedCents).toBe(100_000);
-    expect(summary.recurringExpenseProjectedCents).toBe(20_000);
-    expect(summary.recurringProjectedCount).toBe(2);
-
-    expect(summary.expensePendingCents).toBe(130_000);
-    expect(summary.incomePlannedCents).toBe(600_000);
-    expect(summary.expensePlannedCents).toBe(195_000);
-    expect(summary.balancePlannedCents).toBe(405_000);
-
-    expect(ctx.projection.openInvoicesCents).toBe(80_000);
-    expect(ctx.projection.projectedInstallmentsCents).toBe(30_000);
-    expect(ctx.projection.pendingExpenseTxCents).toBe(0);
-    expect(ctx.projection.pendingIncomeCents).toBe(0);
-
-    const breakdown =
-      ctx.projection.realizedCents +
-      ctx.projection.pendingIncomeCents +
-      ctx.projection.recurringIncomeProjectedCents -
-      ctx.projection.pendingExpenseTxCents -
-      ctx.projection.openInvoicesCents -
-      ctx.projection.projectedInstallmentsCents -
-      ctx.projection.recurringExpenseProjectedCents;
-    expect(breakdown).toBe(405_000);
-    expect(ctx.projection.projectedCents).toBe(405_000);
-
-    const resolutions = recurringResolutionsForMonth(data, "2026-07");
-    expect(resolutions.find((item) => item.occurrence.ruleId === "expense-matched-recurring")?.state).toBe(
-      "matched",
-    );
-    expect(resolutions.find((item) => item.occurrence.ruleId === "expense-card-covered")?.state).toBe(
-      "covered_by_invoice",
-    );
-    expect(
-      resolutions.filter((item) => item.state === "projected").map((item) => item.occurrence.ruleId).sort(),
-    ).toEqual(["expense-direct-recurring", "income-recurring"]);
-  });
-});
-
-describe("etapa 8.4.1 precedence audit", () => {
-  it("keeps explicit match over projection", () => {
-    const data = baseData({
-      recurringRules: [rule({ id: "matched-rule", amountCents: 15_000 })],
-      transactions: [tx({ id: "tx-match", amountCents: 15_000 })],
-      recurringMatches: [
-        {
-          id: recurringMatchId("matched-rule", "2026-07"),
-          ruleId: "matched-rule",
-          competenceMonth: "2026-07",
-          transactionId: "tx-match",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-    });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.recurringExpenseProjectedCents).toBe(0);
-    expect(summary.expensePaidCents).toBe(15_000);
-  });
-
-  it("suppresses card recurring projection when a real invoice exists", () => {
-    const data = integratedAuditData();
-    expect(calculateCompetenceSummary(data, "2026-07").recurringExpenseProjectedCents).toBe(20_000);
-  });
-
-  it("suppresses installment projection when a real invoice exists for the card", () => {
-    const data = baseData({
-      transactions: [
-        tx({
-          id: "installment-src",
-          ledgerStatus: "in_invoice",
-          cardId: "card-1",
-          installment: { current: 2, total: 4 },
-          competenceMonth: "2026-06",
-          date: "2026-06-12",
-        }),
-      ],
-      invoices: [
-        {
-          id: "inv-real",
-          cardId: "card-1",
-          competenceMonth: "2026-07",
-          amountCents: 50_000,
-          amountDueCents: 50_000,
-          dueDate: "2026-07-20",
-          status: "open",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-    });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.expensePendingCents).toBe(50_000);
-    expect(projectedInstallmentCentsForMonth(data, "2026-07")).toBe(0);
-    expect(hasInvoiceForCardMonth(data, "card-1", "2026-07")).toBe(true);
-  });
-
-  it("does not treat credit balance as open expense", () => {
-    const data = baseData({
-      invoices: [
-        {
-          id: "inv-credit",
-          cardId: "card-1",
-          competenceMonth: "2026-07",
-          amountCents: 0,
-          amountDueCents: 0,
-          creditBalanceCents: 25_000,
-          dueDate: "2026-07-20",
-          status: "paid",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-    });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    const cardSummary = buildDashboardCardSummary(data, "2026-07");
-    expect(summary.expensePendingCents).toBe(0);
-    expect(cardSummary?.cards[0]?.statusLabel).toBe("Credora");
-    expect(cardSummary?.cards[0]?.openCents).toBe(0);
-  });
-
-  it("does not duplicate invoice purchases when the invoice is paid", () => {
-    const data = baseData({
-      transactions: [
-        tx({
-          id: "purchase-in-invoice",
-          ledgerStatus: "in_invoice",
-          cardId: "card-1",
-          invoiceId: "inv-paid",
-          amountCents: 40_000,
-        }),
-      ],
-      invoices: [
-        {
-          id: "inv-paid",
-          cardId: "card-1",
-          competenceMonth: "2026-07",
-          amountCents: 40_000,
-          amountPaidCents: 40_000,
-          amountDueCents: 0,
-          dueDate: "2026-07-20",
-          status: "paid",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-    });
-    const summary = calculateCompetenceSummary(data, "2026-07");
-    expect(summary.expensePaidCents).toBe(40_000);
-    expect(summary.expensePendingCents).toBe(0);
-  });
-
-  it("keeps an empty competence neutral at zero", () => {
-    const summary = calculateCompetenceSummary(baseData(), "2026-08");
-    expect(summary.balanceRealizedCents).toBe(0);
-    expect(summary.balancePlannedCents).toBe(0);
-    expect(summary.recurringIncomeProjectedCents).toBe(0);
-    expect(summary.recurringExpenseProjectedCents).toBe(0);
-    expect(buildDashboardRecurringSummary(baseData(), "2026-08")).toBeNull();
-    expect(buildDashboardCardSummary(baseData(), "2026-08")).toBeNull();
-  });
-});
-
-describe("etapa 8.4.1 card summary audit", () => {
-  function card(id: string, name: string) {
-    return {
-      id,
-      name,
-      closingDay: 10,
-      dueDay: 20,
-      createdAt: TIMESTAMP,
-      updatedAt: TIMESTAMP,
-    };
-  }
-
-  it("shows a single paid-invoice summary per card", () => {
-    const data = baseData({
-      cards: [card("card-paid", "Pago")],
-      invoices: [
-        {
-          id: "inv-paid",
-          cardId: "card-paid",
-          competenceMonth: "2026-07",
-          amountCents: 60_000,
-          amountPaidCents: 60_000,
-          amountDueCents: 0,
-          dueDate: "2026-07-20",
-          status: "paid",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-    });
-    const summary = buildDashboardCardSummary(data, "2026-07");
-    expect(summary?.cards).toHaveLength(1);
-    expect(summary?.cards[0]?.mode).toBe("real");
-    expect(summary?.cards[0]?.paidCents).toBe(60_000);
-    expect(summary?.cards[0]?.openCents).toBe(0);
-  });
-
-  it("shows a single open-invoice summary per card", () => {
-    const data = baseData({
-      cards: [card("card-open", "Aberto")],
-      invoices: [
-        {
-          id: "inv-open",
-          cardId: "card-open",
-          competenceMonth: "2026-07",
-          amountCents: 80_000,
-          amountDueCents: 80_000,
-          dueDate: "2026-07-20",
-          status: "open",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-    });
-    const summary = buildDashboardCardSummary(data, "2026-07");
-    expect(summary?.cards).toHaveLength(1);
-    expect(summary?.cards[0]?.openCents).toBe(80_000);
-  });
-
-  it("shows projected installments only when no invoice exists", () => {
-    const data = baseData({
-      cards: [card("card-install", "Parcela")],
-      transactions: [
-        tx({
-          id: "installment-src",
-          ledgerStatus: "in_invoice",
-          cardId: "card-install",
-          amountCents: 30_000,
-          competenceMonth: "2026-06",
-          date: "2026-06-12",
-          installment: { current: 2, total: 4 },
-        }),
-      ],
-    });
-    const summary = buildDashboardCardSummary(data, "2026-07");
-    expect(summary?.cards).toHaveLength(1);
-    expect(summary?.cards[0]?.mode).toBe("projected");
-    expect(summary?.cards[0]?.totalCents).toBe(30_000);
-  });
-
-  it("shows projected recurring only when no invoice exists", () => {
-    const data = baseData({
-      cards: [card("card-rec", "Recorrente")],
-      recurringRules: [
-        rule({
-          id: "card-rec",
-          billingMode: "card",
-          cardId: "card-rec",
-          amountCents: 45_000,
-        }),
-      ],
-    });
-    const summary = buildDashboardCardSummary(data, "2026-07");
-    expect(summary?.cards).toHaveLength(1);
-    expect(summary?.cards[0]?.totalCents).toBe(45_000);
-  });
-
-  it("sums projected installments and recurring in one card summary", () => {
-    const data = baseData({
-      cards: [card("card-mix", "Misto")],
-      transactions: [
-        tx({
-          id: "installment-src",
-          ledgerStatus: "in_invoice",
-          cardId: "card-mix",
-          amountCents: 30_000,
-          competenceMonth: "2026-06",
-          date: "2026-06-12",
-          installment: { current: 2, total: 4 },
-        }),
-      ],
-      recurringRules: [
-        rule({
-          id: "card-rec",
-          billingMode: "card",
-          cardId: "card-mix",
-          amountCents: 15_000,
-        }),
-      ],
-    });
-    const summary = buildDashboardCardSummary(data, "2026-07");
-    expect(summary?.cards).toHaveLength(1);
-    expect(summary?.cards[0]?.totalCents).toBe(45_000);
-  });
-
-  it("replaces projected card summary when a real invoice appears later", () => {
-    const projectedOnly = baseData({
-      cards: [card("card-switch", "Alterna")],
-      recurringRules: [
-        rule({
-          id: "card-rec",
-          billingMode: "card",
-          cardId: "card-switch",
-          amountCents: 25_000,
-        }),
-      ],
-    });
-    expect(buildDashboardCardSummary(projectedOnly, "2026-07")?.cards[0]?.mode).toBe("projected");
-
-    const withInvoice: AppData = {
-      ...projectedOnly,
-      invoices: [
-        {
-          id: "inv-real",
-          cardId: "card-switch",
-          competenceMonth: "2026-07",
-          amountCents: 90_000,
-          amountDueCents: 90_000,
-          dueDate: "2026-07-20",
-          status: "open",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-    };
-    const summary = buildDashboardCardSummary(withInvoice, "2026-07");
-    expect(summary?.cards).toHaveLength(1);
-    expect(summary?.cards[0]?.mode).toBe("real");
-    expect(summary?.cards[0]?.totalCents).toBe(90_000);
-  });
-});
-
-describe("etapa 8.4.1 pause and dashboard audit", () => {
-  it("preserves historical matches and avoids retroactive months after resume", () => {
-    const data = baseData({
-      recurringRules: [
-        rule({
-          id: "pause-gap",
-          startMonth: "2026-01",
-          status: "paused",
-          pausedFromMonth: "2026-03",
-        }),
-      ],
-      transactions: [tx({ id: "tx-feb", competenceMonth: "2026-02", date: "2026-02-10" })],
-      recurringMatches: [
-        {
-          id: recurringMatchId("pause-gap", "2026-02"),
-          ruleId: "pause-gap",
-          competenceMonth: "2026-02",
-          transactionId: "tx-feb",
-          createdAt: TIMESTAMP,
-          updatedAt: TIMESTAMP,
-        },
-      ],
-    });
-    resumeRecurringRule(data, "pause-gap", "2026-06");
-    expect(recurringResolutionsForMonth(data, "2026-02")[0]?.state).toBe("matched");
-    expect(recurringResolutionsForMonth(data, "2026-04")).toHaveLength(0);
-    expect(data.recurringRules?.[0]?.resumedFromMonth).toBe("2026-06");
-  });
-
-  it("hides empty dashboard panels and keeps realized separate from projected", () => {
-    const emptyHost = document.createElement("div");
-    renderDashboard(emptyHost, baseData(), { update() {} }, () => {});
-    expect(emptyHost.querySelector(".panel--dashboard-recurring")).toBeNull();
-    expect(emptyHost.querySelector(".panel--dashboard-cards")).toBeNull();
-    expect(emptyHost.querySelector(".panel--projected-installments")).toBeNull();
-
-    const data = integratedAuditData();
-    const ctx = buildDashboardContext(data, "2026-07");
-    expect(ctx.summary.balanceRealizedCents).toBe(435_000);
-    expect(ctx.summary.balancePlannedCents).toBe(405_000);
-    expect(renderProjectionPanel(ctx)).not.toContain("Receitas previstas");
-    expect(renderProjectionPanel(ctx)).toContain("Recorrências de receita");
-  });
-
-  it("renders dashboard links and compact panels for mobile audit", () => {
-    const host = document.createElement("div");
-    renderDashboard(host, integratedAuditData(), { update() {} }, () => {});
-    expect(host.innerHTML).toContain('href="#/planejamento"');
-    expect(host.innerHTML).toContain('href="#/faturas"');
-    expect(host.querySelector(".panel--dashboard-recurring")).not.toBeNull();
-    expect(host.querySelector(".panel--dashboard-cards")).not.toBeNull();
-  });
-});
+function line(
+  cardId: string,
+  statusLabel: string,
+  dueDateIso: string,
+  openCents: number,
+  mode: "real" | "projected",
+): DashboardInvoiceLine {
+  return {
+    cardId,
+    cardName: cardId,
+    invoiceLabel: mode === "projected" ? "Fatura projetada" : "Fatura Jul/2026",
+    competenceMonth: "2026-07",
+    mode,
+    statusLabel,
+    totalCents: openCents,
+    paidCents: 0,
+    openCents,
+    dueDate: dueDateIso,
+    dueDateIso,
+    sortGroup: invoiceDashboardSortGroup(
+      { mode, statusLabel, openCents, dueDateIso },
+      "2026-07-12",
+    ),
+  };
+}
