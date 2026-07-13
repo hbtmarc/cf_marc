@@ -3,16 +3,25 @@ import type { AppMutations } from "../forms";
 import { deleteCard, openCardForm } from "../forms";
 import { renderCardSummaryBody, renderEmptyState, renderSectionHeader } from "../presentation";
 import { announce, createRowMenu, el, openConfirmModal } from "../ui";
-import { clearAppData, emptyAppData, saveAppData } from "../storage";
+
+function formatBackupTimestamp(ms: number): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(ms));
+}
 
 export function renderAjustes(
   host: HTMLElement,
   data: AppData,
   mutations: AppMutations,
   rerender: () => void,
-  onClearData: () => void,
+  onClearData: () => void | Promise<void>,
   showConflictBackup = false,
   onViewConflictBackup?: () => void,
+  showDeletionBackup = false,
+  deletionBackupCreatedAt: number | null = null,
+  onRestoreDeletionBackup?: () => void | Promise<void>,
 ): void {
   host.innerHTML = "";
   const flow = el("div", "settings-layout");
@@ -117,11 +126,38 @@ export function renderAjustes(
   `;
   flow.appendChild(storageSection);
 
+  if (showDeletionBackup && deletionBackupCreatedAt) {
+    const restoreSection = el("section", "settings-section");
+    restoreSection.innerHTML = renderSectionHeader("Snapshot de exclusão");
+    const restoreText = el(
+      "p",
+      "text-body",
+      `Um snapshot automático foi criado em ${formatBackupTimestamp(deletionBackupCreatedAt)} antes da última exclusão. Ele fica salvo no RTDB e pode ser restaurado em qualquer dispositivo.`,
+    );
+    const restoreButton = el("button", "btn btn--secondary", "Restaurar snapshot");
+    restoreButton.type = "button";
+    restoreButton.addEventListener("click", () => {
+      openConfirmModal({
+        title: "Restaurar snapshot",
+        message:
+          "Isso substitui os dados atuais deste dispositivo e na nuvem pelo conteúdo do snapshot salvo no RTDB. Deseja continuar?",
+        confirmLabel: "Restaurar",
+        onConfirm: () => {
+          void Promise.resolve(onRestoreDeletionBackup?.());
+        },
+      });
+    });
+    restoreSection.appendChild(restoreText);
+    restoreSection.appendChild(restoreButton);
+    flow.appendChild(restoreSection);
+  }
+
   const riskSection = el("section", "settings-section settings-section--risk");
   riskSection.innerHTML = `
     ${renderSectionHeader("Zona de risco")}
     <p class="text-body">
-      Apagar todos os dados remove receitas, despesas, cartões e faturas deste dispositivo. Esta ação não pode ser desfeita.
+      Apagar todos os dados remove receitas, despesas, cartões e faturas deste dispositivo e da nuvem.
+      Antes da exclusão, um snapshot automático é gravado no RTDB em <code>personal/finance_snapshot</code>.
     </p>
   `;
   const clearButton = el("button", "btn btn--danger", "Apagar todos os dados");
@@ -130,15 +166,11 @@ export function renderAjustes(
     openConfirmModal({
       title: "Apagar todos os dados",
       message:
-        "Isso remove receitas, despesas, cartões e faturas deste dispositivo. Deseja continuar?",
+        "Um snapshot será gravado no RTDB antes da exclusão. Os dados serão removidos localmente e em personal/finance. Deseja continuar?",
       confirmLabel: "Apagar tudo",
       danger: true,
       onConfirm: () => {
-        clearAppData();
-        const fresh = emptyAppData();
-        saveAppData(fresh);
-        announce("Todos os dados locais foram apagados.");
-        onClearData();
+        void Promise.resolve(onClearData());
       },
     });
   });

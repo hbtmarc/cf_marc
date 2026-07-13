@@ -6,6 +6,10 @@
       "finance": {
         ".read": true,
         ".write": true
+      },
+      "finance_snapshot": {
+        ".read": true,
+        ".write": true
       }
     }
   }

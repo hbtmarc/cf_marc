@@ -3,10 +3,12 @@ import {
   onValue,
   ref,
   runTransaction,
+  set,
   type DatabaseReference,
   type Unsubscribe,
 } from "firebase/database";
 import {
+  coerceRemoteFinance,
   createFinanceEnvelope,
   FINANCE_RTD_PATH,
   parseFinanceEnvelope,
@@ -38,7 +40,7 @@ export async function fetchRemoteFinance(): Promise<FinanceEnvelope | null> {
   if (!snapshot.exists()) {
     return null;
   }
-  const parsed = parseFinanceEnvelope(snapshot.val());
+  const parsed = coerceRemoteFinance(snapshot.val());
   if (!parsed) {
     throw new RemoteFinanceInvalidError();
   }
@@ -56,7 +58,7 @@ export function subscribeFinanceListener(
         listener(null);
         return;
       }
-      const parsed = parseFinanceEnvelope(snapshot.val());
+      const parsed = coerceRemoteFinance(snapshot.val());
       if (!parsed) {
         listener(null);
         return;
@@ -93,9 +95,9 @@ export async function writeRemoteFinance(
       return createFinanceEnvelope(data, writerId, 1);
     }
 
-    const parsed = parseFinanceEnvelope(current.val());
+    const parsed = coerceRemoteFinance(current.val());
     if (!parsed) {
-      return;
+      return createFinanceEnvelope(data, writerId, 1);
     }
 
     if (parsed.revision > pendingBaseRevision) {
@@ -109,7 +111,7 @@ export async function writeRemoteFinance(
     throw new RemoteWriteConflictError();
   }
 
-  const envelope = parseFinanceEnvelope(result.snapshot.val());
+  const envelope = coerceRemoteFinance(result.snapshot.val());
   if (!envelope) {
     throw new RemoteFinanceInvalidError();
   }
@@ -135,6 +137,29 @@ export function isOfflineError(error: unknown): boolean {
     code === "network-request-failed" ||
     code === "failed-precondition"
   );
+}
+
+export async function replaceRemoteFinance(
+  data: AppData,
+  writerId: string,
+): Promise<FinanceEnvelope> {
+  let nextRevision = 1;
+  try {
+    const snapshot = await get(financeRef());
+    if (snapshot.exists()) {
+      const parsed = coerceRemoteFinance(snapshot.val());
+      nextRevision = parsed ? parsed.revision + 1 : 1;
+    }
+  } catch {
+    nextRevision = 1;
+  }
+  const envelope = createFinanceEnvelope(data, writerId, nextRevision);
+  await set(financeRef(), envelope);
+  return envelope;
+}
+
+export async function clearRemoteFinance(): Promise<void> {
+  await set(financeRef(), null);
 }
 
 export function sanitizeSyncError(error: unknown): string {

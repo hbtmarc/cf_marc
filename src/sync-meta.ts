@@ -1,7 +1,16 @@
+import type { FinanceEnvelope } from "./cloud-envelope";
 import type { AppData } from "./types";
 
 export const SYNC_META_KEY = "cfm:v2:syncMeta";
 export const INSTALLATION_ID_KEY = "cfm:v2:installationId";
+export const DELETION_BACKUP_KEY = "cfm:v2:deletionBackup";
+
+export interface DeletionBackup {
+  createdAt: number;
+  localData?: AppData;
+  remoteEnvelope?: FinanceEnvelope | null;
+  snapshotInRtdb?: boolean;
+}
 
 export interface SyncMeta {
   installationId: string;
@@ -91,6 +100,61 @@ export function resetSyncMetaForTests(): void {
   try {
     localStorage.removeItem(SYNC_META_KEY);
     localStorage.removeItem(INSTALLATION_ID_KEY);
+    localStorage.removeItem(DELETION_BACKUP_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function saveDeletionBackup(backup: DeletionBackup): boolean {
+  try {
+    localStorage.setItem(DELETION_BACKUP_KEY, JSON.stringify(backup));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function saveDeletionBackupMarker(createdAt: number): boolean {
+  return saveDeletionBackup({ createdAt, snapshotInRtdb: true });
+}
+
+export function loadDeletionBackup(): DeletionBackup | null {
+  try {
+    const raw = localStorage.getItem(DELETION_BACKUP_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as Partial<DeletionBackup>;
+    if (typeof parsed.createdAt !== "number") {
+      return null;
+    }
+    if (parsed.snapshotInRtdb) {
+      return {
+        createdAt: parsed.createdAt,
+        snapshotInRtdb: true,
+      };
+    }
+    if (!parsed.localData) {
+      return null;
+    }
+    return {
+      createdAt: parsed.createdAt,
+      localData: parsed.localData,
+      remoteEnvelope: parsed.remoteEnvelope ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function hasDeletionBackup(): boolean {
+  return loadDeletionBackup() !== null;
+}
+
+export function clearDeletionBackup(): void {
+  try {
+    localStorage.removeItem(DELETION_BACKUP_KEY);
   } catch {
     // ignore
   }

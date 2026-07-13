@@ -1,11 +1,20 @@
+import {
+  clearDeletionSnapshot,
+  createDeletionSnapshot,
+  fetchDeletionSnapshot,
+  resolveSnapshotAppData,
+  saveDeletionSnapshot,
+} from "./deletion-snapshot";
 import { ensureAnonymousSession, getCurrentUser } from "./auth-service";
 import { hashAppData } from "./content-hash";
 import {
+  clearRemoteFinance,
   fetchRemoteFinance,
   isOfflineError,
   isPermissionDeniedError,
   RemoteFinanceInvalidError,
   RemoteWriteConflictError,
+  replaceRemoteFinance,
   subscribeConnectivity,
   subscribeFinanceListener,
   writeRemoteFinance,
@@ -13,11 +22,16 @@ import {
 import type { FinanceEnvelope } from "./cloud-envelope";
 import {
   clearPendingSync,
+  clearDeletionBackup,
   getOrCreateInstallationId,
+  hasDeletionBackup,
+  loadDeletionBackup,
   loadSyncMeta,
   patchSyncMeta,
+  saveDeletionBackupMarker,
 } from "./sync-meta";
 import {
+  clearAppData,
   emptyAppData,
   isAppDataEmpty,
   loadAppData,
@@ -114,6 +128,96 @@ export function getConflictBackup(): AppData | null {
 
 export function dismissConflictBackup(): void {
   patchSyncMeta({ conflictBackup: null });
+}
+
+export { hasDeletionBackup, loadDeletionBackup };
+
+export interface DeletionBackupStatus {
+  available: boolean;
+  createdAt: number | null;
+  source: "rtdb" | "local" | null;
+}
+
+async function ensureAuthForCloudOps(): Promise<boolean> {
+  if (authReady) {
+    return true;
+  }
+  try {
+    await ensureAnonymousSession();
+    authReady = true;
+    attachListeners();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function getDeletionBackupStatus(): Promise<DeletionBackupStatus> {
+  const local = loadDeletionBackup();
+  if (local?.localData) {
+    return { available: true, createdAt: local.createdAt, source: "local" };
+  }
+
+  if (await ensureAuthForCloudOps()) {
+    try {
+      const snapshot = await fetchDeletionSnapshot();
+      if (snapshot) {
+        return { available: true, createdAt: snapshot.createdAt, source: "rtdb" };
+      }
+    } catch {
+      // fall through to marker check
+    }
+  }
+
+  if (local?.snapshotInRtdb) {
+    return { available: true, createdAt: local.createdAt, source: "rtdb" };
+  }
+
+  return { available: false, createdAt: null, source: null };
+}
+
+async function resolveDeletionRestoreData(): Promise<{
+  data: AppData;
+  createdAt: number;
+  remoteRevision: number;
+} | null> {
+  if (await ensureAuthForCloudOps()) {
+    try {
+      const snapshot = await fetchDeletionSnapshot();
+      if (snapshot) {
+        return {
+          data: resolveSnapshotAppData(snapshot),
+          createdAt: snapshot.createdAt,
+          remoteRevision: snapshot.envelope?.revision ?? 0,
+        };
+      }
+    } catch {
+      // try local fallback
+    }
+  }
+
+  const local = loadDeletionBackup();
+  if (!local?.localData) {
+    return null;
+  }
+  return {
+    data: local.remoteEnvelope?.data ?? local.localData,
+    createdAt: local.createdAt,
+    remoteRevision: local.remoteEnvelope?.revision ?? 0,
+  };
+}
+
+function applyEnvelopeAfterLocalWrite(envelope: FinanceEnvelope): void {
+  lastWriteRevision = envelope.revision;
+  saveAppData(envelope.data);
+  patchSyncMeta({
+    lastRemoteRevision: envelope.revision,
+    lastRemoteUpdatedAt: envelope.updatedAt,
+    lastAppliedContentHash: hashAppData(envelope.data),
+    pendingSync: false,
+    pendingBaseRevision: envelope.revision,
+    pendingChangedAt: 0,
+  });
 }
 
 function logUnauthorizedSessionInDev(): void {
@@ -389,16 +493,7 @@ export async function flushPendingCloudWrite(forcedData?: AppData): Promise<void
   setSyncState("syncing");
   const write = writeRemoteFinance(snapshot, writerId, meta.pendingBaseRevision)
     .then((envelope) => {
-      lastWriteRevision = envelope.revision;
-      saveAppData(envelope.data);
-      patchSyncMeta({
-        lastRemoteRevision: envelope.revision,
-        lastRemoteUpdatedAt: envelope.updatedAt,
-        lastAppliedContentHash: hashAppData(envelope.data),
-        pendingSync: false,
-        pendingBaseRevision: envelope.revision,
-        pendingChangedAt: 0,
-      });
+      applyEnvelopeAfterLocalWrite(envelope);
       if (!pendingData) {
         setSyncState("synced");
       }
@@ -430,6 +525,157 @@ export async function flushPendingCloudWrite(forcedData?: AppData): Promise<void
 export async function retryCloudSync(data: AppData): Promise<void> {
   pendingData = data;
   await flushPendingCloudWrite(data);
+}
+
+export async function forcePushToCloud(data: AppData): Promise<void> {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  if (writeInFlight) {
+    await writeInFlight;
+  }
+  pendingData = null;
+
+  if (!authReady) {
+    try {
+      await ensureAnonymousSession();
+      authReady = true;
+      attachListeners();
+    } catch {
+      setSyncState("offline");
+      throw new Error("OFFLINE");
+    }
+  }
+
+  saveAppData(data);
+  const meta = loadSyncMeta();
+  const writerId = meta.installationId;
+  setSyncState("syncing");
+
+  try {
+    const envelope = await replaceRemoteFinance(data, writerId);
+    applyEnvelopeAfterLocalWrite(envelope);
+    setSyncState("synced");
+  } catch (error) {
+    pendingData = data;
+    patchSyncMeta({
+      pendingSync: true,
+      pendingBaseRevision: meta.lastRemoteRevision,
+      pendingChangedAt: Date.now(),
+    });
+    handleSyncError(error);
+    throw error;
+  }
+}
+
+export async function eraseAllDataWithBackup(): Promise<boolean> {
+  const local = loadAppData();
+  const localData = local.ok ? local.data : emptyAppData();
+
+  if (!(await ensureAuthForCloudOps())) {
+    return false;
+  }
+
+  let remoteEnvelope: FinanceEnvelope | null = null;
+  try {
+    remoteEnvelope = await fetchRemoteFinance();
+  } catch {
+    remoteEnvelope = null;
+  }
+
+  const createdAt = Date.now();
+  const meta = loadSyncMeta();
+  const snapshot = createDeletionSnapshot(localData, remoteEnvelope, meta.installationId, createdAt);
+
+  try {
+    await saveDeletionSnapshot(snapshot);
+  } catch {
+    return false;
+  }
+
+  if (!saveDeletionBackupMarker(createdAt)) {
+    try {
+      await clearDeletionSnapshot();
+    } catch {
+      // ignore rollback failure
+    }
+    return false;
+  }
+
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  if (writeInFlight) {
+    await writeInFlight;
+  }
+  pendingData = null;
+  isApplyingRemote = true;
+  clearAppData();
+  const fresh = emptyAppData();
+  saveAppData(fresh);
+  isApplyingRemote = false;
+
+  patchSyncMeta({
+    pendingSync: false,
+    pendingBaseRevision: 0,
+    pendingChangedAt: 0,
+    lastRemoteRevision: 0,
+    lastRemoteUpdatedAt: 0,
+    lastAppliedContentHash: hashAppData(fresh),
+    conflictBackup: null,
+  });
+  lastWriteRevision = null;
+  notifyDataChange(fresh);
+
+  try {
+    await clearRemoteFinance();
+    setSyncState("synced");
+  } catch (error) {
+    handleSyncError(error);
+  }
+
+  return true;
+}
+
+export async function restoreDeletionBackup(): Promise<AppData | null> {
+  const resolved = await resolveDeletionRestoreData();
+  if (!resolved) {
+    return null;
+  }
+
+  const restored = structuredClone(resolved.data);
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  if (writeInFlight) {
+    await writeInFlight;
+  }
+  pendingData = null;
+
+  saveAppData(restored);
+  notifyDataChange(restored);
+
+  try {
+    await forcePushToCloud(restored);
+    clearDeletionBackup();
+    try {
+      await clearDeletionSnapshot();
+    } catch {
+      // local restore succeeded; snapshot cleanup can retry later
+    }
+    return restored;
+  } catch {
+    patchSyncMeta({
+      pendingSync: true,
+      pendingBaseRevision: resolved.remoteRevision,
+      pendingChangedAt: Date.now(),
+    });
+    setSyncState("offline");
+    return restored;
+  }
 }
 
 export async function waitForPendingCloudWrite(): Promise<void> {

@@ -15,9 +15,12 @@ import {
 } from "./router";
 import {
   dismissConflictBackup,
+  eraseAllDataWithBackup,
   getConflictBackup,
+  getDeletionBackupStatus,
   hasConflictBackup,
   persistAppData,
+  restoreDeletionBackup,
   retryCloudSync,
   setDataChangeListener,
   startBackgroundSync,
@@ -56,6 +59,26 @@ let competenceHost: HTMLElement | null = null;
 let pageActionsHost: HTMLElement | null = null;
 let pageOverline: HTMLElement | null = null;
 let syncStatusHost: HTMLElement | null = null;
+let deletionBackupAvailable = false;
+let deletionBackupCreatedAt: number | null = null;
+let deletionBackupProbe: Promise<void> | null = null;
+
+function refreshDeletionBackupUi(): void {
+  if (deletionBackupProbe) {
+    return;
+  }
+  deletionBackupProbe = getDeletionBackupStatus()
+    .then((status) => {
+      deletionBackupAvailable = status.available;
+      deletionBackupCreatedAt = status.createdAt;
+      if (state?.ready && state.route === "/ajustes") {
+        render();
+      }
+    })
+    .finally(() => {
+      deletionBackupProbe = null;
+    });
+}
 
 const COMPETENCE_ROUTES: RoutePath[] = [
   "/dashboard",
@@ -244,15 +267,26 @@ function renderMain(): void {
       renderImportar(mainHost, () => state.data, mutations, rerender);
       break;
     case "/ajustes":
+      refreshDeletionBackupUi();
       renderAjustes(
         mainHost,
         state.data,
         mutations,
         rerender,
-        () => {
-          state.data = emptyAppData();
+        async () => {
+          const ok = await eraseAllDataWithBackup();
+          if (!ok) {
+            announce(
+              "Não foi possível criar o snapshot na nuvem. A exclusão foi cancelada.",
+            );
+            return;
+          }
           state.storageError = null;
-          persistAppData(state.data);
+          deletionBackupAvailable = true;
+          deletionBackupCreatedAt = Date.now();
+          announce(
+            "Snapshot criado na nuvem. Todos os dados foram apagados neste dispositivo e no RTDB.",
+          );
           render();
         },
         hasConflictBackup(),
@@ -265,6 +299,21 @@ function renderMain(): void {
             "Cópia local preservada disponível. Os dados atuais refletem a versão mais recente da nuvem.",
           );
           dismissConflictBackup();
+          render();
+        },
+        deletionBackupAvailable,
+        deletionBackupCreatedAt,
+        async () => {
+          const restored = await restoreDeletionBackup();
+          if (!restored) {
+            announce("Nenhum snapshot de exclusão disponível na nuvem.");
+            return;
+          }
+          state.data = restored;
+          state.storageError = null;
+          deletionBackupAvailable = false;
+          deletionBackupCreatedAt = null;
+          announce("Snapshot restaurado neste dispositivo e na nuvem.");
           render();
         },
       );

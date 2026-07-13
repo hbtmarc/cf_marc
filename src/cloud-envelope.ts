@@ -30,6 +30,24 @@ export function createFinanceEnvelope(
   };
 }
 
+/** Aceita envelope `cfm.cloud.v1` ou AppData legado gravado direto no nó. */
+export function coerceRemoteFinance(value: unknown): FinanceEnvelope | null {
+  const envelope = parseFinanceEnvelope(value);
+  if (envelope) {
+    return envelope;
+  }
+  if (!validateAppData(value)) {
+    return null;
+  }
+  return {
+    schemaVersion: CLOUD_ENVELOPE_VERSION,
+    revision: 0,
+    updatedAt: 0,
+    writerId: "legacy",
+    data: normalizeAppData(value as AppData),
+  };
+}
+
 export function parseFinanceEnvelope(value: unknown): FinanceEnvelope | null {
   if (!isRecord(value)) {
     return null;

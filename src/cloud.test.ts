@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CLOUD_ENVELOPE_VERSION, createFinanceEnvelope, parseFinanceEnvelope } from "./cloud-envelope";
+import { CLOUD_ENVELOPE_VERSION, coerceRemoteFinance, createFinanceEnvelope, parseFinanceEnvelope } from "./cloud-envelope";
 import { hashAppData } from "./content-hash";
 import { emptyAppData } from "./storage";
 
@@ -13,9 +13,17 @@ vi.mock("./auth-service", () => ({
   ensureAnonymousSession: () => mockEnsureAnonymous(),
 }));
 
+const mockReplaceRemote = vi.fn();
+const mockClearRemote = vi.fn();
+const mockSaveDeletionSnapshot = vi.fn();
+const mockFetchDeletionSnapshot = vi.fn();
+const mockClearDeletionSnapshot = vi.fn();
+
 vi.mock("./cloud-sync", () => ({
   fetchRemoteFinance: () => mockFetchRemote(),
   writeRemoteFinance: (...args: unknown[]) => mockWriteRemote(...args),
+  replaceRemoteFinance: (...args: unknown[]) => mockReplaceRemote(...args),
+  clearRemoteFinance: () => mockClearRemote(),
   subscribeFinanceListener: (listener: (envelope: unknown) => void) => {
     mockSubscribeFinance(listener);
     return () => undefined;
@@ -35,6 +43,21 @@ vi.mock("./cloud-sync", () => ({
   },
 }));
 
+vi.mock("./deletion-snapshot", () => ({
+  createDeletionSnapshot: (localData: unknown, remoteEnvelope: unknown, createdBy: string, createdAt: number) => ({
+    schemaVersion: "cfm.deletion_snapshot.v1",
+    createdAt,
+    createdBy,
+    envelope: remoteEnvelope,
+    localData,
+  }),
+  resolveSnapshotAppData: (snapshot: { envelope?: { data: unknown } | null; localData: unknown }) =>
+    snapshot.envelope?.data ?? snapshot.localData,
+  saveDeletionSnapshot: (...args: unknown[]) => mockSaveDeletionSnapshot(...args),
+  fetchDeletionSnapshot: () => mockFetchDeletionSnapshot(),
+  clearDeletionSnapshot: () => mockClearDeletionSnapshot(),
+}));
+
 describe("cloud envelope", () => {
   it("creates and parses a valid finance envelope", () => {
     const data = emptyAppData();
@@ -47,6 +70,15 @@ describe("cloud envelope", () => {
   it("rejects invalid envelopes", () => {
     expect(parseFinanceEnvelope(null)).toBeNull();
     expect(parseFinanceEnvelope({ schemaVersion: "x", revision: 1, updatedAt: 1, writerId: "w", data: {} })).toBeNull();
+  });
+
+  it("coerces legacy AppData stored directly in the RTDB node", () => {
+    const data = emptyAppData();
+    data.selectedCompetenceMonth = "2026-08";
+    const coerced = coerceRemoteFinance(data);
+    expect(coerced?.schemaVersion).toBe(CLOUD_ENVELOPE_VERSION);
+    expect(coerced?.revision).toBe(0);
+    expect(coerced?.data.selectedCompetenceMonth).toBe("2026-08");
   });
 });
 
@@ -76,6 +108,13 @@ describe("data store local-first", () => {
     mockWriteRemote.mockResolvedValue(
       createFinanceEnvelope(emptyAppData(), "writer-1", 1),
     );
+    mockReplaceRemote.mockResolvedValue(
+      createFinanceEnvelope(emptyAppData(), "writer-1", 1),
+    );
+    mockClearRemote.mockResolvedValue(undefined);
+    mockSaveDeletionSnapshot.mockResolvedValue(undefined);
+    mockFetchDeletionSnapshot.mockResolvedValue(null);
+    mockClearDeletionSnapshot.mockResolvedValue(undefined);
     mockSubscribeFinance.mockReset();
     mockSubscribeConnectivity.mockReset();
     const { resetDataStoreForTests } = await import("./data-store");
@@ -170,6 +209,69 @@ describe("data store local-first", () => {
     patchSyncMeta({ pendingSync: true, pendingBaseRevision: 2, pendingChangedAt: Date.now() });
     expect(loadSyncMeta().pendingSync).toBe(true);
     expect(loadSyncMeta().pendingBaseRevision).toBe(2);
+  });
+
+  it("forcePushToCloud replaces remote even when revision metadata is stale", async () => {
+    const data = emptyAppData();
+    data.selectedCompetenceMonth = "2026-09";
+    const envelope = createFinanceEnvelope(data, "writer-1", 4);
+    mockReplaceRemote.mockResolvedValue(envelope);
+
+    const { startBackgroundSync, forcePushToCloud, getSyncStatusState } = await import("./data-store");
+    const { patchSyncMeta, loadSyncMeta } = await import("./sync-meta");
+
+    await startBackgroundSync();
+    patchSyncMeta({ lastRemoteRevision: 1, pendingBaseRevision: 1 });
+    await forcePushToCloud(data);
+
+    expect(mockReplaceRemote).toHaveBeenCalledWith(data, expect.any(String));
+    expect(loadSyncMeta().lastRemoteRevision).toBe(4);
+    expect(getSyncStatusState().status).toBe("synced");
+  });
+
+  it("eraseAllDataWithBackup stores snapshot in RTDB and clears remote", async () => {
+    const data = emptyAppData();
+    data.selectedCompetenceMonth = "2026-07";
+    const remoteEnvelope = createFinanceEnvelope(data, "writer-2", 2);
+    mockFetchRemote.mockResolvedValue(remoteEnvelope);
+
+    const { saveAppData } = await import("./storage");
+    const { startBackgroundSync, eraseAllDataWithBackup } = await import("./data-store");
+    const { loadDeletionBackup } = await import("./sync-meta");
+
+    saveAppData(data);
+    await startBackgroundSync();
+    const ok = await eraseAllDataWithBackup();
+
+    expect(ok).toBe(true);
+    expect(mockSaveDeletionSnapshot).toHaveBeenCalled();
+    expect(loadDeletionBackup()?.snapshotInRtdb).toBe(true);
+    expect(mockClearRemote).toHaveBeenCalled();
+  });
+
+  it("restoreDeletionBackup restores from RTDB snapshot", async () => {
+    const data = emptyAppData();
+    data.selectedCompetenceMonth = "2026-06";
+    const envelope = createFinanceEnvelope(data, "writer-1", 3);
+    mockReplaceRemote.mockResolvedValue(envelope);
+    mockFetchDeletionSnapshot.mockResolvedValue({
+      schemaVersion: "cfm.deletion_snapshot.v1",
+      createdAt: Date.now(),
+      createdBy: "writer-1",
+      envelope,
+      localData: data,
+    });
+
+    const { startBackgroundSync, restoreDeletionBackup } = await import("./data-store");
+    const { saveDeletionBackupMarker } = await import("./sync-meta");
+
+    saveDeletionBackupMarker(Date.now());
+    await startBackgroundSync();
+    const restored = await restoreDeletionBackup();
+
+    expect(restored?.selectedCompetenceMonth).toBe("2026-06");
+    expect(mockReplaceRemote).toHaveBeenCalled();
+    expect(mockClearDeletionSnapshot).toHaveBeenCalled();
   });
 });
 

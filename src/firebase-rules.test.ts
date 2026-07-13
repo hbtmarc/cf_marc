@@ -65,6 +65,19 @@ describe("database security rules (temporary open access)", () => {
     await assertFails(db.ref("/").set({ public: true }));
   });
 
+  it("allows unauthenticated write on personal/finance_snapshot", async () => {
+    const db = env.unauthenticatedContext().database();
+    await assertSucceeds(
+      db.ref("personal/finance_snapshot").set({
+        schemaVersion: "cfm.deletion_snapshot.v1",
+        createdAt: Date.now(),
+        createdBy: "test-installation-id",
+        envelope: null,
+        localData: emptyAppData(),
+      }),
+    );
+  });
+
   it("rejects write outside personal/finance", async () => {
     const db = env.unauthenticatedContext().database();
     await assertFails(db.ref("other/path").set({ value: 1 }));

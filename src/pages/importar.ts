@@ -1,6 +1,7 @@
 import type { AppData } from "../types";
 import type { AppMutations } from "../forms";
 import { applyImportPlan, buildImportPlan, cloneAppData } from "../import";
+import { forcePushToCloud } from "../data-store";
 import type { ImportPlan, ImportResult } from "../import-types";
 import {
   applyCardCompletionsToPayload,
@@ -386,6 +387,15 @@ function bindReviewActions(
     mutations.update((data) => {
       Object.assign(data, snapshot);
     });
+    void forcePushToCloud(snapshot)
+      .then(() => {
+        announce("Dados importados e sincronizados com a nuvem.");
+      })
+      .catch(() => {
+        announce(
+          "Importação salva neste dispositivo. A sincronização com a nuvem falhou — use Tentar novamente na barra lateral.",
+        );
+      });
     pageState = {
       view: "result",
       fileName: pageState.fileName,
@@ -394,7 +404,6 @@ function bindReviewActions(
       cardDrafts: {},
     };
     rerender();
-    announce("Importação concluída com sucesso.");
   });
 }
 
