@@ -95,10 +95,12 @@ describe("presentation", () => {
       single: true,
       ...(sampleData.invoices[0] ? { invoice: sampleData.invoices[0] } : {}),
     });
-    expect(html).toContain("card-panel__summary");
-    expect(html).toContain("1 fatura");
+    expect(html).toContain("card-panel__hero");
+    expect(html).toContain("card-panel__chip");
+    expect(html).toContain("card-panel__surface");
     expect(html).not.toContain("fatura(s)");
-    expect(html).toContain("vence dia");
+    expect(html).not.toContain("card-panel__count");
+    expect(html).toContain("Vence dia");
   });
 
   it("labels ledger types for display", () => {
@@ -131,9 +133,8 @@ describe("presentation", () => {
       },
       invoiceCount: 1,
     });
-    expect(html).toContain("Total da fatura");
-    expect(html).toContain("Em aberto");
-    expect(html).toContain('class="card-panel__money"><span class="money">');
+    expect(html).toContain(">Paga<");
+    expect(html).toContain('class="card-panel__hero-value money money--neutral"');
     expect(html).not.toContain("money--negative");
     expect(html).not.toContain("-R$");
   });

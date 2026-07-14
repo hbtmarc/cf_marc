@@ -1,5 +1,6 @@
 import { currentCompetenceMonth } from "./finance";
 import { normalizeLegacyRecurringRule } from "./recurrence-class";
+import { syncProjectedInvoices } from "./projected-invoices";
 import type { AppData } from "./types";
 
 export const STORAGE_KEY = "cfm:v2:appData";
@@ -370,6 +371,7 @@ export function normalizeAppData(data: AppData): AppData {
   for (const rule of data.recurringRules) {
     normalizeLegacyRecurringRule(rule);
   }
+  syncProjectedInvoices(data);
   return data;
 }
 
@@ -414,6 +416,7 @@ export function loadAppData(): StorageLoadResult {
 
 export function saveAppData(data: AppData): boolean {
   try {
+    syncProjectedInvoices(data);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     return true;
   } catch {

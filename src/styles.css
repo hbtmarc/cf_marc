@@ -2771,14 +2771,6 @@ body.modal-open {
   justify-content: flex-end;
 }
 
-.card-panel--single {
-  width: 100%;
-}
-
-.card-panel--single .card-panel__summary {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .settings-details {
   margin-top: 0;
   padding: var(--space-4);
@@ -2882,101 +2874,619 @@ body.modal-open {
 
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(23.75rem, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(18.5rem, 1fr));
+  gap: var(--space-5);
   align-items: stretch;
 }
 
 .cards-grid--single {
-  grid-template-columns: minmax(23.75rem, min(32.5rem, 100%));
+  grid-template-columns: minmax(18.5rem, min(24rem, 100%));
 }
 
 .card-panel {
+  position: relative;
+  min-width: 0;
+  border-radius: 1.125rem;
+  overflow: hidden;
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 6%),
+    0 12px 28px rgb(15 23 42 / 10%);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.card-panel:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 4px rgb(15 23 42 / 8%),
+    0 18px 36px rgb(15 23 42 / 14%);
+}
+
+.card-panel__surface {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  min-width: 0;
-  padding: var(--space-4) var(--space-5);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  min-height: 12.5rem;
+  padding: var(--space-5);
+  color: #f8fafc;
+  background: linear-gradient(145deg, #334155 0%, #1e293b 52%, #0f172a 100%);
+  isolation: isolate;
 }
 
-.card-panel__header {
+.card-panel__decor {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.card-panel__decor-ring {
+  position: absolute;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 12%);
+  background: rgb(255 255 255 / 4%);
+}
+
+.card-panel__decor-ring--one {
+  width: 12rem;
+  height: 12rem;
+  top: -4.5rem;
+  right: -3rem;
+}
+
+.card-panel__decor-ring--two {
+  width: 9rem;
+  height: 9rem;
+  bottom: -3.5rem;
+  left: -2rem;
+  background: rgb(255 255 255 / 2%);
+}
+
+.card-panel__state-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.card-panel__state-tint::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 0.375rem;
+  border-radius: 0 0.2rem 0.2rem 0;
+  box-shadow: 0.25rem 0 1.25rem rgb(15 23 42 / 18%);
+}
+
+.card-panel__state-tint--paid,
+.card-panel__state-tint--credit {
+  background:
+    linear-gradient(
+      90deg,
+      rgb(34 197 94 / 0.24) 0%,
+      rgb(34 197 94 / 0.1) 32%,
+      transparent 58%
+    ),
+    linear-gradient(
+      to top right,
+      rgb(15 23 42 / 0.56) 0%,
+      rgb(15 23 42 / 0.38) 36%,
+      rgb(15 23 42 / 0.2) 68%,
+      rgb(15 23 42 / 0.07) 100%
+    );
+}
+
+.card-panel__state-tint--credit {
+  background:
+    linear-gradient(
+      90deg,
+      rgb(59 130 246 / 0.24) 0%,
+      rgb(59 130 246 / 0.1) 32%,
+      transparent 58%
+    ),
+    linear-gradient(
+      to top right,
+      rgb(15 23 42 / 0.56) 0%,
+      rgb(15 23 42 / 0.38) 36%,
+      rgb(15 23 42 / 0.2) 68%,
+      rgb(15 23 42 / 0.07) 100%
+    );
+}
+
+.card-panel__state-tint--open,
+.card-panel__state-tint--partial {
+  background:
+    linear-gradient(
+      90deg,
+      rgb(245 158 11 / 0.28) 0%,
+      rgb(245 158 11 / 0.12) 34%,
+      transparent 60%
+    ),
+    linear-gradient(
+      to top right,
+      rgb(15 23 42 / 0.62) 0%,
+      rgb(15 23 42 / 0.44) 38%,
+      rgb(15 23 42 / 0.24) 70%,
+      rgb(15 23 42 / 0.09) 100%
+    );
+}
+
+.card-panel__state-tint--overdue {
+  background:
+    linear-gradient(
+      90deg,
+      rgb(239 68 68 / 0.3) 0%,
+      rgb(239 68 68 / 0.14) 36%,
+      transparent 62%
+    ),
+    linear-gradient(
+      to top right,
+      rgb(15 23 42 / 0.7) 0%,
+      rgb(15 23 42 / 0.5) 40%,
+      rgb(15 23 42 / 0.28) 72%,
+      rgb(15 23 42 / 0.11) 100%
+    );
+}
+
+.card-panel__state-tint--paid::before {
+  background: rgb(34 197 94 / 0.95);
+}
+
+.card-panel__state-tint--credit::before {
+  background: rgb(59 130 246 / 0.95);
+}
+
+.card-panel__state-tint--open::before,
+.card-panel__state-tint--partial::before {
+  background: rgb(245 158 11 / 0.95);
+}
+
+.card-panel__state-tint--overdue::before {
+  background: rgb(239 68 68 / 0.95);
+}
+
+.card-panel--tint-current .card-panel__state-tint--paid {
+  background:
+    linear-gradient(
+      90deg,
+      rgb(34 197 94 / 0.16) 0%,
+      rgb(34 197 94 / 0.06) 30%,
+      transparent 52%
+    ),
+    linear-gradient(
+      to top right,
+      rgb(15 23 42 / 0.4) 0%,
+      rgb(15 23 42 / 0.26) 36%,
+      rgb(15 23 42 / 0.14) 68%,
+      rgb(15 23 42 / 0.05) 100%
+    );
+}
+
+.card-panel--tint-current .card-panel__state-tint--credit {
+  background:
+    linear-gradient(
+      90deg,
+      rgb(59 130 246 / 0.16) 0%,
+      rgb(59 130 246 / 0.06) 30%,
+      transparent 52%
+    ),
+    linear-gradient(
+      to top right,
+      rgb(15 23 42 / 0.4) 0%,
+      rgb(15 23 42 / 0.26) 36%,
+      rgb(15 23 42 / 0.14) 68%,
+      rgb(15 23 42 / 0.05) 100%
+    );
+}
+
+.card-panel--tint-current .card-panel__state-tint--open,
+.card-panel--tint-current .card-panel__state-tint--partial {
+  background:
+    linear-gradient(
+      90deg,
+      rgb(245 158 11 / 0.2) 0%,
+      rgb(245 158 11 / 0.08) 32%,
+      transparent 54%
+    ),
+    linear-gradient(
+      to top right,
+      rgb(15 23 42 / 0.48) 0%,
+      rgb(15 23 42 / 0.32) 38%,
+      rgb(15 23 42 / 0.18) 70%,
+      rgb(15 23 42 / 0.07) 100%
+    );
+}
+
+.card-panel--tint-current .card-panel__state-tint--overdue {
+  background:
+    linear-gradient(
+      90deg,
+      rgb(239 68 68 / 0.22) 0%,
+      rgb(239 68 68 / 0.1) 34%,
+      transparent 56%
+    ),
+    linear-gradient(
+      to top right,
+      rgb(15 23 42 / 0.54) 0%,
+      rgb(15 23 42 / 0.36) 40%,
+      rgb(15 23 42 / 0.2) 72%,
+      rgb(15 23 42 / 0.08) 100%
+    );
+}
+
+.card-panel__top,
+.card-panel__identity,
+.card-panel__hero,
+.card-panel__footer,
+.card-panel__empty {
+  position: relative;
+  z-index: 2;
+}
+
+.card-panel__top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
-  margin: 0;
 }
 
-.card-panel__title-wrap {
+.card-panel__chip {
+  position: relative;
+  z-index: 2;
+  width: 2.35rem;
+  height: 1.75rem;
+  border-radius: 0.35rem;
+  background: linear-gradient(135deg, #fde68a 0%, #f59e0b 48%, #d97706 100%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 22%);
+}
+
+.card-panel__chip::before,
+.card-panel__chip::after {
+  content: "";
+  position: absolute;
+  display: block;
+  border-radius: 0.125rem;
+  background: rgb(120 53 15 / 28%);
+}
+
+.card-panel__chip::before {
+  inset: 0.45rem 0.55rem auto 0.55rem;
+  height: 0.18rem;
+}
+
+.card-panel__chip::after {
+  inset: 0.78rem 0.55rem auto 0.55rem;
+  height: 0.18rem;
+  width: 55%;
+}
+
+.card-panel__status {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+  z-index: 3;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.card-panel__status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 18%);
+}
+
+.card-panel__status-chip--projected {
+  color: #fef3c7;
+  background: rgb(245 158 11 / 24%);
+  border-color: rgb(251 191 36 / 35%);
+}
+
+.card-panel__status-chip--overdue {
+  color: #fecaca;
+  background: rgb(220 38 38 / 28%);
+  border-color: rgb(248 113 113 / 42%);
+}
+
+.card-panel__status-chip--open {
+  color: #fef3c7;
+  background: rgb(245 158 11 / 28%);
+  border-color: rgb(251 191 36 / 42%);
+}
+
+.card-panel__status-chip--paid {
+  color: #dcfce7;
+  background: rgb(34 197 94 / 22%);
+  border-color: rgb(74 222 128 / 35%);
+}
+
+.card-panel__status-chip--credit {
+  color: #dbeafe;
+  background: rgb(59 130 246 / 22%);
+  border-color: rgb(96 165 250 / 35%);
+}
+
+.card-panel__status-chip--neutral {
+  color: #e2e8f0;
+  background: rgb(148 163 184 / 22%);
+  border-color: rgb(203 213 225 / 28%);
+}
+
+.card-panel__identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.card-panel__identity-text {
   min-width: 0;
-  flex: 1 1 auto;
 }
 
 .card-panel__name {
   margin: 0;
-  font-size: var(--text-item);
+  font-size: 1.125rem;
   font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.card-panel__count {
-  margin: var(--space-2) 0 0;
-  font-size: var(--text-micro);
-  color: var(--color-text-secondary);
+.card-panel__pan {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8125rem;
+  letter-spacing: 0.14em;
+  color: rgb(248 250 252 / 82%);
 }
 
-.card-panel__cycle {
-  margin: var(--space-3) 0 0;
+.card-panel__invoice {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-1);
+  border-top: 1px solid rgb(255 255 255 / 14%);
+}
+
+.card-panel__invoice-label {
+  margin: 0;
   font-size: var(--text-micro);
-  color: var(--color-text-secondary);
+  font-weight: var(--weight-semibold);
+  color: rgb(248 250 252 / 92%);
+}
+
+.card-panel__invoice-meta {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: rgb(248 250 252 / 68%);
   white-space: nowrap;
 }
 
-.card-panel__summary {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-4) var(--space-5);
-  margin: 0;
+.card-panel__hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
-.card-panel__summary-item dt {
-  margin: 0;
+.card-panel__hero-label {
   font-size: var(--text-micro);
-  color: var(--color-text-secondary);
+  color: rgb(248 250 252 / 78%);
+  letter-spacing: 0.04em;
   text-transform: none;
 }
 
-.card-panel__summary-item dd {
-  margin: var(--space-1) 0 0;
+.card-panel__hero-value {
+  font-size: clamp(1.35rem, 2.4vw, 1.65rem);
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  min-width: 0;
 }
 
-.card-panel__money {
+.card-panel__hero-amounts {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.card-panel__hero--credit .card-panel__hero-value {
+  font-size: clamp(1.15rem, 2vw, 1.45rem);
+  color: #dbeafe;
+}
+
+.card-panel__hero-credit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.05rem;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.card-panel__hero-credit-label {
+  font-size: 0.5625rem;
+  font-weight: var(--weight-medium);
+  color: rgb(147 197 253 / 88%);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
-.card-panel__nowrap {
+.card-panel__hero-credit-value {
+  font-size: clamp(0.95rem, 1.75vw, 1.125rem);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: #bbf7d0;
+}
+
+.card-panel__hero--open .card-panel__hero-label,
+.card-panel__hero--partial .card-panel__hero-label {
+  color: #fcd34d;
+}
+
+.card-panel__hero--open .card-panel__hero-value,
+.card-panel__hero--partial .card-panel__hero-value {
+  color: #fef3c7;
+}
+
+.card-panel__hero--overdue .card-panel__hero-label {
+  color: #fca5a5;
+}
+
+.card-panel__hero--overdue .card-panel__hero-value {
+  color: #fecaca;
+}
+
+.card-panel__hero--paid .card-panel__hero-label {
+  color: rgb(187 247 208 / 88%);
+}
+
+.card-panel__hero--paid .card-panel__hero-value {
+  color: rgb(248 250 252 / 92%);
+}
+
+.card-panel__hero--credit .card-panel__hero-label {
+  color: #93c5fd;
+}
+
+.card-panel__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+
+.card-panel__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.card-panel__metric--due {
+  grid-column: 1 / -1;
+}
+
+.card-panel__metric-label {
+  font-size: 0.6875rem;
+  color: rgb(248 250 252 / 62%);
+}
+
+.card-panel__metric-value {
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.card-panel__status .status-chip {
+.card-panel__metric-value--date {
+  font-size: var(--text-micro);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.01em;
+}
+
+.card-panel__footer {
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid rgb(255 255 255 / 12%);
+  font-size: 0.6875rem;
+  color: rgb(248 250 252 / 62%);
+}
+
+.card-panel__cycle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .card-panel__empty {
   margin: 0;
+  padding: var(--space-3) 0;
   font-size: var(--text-body);
-  color: var(--color-text-secondary);
+  line-height: 1.45;
+  color: rgb(248 250 252 / 72%);
+}
+
+.card-panel--empty .card-panel__surface {
+  min-height: 12.5rem;
+}
+
+.card-panel--empty .card-panel__identity {
+  opacity: 0.92;
+}
+
+.card-panel .money {
+  color: inherit;
+}
+
+.card-panel .money--negative {
+  color: #fecaca;
+}
+
+.card-panel .money--positive {
+  color: #bbf7d0;
+}
+
+.card-panel .money--neutral {
+  color: rgb(248 250 252 / 88%);
+}
+
+/* Brand themes */
+.card-panel--theme-nubank .card-panel__surface {
+  background: linear-gradient(145deg, #a855f7 0%, #820ad1 45%, #4c0677 100%);
+}
+
+.card-panel--theme-ourocard .card-panel__surface {
+  background: linear-gradient(145deg, #fde68a 0%, #ca8a04 38%, #1e3a5f 100%);
+}
+
+.card-panel--theme-porto .card-panel__surface {
+  background: linear-gradient(145deg, #38bdf8 0%, #0284c7 42%, #0c4a6e 100%);
+}
+
+.card-panel--theme-mercado .card-panel__surface {
+  background: linear-gradient(145deg, #67e8f9 0%, #0891b2 40%, #164e63 100%);
+}
+
+.card-panel--theme-itau .card-panel__surface {
+  background: linear-gradient(145deg, #fb923c 0%, #ea580c 42%, #7c2d12 100%);
+}
+
+.card-panel--theme-inter .card-panel__surface {
+  background: linear-gradient(145deg, #fdba74 0%, #f97316 38%, #431407 100%);
+}
+
+.card-panel--theme-c6 .card-panel__surface {
+  background: linear-gradient(145deg, #d4d4d8 0%, #52525b 45%, #18181b 100%);
+}
+
+.card-panel--theme-default .card-panel__surface {
+  background: linear-gradient(145deg, #64748b 0%, #334155 48%, #0f172a 100%);
 }
 
 .card-panel--single {
   width: 100%;
+}
+
+.card-panel--single .card-panel__metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .settings-layout {
@@ -3195,8 +3705,12 @@ body.modal-open {
 }
 
 @media (max-width: 56rem) {
-  .card-panel__summary {
+  .card-panel__metrics {
     grid-template-columns: 1fr;
+  }
+
+  .card-panel__metric--due {
+    grid-column: auto;
   }
 
   .cards-grid {

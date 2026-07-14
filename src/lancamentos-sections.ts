@@ -7,6 +7,7 @@ import {
   invoiceStatusLabel,
   invoiceTotalCentsValue,
   isInvoiceLinkedExpense,
+  isProjectedInvoice,
   ledgerExpenseCents,
   transactionStatusLabel,
   transactionsForInvoice,
@@ -15,6 +16,7 @@ import {
   projectedInstallmentsForMonth,
   type ProjectedInstallment,
 } from "./installments";
+import { projectedInstallmentsForProjectedInvoice } from "./projected-invoices";
 import type { AppData, Invoice, Transaction } from "./types";
 import {
   projectedInstallmentSearchHaystack,
@@ -86,8 +88,25 @@ function projectedDueDate(data: AppData, cardId: string, competenceMonth: string
 
 export function buildLedgerCardGroups(data: AppData, competenceMonth: string): LedgerCardGroup[] {
   const groups: LedgerCardGroup[] = [];
+  const projectedCardIds = new Set<string>();
 
   for (const invoice of filterInvoicesByCompetence(data.invoices, competenceMonth)) {
+    if (isProjectedInvoice(invoice)) {
+      const projections = projectedInstallmentsForProjectedInvoice(data, invoice);
+      projectedCardIds.add(invoice.cardId);
+      groups.push({
+        key: `projected-invoice:${invoice.id}`,
+        cardId: invoice.cardId,
+        cardName: cardNameById(data, invoice.cardId),
+        competenceMonth,
+        mode: "projected",
+        projections,
+        dueDate: invoice.dueDate,
+        lineCount: projections.length,
+      });
+      continue;
+    }
+
     const lines = transactionsForInvoice(data.transactions, invoice.id);
     groups.push({
       key: `real:${invoice.id}`,
@@ -111,6 +130,9 @@ export function buildLedgerCardGroups(data: AppData, competenceMonth: string): L
   }
 
   for (const [cardId, items] of byCard) {
+    if (projectedCardIds.has(cardId)) {
+      continue;
+    }
     groups.push({
       key: `projected:${cardId}:${competenceMonth}`,
       cardId,

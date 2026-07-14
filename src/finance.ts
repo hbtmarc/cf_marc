@@ -191,10 +191,30 @@ export function invoiceOpenCents(invoice: Invoice): number {
   return invoice.amountDueCents ?? invoiceDebtCents(invoice);
 }
 
+export function isProjectedInvoice(invoice: Invoice): boolean {
+  return invoice.isProjected === true;
+}
+
+export function hasRealInvoiceForCardMonth(
+  data: AppData,
+  cardId: string,
+  competenceMonth: string,
+): boolean {
+  return data.invoices.some(
+    (invoice) =>
+      invoice.cardId === cardId &&
+      invoice.competenceMonth === competenceMonth &&
+      !isProjectedInvoice(invoice),
+  );
+}
+
 export function invoiceNeedsFinancialAction(
   invoice: Invoice,
   today = new Date().toISOString().slice(0, 10),
 ): boolean {
+  if (isProjectedInvoice(invoice)) {
+    return false;
+  }
   if (invoiceHasCredit(invoice)) {
     return false;
   }
@@ -414,6 +434,9 @@ export function transactionStatusLabel(
 }
 
 export function invoiceStatusLabel(invoice: Invoice): string {
+  if (isProjectedInvoice(invoice)) {
+    return "Projetada";
+  }
   if (invoiceHasCredit(invoice)) {
     return "Credora";
   }

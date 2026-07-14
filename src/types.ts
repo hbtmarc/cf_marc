@@ -59,6 +59,8 @@ export interface Invoice {
   status: InvoiceStatus;
   createdAt: string;
   updatedAt: string;
+  /** Fatura gerada automaticamente a partir de parcelas/recorrências em aberto. */
+  isProjected?: boolean;
   sourceImportId?: string;
   invoiceTotalCents?: number;
   amountPaidCents?: number;

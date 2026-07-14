@@ -1,4 +1,8 @@
-import type { AppData, Transaction } from "./types";
+import type { AppData, Invoice, Transaction } from "./types";
+
+function isRealInvoice(invoice: Invoice): boolean {
+  return invoice.isProjected !== true;
+}
 
 function shiftCompetenceMonth(competenceMonth: string, delta: number): string {
   const [yearStr, monthStr] = competenceMonth.split("-");
@@ -168,7 +172,10 @@ export function hasInvoiceForCardMonth(
   competenceMonth: string,
 ): boolean {
   return data.invoices.some(
-    (invoice) => invoice.cardId === cardId && invoice.competenceMonth === competenceMonth,
+    (invoice) =>
+      invoice.cardId === cardId &&
+      invoice.competenceMonth === competenceMonth &&
+      isRealInvoice(invoice),
   );
 }
 

@@ -4,6 +4,7 @@ import {
   invoiceStatusLabel,
   invoiceTotalCentsValue,
   invoiceOpenCents,
+  isProjectedInvoice,
   transactionDisplayedAmountCents,
   transactionsForInvoice,
 } from "../finance";
@@ -27,6 +28,7 @@ import {
   transactionTypeLabel,
 } from "../presentation";
 import { installmentSortValue } from "../installment-label";
+import { projectedInstallmentsForProjectedInvoice } from "../projected-invoices";
 import {
   INVOICE_STATUS_SORT_ORDER,
   sortTableItems,
@@ -188,6 +190,16 @@ export function renderFaturasHeaderActions(
   host.appendChild(actions);
 }
 
+function invoiceForCardInMonth(
+  invoices: Invoice[],
+  cardId: string,
+): Invoice | undefined {
+  return (
+    invoices.find((item) => item.cardId === cardId && !isProjectedInvoice(item)) ??
+    invoices.find((item) => item.cardId === cardId && isProjectedInvoice(item))
+  );
+}
+
 export function renderFaturas(
   host: HTMLElement,
   data: AppData,
@@ -234,12 +246,13 @@ export function renderFaturas(
     const grid = el("div", `cards-grid${singleCard ? " cards-grid--single" : ""}`);
     for (const card of data.cards) {
       const cardInvoices = data.invoices.filter((item) => item.cardId === card.id);
-      const currentInvoice = invoices.find((item) => item.cardId === card.id);
+      const currentInvoice = invoiceForCardInMonth(invoices, card.id);
       const panel = el("div");
       panel.innerHTML = renderCardPanel({
         card,
         invoiceCount: cardInvoices.length,
         single: singleCard,
+        competenceMonth: month,
         ...(currentInvoice ? { invoice: currentInvoice } : {}),
       });
       const article = panel.firstElementChild;
@@ -322,6 +335,9 @@ export function renderFaturas(
           invoice,
           cardName: cardNameById(data, invoice.cardId),
           transactions: detailTransactions,
+          projections: isProjectedInvoice(invoice)
+            ? projectedInstallmentsForProjectedInvoice(data, invoice)
+            : [],
           panelId: `invoice-detail-${invoice.id}`,
           sortColumns: INVOICE_DETAIL_SORT_COLUMNS,
           sortState: invoiceDetailSort,
@@ -385,6 +401,9 @@ function bindInvoiceActions(
   rerender: () => void,
 ): void {
   for (const invoice of invoices) {
+    if (isProjectedInvoice(invoice)) {
+      continue;
+    }
     const slot = host.querySelector<HTMLElement>(`[data-invoice-actions="${invoice.id}"]`);
     if (!slot) {
       continue;

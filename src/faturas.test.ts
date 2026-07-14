@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  currentCompetenceMonth,
   invoiceNeedsFinancialAction,
   invoiceOpenCents,
   invoicePaidCents,
@@ -209,13 +210,51 @@ describe("invoice history presentation", () => {
       invoice: nubankPaid,
       invoiceCount: 1,
     });
-    expect(html).toContain("Total da fatura");
+    expect(html).toContain("card-panel__hero-label");
+    expect(html).toContain(">Paga<");
     expect(html).toContain("1.601,25");
-    expect(html).toContain("Pago");
-    expect(html).toContain("Em aberto");
-    expect(html).toContain("0,00");
-    expect(html).toContain("Paga");
+    expect(html).not.toContain("card-panel__metrics");
+    expect(html).not.toContain(">Pago<");
+    expect(html).not.toContain(">Em aberto<");
+    expect(html).toContain("card-panel__state-tint--paid");
     expect(html).not.toContain("-R$");
+  });
+
+  it("uses subtle tint on the current competence month", () => {
+    const html = renderCardPanel({
+      card: sampleData().cards[0]!,
+      invoice: nubankPaid,
+      invoiceCount: 1,
+      competenceMonth: currentCompetenceMonth(),
+    });
+    expect(html).toContain("card-panel--tint-current");
+  });
+
+  it("uses emphasis tint on past competence months", () => {
+    const html = renderCardPanel({
+      card: sampleData().cards[0]!,
+      invoice: nubankPaid,
+      invoiceCount: 1,
+      competenceMonth: "2020-01",
+    });
+    expect(html).toContain("card-panel--tint-emphasis");
+  });
+
+  it("treats projected invoices like open on card panels without changing card theme", () => {
+    const html = renderCardPanel({
+      card: sampleData().cards[0]!,
+      invoice: {
+        ...portoOpen,
+        id: "projected-invoice:card-nubank:2026-08",
+        isProjected: true,
+      },
+      invoiceCount: 1,
+    });
+    expect(html).toContain(">Projetada<");
+    expect(html).toContain("card-panel__state-tint--open");
+    expect(html).toContain("card-panel__status-chip--open");
+    expect(html).not.toContain("card-panel__state-tint--projected");
+    expect(html).not.toContain("card-panel--projected");
   });
 
   it("shows open invoice total and due amount", () => {
@@ -225,8 +264,9 @@ describe("invoice history presentation", () => {
       invoiceCount: 1,
     });
     expect(html).toContain("4.846,24");
-    expect(html).toContain("money--negative");
-    expect(html).toContain("Aberta");
+    expect(html).toContain("card-panel__hero--open");
+    expect(html).not.toContain("money--negative");
+    expect(html).toContain(">Aberta<");
   });
 
   it("shows creditor invoice total, payment and credit", () => {
@@ -235,12 +275,13 @@ describe("invoice history presentation", () => {
       invoice: mercadoCreditor,
       invoiceCount: 1,
     });
-    expect(html).toContain("Total líquido");
     expect(html).toContain("55,17");
-    expect(html).toContain("60,00");
-    expect(html).toContain("Saldo credor");
     expect(html).toContain("4,83");
-    expect(html).toContain("Credora");
+    expect(html).toContain(">Credora<");
+    expect(html).toContain("Saldo positivo");
+    expect(html).toContain("card-panel__hero-credit");
+    expect(html).not.toContain("card-panel__subline");
+    expect(html).not.toContain("Saldo credor");
   });
 
   it("never renders negative zero money", () => {

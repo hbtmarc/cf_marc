@@ -1,7 +1,12 @@
 import { mergeImportCardDays } from "./import-card-review";
 import { createId, isValidDate, nowIso } from "./finance";
+import {
+  findHarmonizedExpenseMatch,
+  findHarmonizedIncomeMatch,
+} from "./import-reconcile";
 import { runAutoReconciliation } from "./recurrence-auto-match";
 import { ensureImportMeta, hasFingerprint, rememberFingerprint } from "./import-meta";
+import { syncProjectedInvoices } from "./projected-invoices";
 import type {
   ImportCard,
   ImportExpense,
@@ -191,6 +196,36 @@ function ledgerRecordsEqual(
   );
 }
 
+function applyLedgerUpdate(
+  existing: Transaction,
+  mapped: Omit<Transaction, "id">,
+  sourceImportId: string,
+): void {
+  const timestamp = nowIso();
+  Object.assign(existing, {
+    ...mapped,
+    id: existing.id,
+    createdAt: existing.createdAt,
+    sourceImportId,
+    updatedAt: timestamp,
+  });
+}
+
+function resolveImportTransaction(
+  data: AppData,
+  mapped: Omit<Transaction, "id">,
+  fingerprint: string,
+  kind: "income" | "expense",
+): Transaction | undefined {
+  const byFingerprint = findTransactionByFingerprint(data, fingerprint);
+  if (byFingerprint) {
+    return byFingerprint;
+  }
+  return kind === "income"
+    ? findHarmonizedIncomeMatch(data, mapped)
+    : findHarmonizedExpenseMatch(data, mapped);
+}
+
 function summarizePlan(items: ImportPlanItem[]): ImportReviewSummary["planCounts"] {
   return {
     new: items.filter((item) => item.action === "create").length,
@@ -321,15 +356,17 @@ export function buildImportPlan(
   for (const income of payload.incomes) {
     const mapped = mapImportIncome(income);
     const byFingerprint = findTransactionByFingerprint(data, income.canonicalFingerprint);
-    if (byFingerprint) {
-      if (ledgerRecordsEqual(byFingerprint, mapped)) {
+    const harmonyMatch =
+      byFingerprint ?? findHarmonizedIncomeMatch(data, mapped);
+    if (harmonyMatch) {
+      if (ledgerRecordsEqual(harmonyMatch, mapped)) {
         items.push({
           entity: "income",
           importId: income.id,
           label: income.description,
           action: "existing",
         });
-      } else if (isManualRecord(byFingerprint)) {
+      } else if (isManualRecord(harmonyMatch)) {
         items.push({
           entity: "income",
           importId: income.id,
@@ -342,8 +379,7 @@ export function buildImportPlan(
           entity: "income",
           importId: income.id,
           label: income.description,
-          action: "conflict",
-          reason: "Renda importada com dados divergentes.",
+          action: "updated",
         });
       }
       continue;
@@ -378,15 +414,17 @@ export function buildImportPlan(
       localInvoiceId,
     );
     const byFingerprint = findTransactionByFingerprint(data, expense.canonicalFingerprint);
-    if (byFingerprint) {
-      if (ledgerRecordsEqual(byFingerprint, mapped)) {
+    const harmonyMatch =
+      byFingerprint ?? findHarmonizedExpenseMatch(data, mapped);
+    if (harmonyMatch) {
+      if (ledgerRecordsEqual(harmonyMatch, mapped)) {
         items.push({
           entity: "expense",
           importId: expense.id,
           label: expense.description,
           action: "existing",
         });
-      } else if (isManualRecord(byFingerprint)) {
+      } else if (isManualRecord(harmonyMatch)) {
         items.push({
           entity: "expense",
           importId: expense.id,
@@ -399,8 +437,7 @@ export function buildImportPlan(
           entity: "expense",
           importId: expense.id,
           label: expense.description,
-          action: "conflict",
-          reason: "Despesa importada com dados divergentes.",
+          action: "updated",
         });
       }
       continue;
@@ -563,11 +600,21 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
       continue;
     }
     const mapped = mapImportIncome(income);
-    const current = findTransactionByFingerprint(nextData, income.canonicalFingerprint);
+    const current = resolveImportTransaction(
+      nextData,
+      mapped,
+      income.canonicalFingerprint,
+      "income",
+    );
     if (planItem.action === "create") {
       nextData.transactions.push({ id: createId(), ...mapped });
       rememberFingerprint(nextData, income.canonicalFingerprint);
       created += 1;
+      resultItems.push(planItem);
+    } else if (planItem.action === "updated" && current && !isManualRecord(current)) {
+      applyLedgerUpdate(current, mapped, income.id);
+      rememberFingerprint(nextData, income.canonicalFingerprint);
+      updated += 1;
       resultItems.push(planItem);
     } else if (planItem.action === "existing" || current || hasFingerprint(nextData, income.canonicalFingerprint)) {
       existing += 1;
@@ -593,11 +640,21 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
         findInvoiceByImportId(nextData, expense.invoiceId)?.id)
       : undefined;
     const mapped = mapImportExpense(expense, localCardId, localInvoiceId);
-    const current = findTransactionByFingerprint(nextData, expense.canonicalFingerprint);
+    const current = resolveImportTransaction(
+      nextData,
+      mapped,
+      expense.canonicalFingerprint,
+      "expense",
+    );
     if (planItem.action === "create") {
       nextData.transactions.push({ id: createId(), ...mapped });
       rememberFingerprint(nextData, expense.canonicalFingerprint);
       created += 1;
+      resultItems.push(planItem);
+    } else if (planItem.action === "updated" && current && !isManualRecord(current)) {
+      applyLedgerUpdate(current, mapped, expense.id);
+      rememberFingerprint(nextData, expense.canonicalFingerprint);
+      updated += 1;
       resultItems.push(planItem);
     } else if (planItem.action === "existing" || current || hasFingerprint(nextData, expense.canonicalFingerprint)) {
       existing += 1;
@@ -609,6 +666,7 @@ export function applyImportPlan(data: AppData, plan: ImportPlan): ImportResult {
   }
 
   Object.assign(data, nextData);
+  syncProjectedInvoices(data);
   runAutoReconciliation(data);
 
   return {

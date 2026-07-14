@@ -8,6 +8,7 @@ import {
   invoiceStatusLabel,
   invoiceTotalCentsValue,
   isInvoiceLinkedExpense,
+  isProjectedInvoice,
   sumCents,
 } from "./finance";
 import { hasInvoiceForCardMonth, projectedInstallmentsForMonth } from "./installments";
@@ -134,7 +135,11 @@ function cardHasMovement(
   competenceMonth: string,
 ): boolean {
   const transactions = filterTransactionsByCompetence(data.transactions, competenceMonth);
+  const invoices = filterInvoicesByCompetence(data.invoices, competenceMonth);
   const hasInvoice = hasInvoiceForCardMonth(data, cardId, competenceMonth);
+  const hasProjectedInvoiceRecord = invoices.some(
+    (item) => item.cardId === cardId && isProjectedInvoice(item),
+  );
   const hasCardTransactions = transactions.some(
     (item) => item.cardId === cardId && isInvoiceLinkedExpense(item),
   );
@@ -146,7 +151,7 @@ function cardHasMovement(
       item.occurrence.billingMode === "card" && item.occurrence.cardId === cardId,
   );
 
-  return hasInvoice || hasCardTransactions || hasProjectedInstallments || hasRecurring;
+  return hasInvoice || hasProjectedInvoiceRecord || hasCardTransactions || hasProjectedInstallments || hasRecurring;
 }
 
 export function invoiceDashboardSortGroup(
@@ -217,7 +222,12 @@ export function buildDashboardCardSummary(
       continue;
     }
 
-    const invoice = invoices.find((item) => item.cardId === card.id);
+    const invoice = invoices.find(
+      (item) => item.cardId === card.id && !isProjectedInvoice(item),
+    );
+    const projectedInvoice = invoices.find(
+      (item) => item.cardId === card.id && isProjectedInvoice(item),
+    );
     if (invoice) {
       const statusLabel = invoiceStatusLabel(invoice);
       const open = invoiceOpenCents(invoice);
@@ -238,6 +248,28 @@ export function buildDashboardCardSummary(
       };
       line.sortGroup = invoiceDashboardSortGroup(line, today);
       lines.push(line);
+      continue;
+    }
+
+    if (projectedInvoice) {
+      const open = invoiceOpenCents(projectedInvoice);
+      const dueDateIso = projectedInvoice.dueDate;
+      const projectedLine: DashboardInvoiceLine = {
+        cardId: card.id,
+        cardName: card.name,
+        invoiceId: projectedInvoice.id,
+        invoiceLabel: "Fatura projetada",
+        competenceMonth,
+        mode: "projected",
+        statusLabel: "PROJETADA",
+        totalCents: invoiceTotalCentsValue(projectedInvoice),
+        paidCents: 0,
+        openCents: open,
+        dueDate: dueDateIso ? formatDateLabel(dueDateIso) : "—",
+        dueDateIso,
+        sortGroup: 2,
+      };
+      lines.push(projectedLine);
       continue;
     }
 

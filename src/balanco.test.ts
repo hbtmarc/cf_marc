@@ -82,7 +82,7 @@ describe("balanco payment checklist page", () => {
   });
 
   it("renders the four payment status labels", () => {
-    const data = {
+    const data: AppData = {
       ...baseData(),
       cards: [
         {
