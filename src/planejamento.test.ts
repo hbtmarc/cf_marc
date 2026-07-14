@@ -168,9 +168,7 @@ describe("planejamento route and page", () => {
       "btn--secondary",
     );
     expect(host.querySelector(".planejamento-suggestion-group")).not.toBeNull();
-    expect(
-      host.querySelector(".segmented-control, .planejamento-suggestion-row__class-badge"),
-    ).not.toBeNull();
+    expect(host.querySelector("[data-suggestion-class-value]")).not.toBeNull();
   });
 
   it("opens Nova regra in modal instead of inline form", () => {
@@ -193,7 +191,88 @@ describe("planejamento route and page", () => {
     renderPlanejamento(host, dataRef, mutations, () => {});
     expect(host.querySelector(".segmented-control--rules")).not.toBeNull();
     expect(host.querySelector(".cfm-table--planejamento-occurrences")).not.toBeNull();
+    expect(host.querySelector(".planejamento-occurrences-cards")).not.toBeNull();
+    expect(host.querySelector(".planejamento-occurrence-card")).not.toBeNull();
     expect(host.textContent).toContain("PREVISTA");
+  });
+});
+
+describe("planejamento suggestion UX refinements", () => {
+  beforeEach(() => {
+    resetPlanejamentoUiStateForTests();
+    dataRef = baseData();
+  });
+
+  afterEach(() => {
+    resetPlanejamentoUiStateForTests();
+  });
+
+  it("shows workflow guide and pending summary when suggestions exist without rules", () => {
+    dataRef = baseData({
+      transactions: [
+        tx({ id: "tx-1", competenceMonth: "2026-06", date: "2026-06-10" }),
+        tx({ id: "tx-2", competenceMonth: "2026-07", date: "2026-07-10" }),
+      ],
+    });
+    const host = document.createElement("div");
+    renderPlanejamento(host, dataRef, mutations, () => {});
+    expect(host.querySelector(".planejamento-workflow")).not.toBeNull();
+    expect(host.querySelector(".planejamento-summary__pending")).not.toBeNull();
+    expect(host.textContent).toContain("Meses");
+    expect(host.textContent).not.toContain("Observado");
+  });
+
+  it("collapses large suggestion groups by default", () => {
+    const transactions: Transaction[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      transactions.push(
+        tx({
+          id: `tx-a-${index}`,
+          description: `Serviço ${index}`,
+          competenceMonth: "2026-06",
+          date: `2026-06-${String(10 + index).padStart(2, "0")}`,
+        }),
+        tx({
+          id: `tx-b-${index}`,
+          description: `Serviço ${index}`,
+          competenceMonth: "2026-07",
+          date: `2026-07-${String(10 + index).padStart(2, "0")}`,
+        }),
+      );
+    }
+    dataRef = baseData({ transactions });
+    const host = document.createElement("div");
+    renderPlanejamento(host, dataRef, mutations, () => {});
+    expect(host.querySelector("[data-action='expand-suggestion-group']")).not.toBeNull();
+    expect(host.querySelectorAll(".planejamento-suggestion-row--hidden").length).toBeGreaterThan(0);
+  });
+
+  it("shows undo banner after ignoring a suggestion", () => {
+    dataRef = baseData({
+      transactions: [
+        tx({ id: "tx-1", competenceMonth: "2026-06", date: "2026-06-10" }),
+        tx({ id: "tx-2", competenceMonth: "2026-07", date: "2026-07-10" }),
+      ],
+    });
+    const host = document.createElement("div");
+    const rerender = (): void => {
+      renderPlanejamento(host, dataRef, mutations, rerender);
+    };
+    rerender();
+    host.querySelector<HTMLButtonElement>("[data-action='ignore-suggestion']")?.click();
+    expect(host.querySelector("[data-action='undo-ignore-suggestion']")).not.toBeNull();
+  });
+
+  it("aggregates pending suggestions in planejamento summary", () => {
+    dataRef = baseData({
+      transactions: [
+        tx({ id: "tx-1", competenceMonth: "2026-06", date: "2026-06-10" }),
+        tx({ id: "tx-2", competenceMonth: "2026-07", date: "2026-07-10" }),
+      ],
+    });
+    const summary = buildPlanejamentoSummary(dataRef, "2026-07");
+    expect(summary.pendingSuggestionCount).toBeGreaterThan(0);
+    expect(summary.pendingSuggestionExpenseCents).toBeGreaterThan(0);
   });
 });
 
@@ -653,7 +732,7 @@ describe("planejamento accessibility and focus", () => {
     const host = document.createElement("div");
     renderPlanejamento(host, dataRef, mutations, () => {});
     expect(host.querySelector(".planejamento-page")).not.toBeNull();
-    expect(host.querySelector(".planejamento-summary__strip")).not.toBeNull();
+    expect(host.querySelector(".planejamento-summary__grid")).not.toBeNull();
     expect(host.querySelector(".planejamento-form-panel")).toBeNull();
     expect(host.querySelector(".planejamento-suggestion-group, .empty-state")).not.toBeNull();
     expect(host.querySelector(".cfm-table--planejamento-occurrences")).not.toBeNull();

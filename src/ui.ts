@@ -643,7 +643,7 @@ export function renderNav(currentRoute: RoutePath, data: AppData): string {
       .map((route) => {
         const active = route === currentRoute ? ' aria-current="page"' : "";
         const badge = navBadgeForRoute(route, data);
-        return `<a class="nav-link" href="#${route}" data-route="${route}"${active}>
+        return `<a class="nav-link" href="#${route}" data-route="${route}" title="${escapeHtml(NAV_LABELS[route])}" aria-label="${escapeHtml(NAV_LABELS[route])}"${active}>
           ${navIconForRoute(route)}
           <span class="nav-link__full">${NAV_LABELS[route]}</span>
           <span class="nav-link__short">${NAV_SHORT_LABELS[route]}</span>

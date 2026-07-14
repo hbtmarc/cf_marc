@@ -8,6 +8,7 @@ import {
   buildRecurringSuggestions,
   confirmRecurringSuggestion,
   ignoreRecurringSuggestion,
+  restoreIgnoredRecurringSuggestion,
   recurringSuggestionEvidenceFingerprint,
   recurringSuggestionSignature,
 } from "./recurring-suggestions";
@@ -282,6 +283,19 @@ describe("recurring suggestions engine", () => {
     );
   });
 
+  it("restores ignored suggestions for undo", () => {
+    data.transactions = [
+      tx({ id: "tx-1", competenceMonth: "2026-06", date: "2026-06-10" }),
+      tx({ id: "tx-2", competenceMonth: "2026-07", date: "2026-07-10" }),
+    ];
+    const [suggestion] = buildRecurringSuggestions(data);
+    ignoreRecurringSuggestion(data, suggestion!.id);
+    const snapshot = data.ignoredRecurringSuggestions?.[0];
+    expect(snapshot).toBeDefined();
+    restoreIgnoredRecurringSuggestion(data, snapshot!);
+    expect(buildRecurringSuggestions(data)).toHaveLength(1);
+  });
+
   it("does not resurface ignored suggestions with unchanged evidence", () => {
     data.transactions = [
       tx({ id: "tx-1", competenceMonth: "2026-06", date: "2026-06-10" }),
@@ -381,6 +395,9 @@ describe("recurring suggestions engine", () => {
     expect(summary.projectedCount).toBe(0);
     expect(summary.matchedCount).toBe(0);
     expect(summary.coveredCount).toBe(0);
+    expect(summary.pendingSuggestionCount).toBe(0);
+    expect(summary.pendingSuggestionIncomeCents).toBe(0);
+    expect(summary.pendingSuggestionExpenseCents).toBe(0);
   });
 
   it("builds deterministic signatures and evidence fingerprints", () => {

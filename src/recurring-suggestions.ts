@@ -414,6 +414,16 @@ export function confirmRecurringSuggestion(
   };
 }
 
+export function restoreIgnoredRecurringSuggestion(
+  data: AppData,
+  snapshot: IgnoredRecurringSuggestion,
+): boolean {
+  data.ignoredRecurringSuggestions = (data.ignoredRecurringSuggestions ?? []).filter(
+    (item) => item.signature !== snapshot.signature,
+  );
+  return true;
+}
+
 export function ignoreRecurringSuggestion(data: AppData, suggestionId: string): boolean {
   const suggestion = buildRecurringSuggestions(data).find((item) => item.id === suggestionId);
   if (!suggestion) {

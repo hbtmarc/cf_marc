@@ -3,6 +3,7 @@ import { isRenewalExpired } from "./recurrence-renewal";
 import { inferRecurrenceClassFromRule, recurrenceClassLabel } from "./recurrence-class";
 import { buildRecurringOccurrences } from "./recurrences";
 import { recurringResolutionsForMonth } from "./recurrence-reconciliation";
+import { buildRecurringSuggestions } from "./recurring-suggestions";
 import type { AppData, RecurringOccurrenceResolutionState, RecurringRule, Transaction } from "./types";
 
 export type RuleDisplayStatus = "active" | "paused" | "ended" | "renewal_pending";
@@ -15,6 +16,9 @@ export interface PlanejamentoSummary {
   projectedCount: number;
   matchedCount: number;
   coveredCount: number;
+  pendingSuggestionCount: number;
+  pendingSuggestionIncomeCents: number;
+  pendingSuggestionExpenseCents: number;
 }
 
 export function ruleDisplayStatus(
@@ -121,12 +125,26 @@ export function buildPlanejamentoSummary(
     }
   }
 
+  const suggestions = buildRecurringSuggestions(data);
+  let pendingSuggestionIncomeCents = 0;
+  let pendingSuggestionExpenseCents = 0;
+  for (const suggestion of suggestions) {
+    if (suggestion.kind === "income") {
+      pendingSuggestionIncomeCents += suggestion.amountCents;
+    } else {
+      pendingSuggestionExpenseCents += suggestion.amountCents;
+    }
+  }
+
   return {
     incomeProjectedCents,
     expenseProjectedCents,
     projectedCount,
     matchedCount,
     coveredCount,
+    pendingSuggestionCount: suggestions.length,
+    pendingSuggestionIncomeCents,
+    pendingSuggestionExpenseCents,
   };
 }
 
